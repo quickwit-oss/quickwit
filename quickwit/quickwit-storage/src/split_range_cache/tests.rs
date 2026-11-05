@@ -126,7 +126,7 @@ async fn test_remote_error_is_not_cached_or_rewritten() {
 }
 
 #[tokio::test]
-async fn test_failed_download_with_unpolled_waiter_allows_retry() {
+async fn test_failed_download_allows_retry_before_waiter_receives_error() {
     let fixture = Fixture::new_with_blocked_lower_read().await;
     let path = Path::new("missing.split");
     let mut first = Box::pin(fixture.storage.get_slice(path, 0..4));
@@ -240,7 +240,7 @@ async fn test_waiter_drop_does_not_cancel_fetch() {
 }
 
 #[tokio::test]
-async fn test_last_caller_dropped_cancels_download_and_next_request_retries() {
+async fn test_dropping_all_callers_cancels_download_and_next_request_retries() {
     let fixture = Fixture::new_with_blocked_lower_read().await;
     let path = Path::new(SPLIT_PATH);
     let mut initiating = Box::pin(fixture.storage.get_slice(path, 0..4));
@@ -283,7 +283,7 @@ async fn test_last_caller_dropped_cancels_download_and_next_request_retries() {
 }
 
 #[tokio::test]
-async fn test_oversized_value_is_returned_and_cached() {
+async fn test_large_slice_reads_fetch_once() {
     let payload = vec![7u8; 3 * 1024 * 1024];
     let fixture = Fixture::with_payload(&payload, true).await;
     let path = Path::new(SPLIT_PATH);

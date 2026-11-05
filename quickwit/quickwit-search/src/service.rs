@@ -415,7 +415,7 @@ pub struct SearcherContext {
     pub predicate_cache: Arc<PredicateCacheImpl>,
     /// Search split cache. `None` if no split cache is configured.
     pub split_cache_opt: Option<Arc<SearchSplitCache>>,
-    /// Process-wide cache for split byte ranges, with optional disk storage.
+    /// Cache for split byte ranges, with optional disk storage.
     pub storage_cache_opt: Option<Arc<feuer::Cache>>,
     /// List fields cache. Caches the raw fields-metadata blob for a given split.
     pub list_fields_cache: ListFieldsCache,
@@ -507,31 +507,31 @@ impl SearcherContext {
         }
     }
 
-    /// Open independent Feuer cache instances sharing one disk I/O queue set.
-    /// Must complete before publishing this context to search tasks. Startup failures are fatal.
+    /// Open separate split-range, partial-response, and predicate caches with shared disk I/O
+    /// queues. Must complete before publishing this context to search tasks. Startup failures
+    /// are fatal.
     pub async fn initialize_storage_caches(
         &mut self,
         resolver: &StorageResolver,
     ) -> anyhow::Result<()> {
         let config = &self.searcher_config;
         let directory = config.storage_cache_directory.as_deref();
-        let split_storage_cache = config.resolved_storage_cache()?;
-        let partial_request_storage_cache =
-            config.partial_request_cache.storage_cache(directory)?;
-        let predicate_storage_cache = config.predicate_cache.storage_cache(directory)?;
-        if split_storage_cache.is_none()
-            && partial_request_storage_cache.is_none()
-            && predicate_storage_cache.is_none()
+        let split_range_cache_config = config.resolved_storage_cache()?;
+        let partial_request_cache_config = config.partial_request_cache.storage_cache(directory)?;
+        let predicate_cache_config = config.predicate_cache.storage_cache(directory)?;
+        if split_range_cache_config.is_none()
+            && partial_request_cache_config.is_none()
+            && predicate_cache_config.is_none()
         {
             return Ok(());
         }
         let queues = quickwit_storage::FeuerIoQueues::default();
-        if let Some(config) = &split_storage_cache {
+        if let Some(config) = &split_range_cache_config {
             self.storage_cache_opt = Some(Arc::new(
                 open_split_range_cache_with_access_trace(config, resolver, &queues).await?,
             ));
         }
-        if let Some(config) = &partial_request_storage_cache {
+        if let Some(config) = &partial_request_cache_config {
             self.leaf_search_cache = LeafSearchCache::with_storage_cache(
                 quickwit_storage::FeuerCache::open(
                     config,
@@ -542,7 +542,7 @@ impl SearcherContext {
                 .await?,
             );
         }
-        if let Some(config) = &predicate_storage_cache {
+        if let Some(config) = &predicate_cache_config {
             self.predicate_cache = Arc::new(PredicateCacheImpl::with_storage_cache(
                 quickwit_storage::FeuerCache::open(config, &queues, "predicate_cache", "predicate")
                     .await?,
@@ -593,7 +593,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_storage_cache_initialization_propagates_invalid_configuration() {
+    async fn test_disk_predicate_cache_requires_a_directory() {
         let mut config = SearcherConfig::default();
         config.predicate_cache = serde_json::from_value(serde_json::json!({
             "memory_capacity": "1MiB",

@@ -60,11 +60,14 @@ fn test_complete_inventory_and_buckets() {
     assert_eq!(buckets.len(), counts[2]);
 }
 
-// Quickwit parents register base series without native/cache labels. A parent can already
-// belong to another recorder in a parallel test, since typed handles are process-wide.
-// Validate every base observed here, then require every expected child in the callers.
-fn children(snapshotter: &Snapshotter, caches: &[&str]) -> HashMap<::metrics::Key, DebugValue> {
-    let mut children = HashMap::new();
+// Static parent handles are shared between tests, so a parent may belong to another test's
+// recorder. Check that parents observed here have no observations. Callers check the returned
+// metrics for each cache.
+fn cache_metrics(
+    snapshotter: &Snapshotter,
+    caches: &[&str],
+) -> HashMap<::metrics::Key, DebugValue> {
+    let mut cache_metrics = HashMap::new();
     for (key, _, _, value) in snapshotter.snapshot().into_vec() {
         let key = key.key();
         let declaration = Declaration::lookup(key.name());
@@ -85,16 +88,16 @@ fn children(snapshotter: &Snapshotter, caches: &[&str]) -> HashMap<::metrics::Ke
         assert!(caches.contains(cache), "unexpected cache label: {key:?}");
         let actual: HashSet<_> = labels.keys().copied().collect();
         let expected: HashSet<_> = declaration
-            .labels
+            .label_names
             .iter()
             .copied()
             .chain(["cache"])
             .collect();
         assert_eq!(actual, expected, "incorrect child labels: {key:?}");
         assert_eq!(key.labels().len(), expected.len(), "duplicate labels");
-        children.insert(key.clone(), value);
+        cache_metrics.insert(key.clone(), value);
     }
-    children
+    cache_metrics
 }
 
 #[test]
@@ -112,8 +115,8 @@ fn test_all_typed_metrics_preserve_values_and_cache_isolation() {
             let registry = QuickwitMetricsRegistry { cache_name };
             let value = index as u64 + 1;
             for declaration in DECLARATIONS {
-                let labels: Vec<_> = declaration
-                    .labels
+                let label_values: Vec<_> = declaration
+                    .label_names
                     .iter()
                     .map(|_| "native_value".into())
                     .collect();
@@ -122,14 +125,14 @@ fn test_all_typed_metrics_preserve_values_and_cache_isolation() {
                 match declaration.kind {
                     MetricKind::Counter => {
                         registry
-                            .register_counter_vec(name, desc, declaration.labels)
-                            .counter(&labels)
+                            .register_counter_vec(name, desc, declaration.label_names)
+                            .counter(&label_values)
                             .increase(value);
                     }
                     MetricKind::Gauge => {
                         let gauge = registry
-                            .register_gauge_vec(name, desc, declaration.labels)
-                            .gauge(&labels);
+                            .register_gauge_vec(name, desc, declaration.label_names)
+                            .gauge(&label_values);
                         gauge.absolute(value);
                         gauge.increase(3);
                         gauge.decrease(2);
@@ -139,23 +142,23 @@ fn test_all_typed_metrics_preserve_values_and_cache_isolation() {
                             .register_histogram_vec_with_buckets(
                                 name,
                                 desc,
-                                declaration.labels,
+                                declaration.label_names,
                                 declaration.buckets.unwrap()(),
                             )
-                            .histogram(&labels)
+                            .histogram(&label_values)
                             .record(value as f64);
                     }
                 }
             }
         }
     });
-    let values = children(&snapshotter, &caches);
+    let values = cache_metrics(&snapshotter, &caches);
     assert_eq!(values.len(), DECLARATIONS.len() * caches.len());
     for (index, cache) in caches.into_iter().enumerate() {
         let value = index as u64 + 1;
         for declaration in DECLARATIONS {
             let labels: Vec<_> = declaration
-                .labels
+                .label_names
                 .iter()
                 .map(|name| ::metrics::Label::new(*name, "native_value"))
                 .chain([::metrics::Label::new("cache", cache)])
@@ -188,8 +191,12 @@ fn test_rejects_native_schema_changes() {
             _ => MetricKind::Counter,
         };
         for (kind, description, labels) in [
-            (wrong_kind, declaration.description, declaration.labels),
-            (declaration.kind, "changed description", declaration.labels),
+            (wrong_kind, declaration.description, declaration.label_names),
+            (
+                declaration.kind,
+                "changed description",
+                declaration.label_names,
+            ),
             (
                 declaration.kind,
                 declaration.description,
@@ -201,8 +208,8 @@ fn test_rejects_native_schema_changes() {
                     .is_err()
             );
         }
-        if declaration.labels.len() > 1 {
-            let mut reversed = declaration.labels.to_vec();
+        if declaration.label_names.len() > 1 {
+            let mut reversed = declaration.label_names.to_vec();
             reversed.reverse();
             assert!(
                 catch_unwind(|| declaration.validate(
@@ -216,11 +223,11 @@ fn test_rejects_native_schema_changes() {
         let vector = registry.register(
             declaration.name,
             declaration.description,
-            declaration.labels,
+            declaration.label_names,
             declaration.kind,
         );
-        for count in [declaration.labels.len() + 1, 0] {
-            if count == declaration.labels.len() {
+        for count in [declaration.label_names.len() + 1, 0] {
+            if count == declaration.label_names.len() {
                 continue;
             }
             let invalid_values = vec![Cow::Borrowed("invalid"); count];
@@ -244,7 +251,7 @@ fn test_rejects_native_schema_changes() {
                 catch_unwind(|| registry.register_histogram_vec(
                     declaration.name.into(),
                     declaration.description.into(),
-                    declaration.labels,
+                    declaration.label_names,
                 ))
                 .is_err()
             );
@@ -254,7 +261,7 @@ fn test_rejects_native_schema_changes() {
                 catch_unwind(|| registry.register_histogram_vec_with_buckets(
                     declaration.name.into(),
                     declaration.description.into(),
-                    declaration.labels,
+                    declaration.label_names,
                     changed,
                 ))
                 .is_err()
@@ -295,7 +302,7 @@ fn test_global_labels_are_inherited() {
         .register_counter_vec(
             declaration.name.into(),
             declaration.description.into(),
-            declaration.labels,
+            declaration.label_names,
         )
         .counter(&["memory_hit".into()])
         .increase(7);
@@ -332,7 +339,7 @@ fn test_native_memory_registration_and_values_without_runtime() {
     let snapshotter = recorder.snapshotter();
     let _guard = ::metrics::set_default_local_recorder(&recorder);
     let cache_name = "metrics_native_memory";
-    // Actual native registration validates names, descriptions, types, ordered labels and buckets.
+    // Feuer registration validates names, descriptions, types, ordered labels and buckets.
     let cache = crate::FeuerCache::memory(1 << 20, cache_name).unwrap();
     futures::executor::block_on(async {
         assert!(
@@ -342,7 +349,7 @@ fn test_native_memory_registration_and_values_without_runtime() {
         );
         assert_eq!(cache.get("key".into()).await.unwrap().as_slice(), b"value");
     });
-    let values = children(&snapshotter, &[cache_name]);
+    let values = cache_metrics(&snapshotter, &[cache_name]);
     let names: HashSet<_> = values.keys().map(|key| key.name()).collect();
     let expected: HashSet<_> = DECLARATIONS
         .iter()
@@ -405,7 +412,7 @@ async fn test_native_disk_registration_matches_complete_inventory() {
         )
         .await
         .unwrap();
-    let values = children(&snapshotter, &[cache_name]);
+    let values = cache_metrics(&snapshotter, &[cache_name]);
     let names: HashSet<_> = values.keys().map(|key| key.name()).collect();
     assert_eq!(
         names,

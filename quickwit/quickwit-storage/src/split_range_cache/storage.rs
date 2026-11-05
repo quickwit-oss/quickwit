@@ -69,8 +69,8 @@ pub struct FeuerSplitRangeStorage {
     cache: Arc<feuer::Cache>,
 }
 
-/// Wrap `storage` with a process-wide cache keyed by full object URI and exact byte range.
-/// Covering and overlapping cached slices do not serve different ranges.
+/// Wrap `storage` with the supplied cache.
+/// Cache hits require matching object URIs and byte ranges.
 pub fn wrap_storage_with_split_range_cache(
     cache: Arc<feuer::Cache>,
     storage: Arc<dyn Storage>,
@@ -284,7 +284,7 @@ mod tests {
         let cache_name = "slice_ownership";
         let registry: mixtrics::metrics::BoxedRegistry =
             Box::new(QuickwitMetricsRegistry { cache_name });
-        // Exclude idle buffers so this metric measures only cached entry charges.
+        // Exclude idle buffers so this metric measures only cached slice charges.
         let config = feuer::CacheConfig::new("", 0, 8 * 1024 * 1024)
             .unwrap()
             .with_idle_buffer_pool_percent(0)

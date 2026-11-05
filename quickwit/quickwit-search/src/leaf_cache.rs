@@ -559,7 +559,7 @@ mod tests {
         let reference_key = serialize_key(&split, &request);
         assert_eq!(reference_key, serialize_key(&split, &request));
 
-        // A change anywhere in the request, however nested, must change the key.
+        // Query, hit-limit, snippet-field, and index-pattern changes must change the key.
         for altered_request in [
             SearchRequest {
                 query_ast: "test2".to_string(),
@@ -680,7 +680,7 @@ mod tests {
         predicate
             .put_async("split".into(), "term".into(), segment, HitSet::empty())
             .await;
-        // Tantivy calls the synchronous trait on CPU threads with a current-thread runtime.
+        // Exercise Tantivy's synchronous API on a CPU thread while the test's runtime drives I/O.
         quickwit_common::thread_pool::run_cpu_intensive(move || {
             let (cached_segment, hits) = predicate.get("split".into(), "term".into()).unwrap();
             assert_eq!(cached_segment, segment);

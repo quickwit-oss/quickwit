@@ -91,7 +91,7 @@ Quickwit does caching in many places to deliver a highly performing query engine
 
 In memory:
 
-- Split-range caching: `storage_cache` retains split footers, hotcache bytes, fast fields, and other split body ranges in one shared cache. Hotcache is static data embedded in each split footer that speeds up opening the split. The range cache defaults to memory-only operation with a 1.5GB budget. When `storage_cache` is omitted or `null`, the legacy `fast_field_cache` and `split_footer_cache` capacities (including their `*_capacity` aliases) are summed, using defaults of `1G` and `500M` for omitted settings. An explicit `storage_cache` overrides those budgets. There are no separate fast-field or footer caches.
+- Split-range caching: `storage_cache` retains split footers, hotcache bytes, fast fields, and other split body ranges in one shared cache. Hotcache is static data embedded in each split footer that speeds up opening the split. The range cache defaults to memory-only operation with a 1.5GB budget. When `storage_cache` is omitted or `null`, the legacy `fast_field_cache` and `split_footer_cache` capacities (including their `*_capacity` aliases) are summed, using defaults of `1G` and `500M` for omitted settings. An explicit `storage_cache` overrides those budgets.
 - Partial-request caching: Similar requests, such as dashboard queries with changing timestamp bounds, can reuse per-split partial results. `partial_request_cache` controls the memory target and optional disk tier.
 - Predicate caching: `predicate_cache` retains predicate hit sets and known-absent terms, with independent memory and optional disk budgets.
 - List-fields caching: Field metadata uses an independent memory cache with the same memory capacity as `partial_request_cache`.

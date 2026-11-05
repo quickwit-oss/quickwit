@@ -61,7 +61,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn list_fields_cache_keys_are_stable_and_separate_entries() {
+    fn list_fields_cache_keys_are_stable_and_distinguish_split_ids() {
         assert_eq!(split_key("split"), "v1:list-fields:\"split\"");
         assert_ne!(split_key("split"), split_key("other-split"));
         assert_ne!(split_key("split\""), split_key("split\\\""));
@@ -103,7 +103,7 @@ mod tests {
     }
 
     #[test]
-    fn list_fields_cache_uses_feuer_soft_capacity_and_immutable_entries() {
+    fn list_fields_cache_retains_first_value_above_capacity() {
         let cache = ListFieldsCache::new(&ByteSize::b(1).into());
         cache.put("split".to_string(), OwnedBytes::new(&b"fields"[..]));
         cache.put("split".to_string(), OwnedBytes::new(&b"replacement"[..]));

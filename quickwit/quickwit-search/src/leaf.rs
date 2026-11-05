@@ -125,7 +125,7 @@ fn greedy_batch_split<T>(
     batches
 }
 
-/// Returns hotcache_bytes and the split directory (`BundleStorage`).
+/// Returns the hotcache bytes and storage for the files inside the split.
 pub(crate) async fn open_split_bundle(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,

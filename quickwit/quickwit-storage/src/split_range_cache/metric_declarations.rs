@@ -14,7 +14,9 @@
 
 use mixtrics::metrics::Buckets;
 
-use super::{Declaration, Factory, MetricKind, MetricsCounter, MetricsGauge, MetricsHistogram};
+use super::{
+    CreateMetric, Declaration, MetricKind, MetricsCounter, MetricsGauge, MetricsHistogram,
+};
 
 // The native schema, typed registrations, inventory entries, and exporter buckets all come
 // from this list. Keep descriptions and ordered labels identical to the pinned Feuer revision.
@@ -42,15 +44,15 @@ macro_rules! declare_metrics {
                 name: $name,
                 description: $description,
                 kind: MetricKind::$kind,
-                labels: &[$($label),*],
+                label_names: &[$($label),*],
                 buckets: declare_metrics!(@buckets $($buckets)?),
-                factory: Factory::$kind(|cache, values| {
-                    let [$($value),*] = values else {
+                create_metric: CreateMetric::$kind(|cache_name, label_values| {
+                    let [$($value),*] = label_values else {
                         panic!("incorrect Feuer label value count: {}", $name);
                     };
                     Box::new($wrapper(quickwit_metrics::$metric!(
                         parent: $id,
-                        "cache" => cache,
+                        "cache" => cache_name,
                         $($label => $value.clone().into_owned(),)*
                     )))
                 }),
@@ -75,7 +77,7 @@ declare_metrics! {
         "Operations completed by Feuer's in-memory object tier",
         ["operation" => operation];
 
-        MEMORY_EVICTIONS: "feuer_memory_eviction_triggering_insertions_total",
+        MEMORY_INSERTIONS_TRIGGERING_EVICTION: "feuer_memory_eviction_triggering_insertions_total",
         "Completed insertion attempts that evicted at least one entry under capacity pressure",
         [];
 
@@ -99,7 +101,7 @@ declare_metrics! {
         "Disk-write queue admissions, rejections and pre-write discards. The queued outcome measures admission",
         ["outcome" => outcome];
 
-        DISK_EVICTIONS: "feuer_disk_eviction_triggering_insertions_total",
+        DISK_INSERTIONS_TRIGGERING_EVICTION: "feuer_disk_eviction_triggering_insertions_total",
         "Terminal insertion attempts that evicted at least one entry under capacity pressure",
         [];
 

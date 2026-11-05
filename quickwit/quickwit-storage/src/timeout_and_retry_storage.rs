@@ -131,8 +131,8 @@ impl Storage for TimeoutAndRetryStorage {
             .compute_timeout(num_bytes)
             .enumerate()
         {
-            // Time out the whole body read, not just opening the stream. Each retry
-            // overwrites the same buffer, and cancellation drops the previous stream.
+            // The timeout covers the whole body read. Each retry overwrites the same buffer,
+            // and cancellation drops the previous stream.
             let download = self.underlying.get_slice_into(path, range.clone(), buffer);
             match tokio::time::timeout(timeout_duration, download).await {
                 Ok(result) => {

@@ -74,7 +74,7 @@ async fn open_range_cache(dir: &Path) -> Arc<feuer::Cache> {
     )
 }
 
-fn wrap_counted_ram(split_bytes: &OwnedBytes) -> (Arc<dyn Storage>, Arc<DownloadCounters>) {
+fn counted_split_storage(split_bytes: &OwnedBytes) -> (Arc<dyn Storage>, Arc<DownloadCounters>) {
     let ram = RamStorageBuilder::default()
         .put(&split_file_name(), split_bytes.as_slice())
         .build();
@@ -86,18 +86,22 @@ fn context_with_range_cache(cache: Arc<feuer::Cache>) -> SearcherContext {
 }
 
 #[tokio::test]
-async fn test_open_split_bundle_footer_miss_uses_feuer_then_reuses_storage_for_body() {
+async fn test_open_split_bundle_caches_footer_and_body_ranges() {
     let split = build_split().await;
     let cache_dir = tempfile::tempdir().unwrap();
     let cache = open_range_cache(cache_dir.path()).await;
     let context = context_with_range_cache(cache.clone());
-    let (counted, counters) = wrap_counted_ram(&split.split_bytes);
+    let (counted, counters) = counted_split_storage(&split.split_bytes);
 
     let (hotcache, bundle) = open_split_bundle(&context, counted.clone(), &split.footer_offsets)
         .await
         .unwrap();
     assert_eq!(hotcache.as_slice(), HOTCACHE_BYTES);
-    assert_eq!(counters.snapshot().1, 1, "cold footer is one lower read");
+    assert_eq!(
+        counters.snapshot().1,
+        1,
+        "uncached footer requires one storage read"
+    );
 
     for _ in 0..2 {
         assert_eq!(
@@ -108,10 +112,14 @@ async fn test_open_split_bundle_footer_miss_uses_feuer_then_reuses_storage_for_b
                 .as_slice(),
             b"FAST"
         );
-        assert_eq!(counters.snapshot().1, 2, "second body range must hit Feuer");
+        assert_eq!(
+            counters.snapshot().1,
+            2,
+            "repeated body range uses the cache"
+        );
     }
 
-    // A fresh searcher context still finds the footer in the process-wide range cache.
+    // Another searcher context shares this range cache and reuses its cached footer.
     let fresh_context = context_with_range_cache(cache);
     let (hotcache, _bundle) = open_split_bundle(&fresh_context, counted, &split.footer_offsets)
         .await
@@ -148,14 +156,14 @@ async fn test_open_split_bundle_footer_skips_whole_split_cache() {
         Some(split_cache),
         Some(range_cache),
     );
-    let (counted, counters) = wrap_counted_ram(&split.split_bytes);
+    let (counted, counters) = counted_split_storage(&split.split_bytes);
     let (_hotcache, bundle) = open_split_bundle(&context, counted, &split.footer_offsets)
         .await
         .unwrap();
     assert_eq!(
         counters.snapshot().1,
         1,
-        "footer skips SplitCache and reads through Feuer"
+        "footer bypasses the whole-split cache and reads through the range cache"
     );
 
     bundle.get_slice(Path::new(BODY_FILE), 0..4).await.unwrap();
@@ -171,7 +179,7 @@ async fn test_open_split_bundle_does_not_reuse_covering_slice_for_footer_and_bod
     let split = build_split().await;
     let cache_dir = tempfile::tempdir().unwrap();
     let cache = open_range_cache(cache_dir.path()).await;
-    let (counted, counters) = wrap_counted_ram(&split.split_bytes);
+    let (counted, counters) = counted_split_storage(&split.split_bytes);
     let cached_storage = wrap_storage_with_split_range_cache(cache.clone(), counted.clone());
     cached_storage
         .get_slice(Path::new(&split_file_name()), 0..split.split_bytes.len())

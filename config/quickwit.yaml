@@ -203,7 +203,7 @@ indexer:
 #   # (default 500M) unless storage_cache explicitly overrides both.
 #   fast_field_cache_capacity: 1G
 #   split_footer_cache_capacity: 500M
-#   # Memory caches (also accept the legacy *_cache_capacity keys).
+#   # Partial-request and predicate caches (also accept legacy *_cache_capacity keys).
 #   # Set to zero to disable. Add disk settings as shown below for a disk tier.
 #   partial_request_cache: 64M
 #   predicate_cache: 256M
@@ -218,7 +218,7 @@ indexer:
 #   # Cache for split footer and body ranges. Omitted or null sums the
 #   # legacy memory budgets (default 1500M). Set both to zero to disable it.
 #   # Positive disk_capacity requires Linux and a directory.
-#   # disk_capacity: 0 uses memory only on every supported platform, with no directory.
+#   # disk_capacity: 0 uses memory only on every supported platform. No directory is required.
 #   storage_cache_directory: /quickwit/qwdata/feuer-v1
 #   storage_cache:
 #     disk_capacity: 1500GiB

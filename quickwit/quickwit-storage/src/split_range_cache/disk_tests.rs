@@ -32,8 +32,8 @@ async fn test_disk_hit_after_memory_pressure() {
     let cache = open_split_range_cache(&config, &crate::FeuerIoQueues::default())
         .await
         .unwrap();
-    // Bypass Feuer's 60-second small-entry buffer so this test observes a disk write,
-    // rather than a hit from that buffer. Keep "data" at the start to identify the payload.
+    // Bypass Feuer's 60-second buffer for small objects so this test observes a disk write.
+    // Keep "data" at the start to identify the payload.
     get_or_fetch(&cache, "object".to_owned(), 0..512 * 1024, |_| async {
         let mut bytes = vec![0; 512 * 1024];
         bytes[..4].copy_from_slice(b"data");
@@ -66,7 +66,7 @@ async fn test_disk_hit_after_memory_pressure() {
     .expect("disk write did not finish");
 
     // Exact slices have independent keys and may select different memory shards.
-    // Apply pressure with distinct oversized entries until the original slice is
+    // Apply pressure with distinct oversized slices until the original slice is
     // evicted, without depending on Feuer's process-local shard assignment.
     tokio::time::timeout(Duration::from_secs(10), async {
         for index in 0..1024 {

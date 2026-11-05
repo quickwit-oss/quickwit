@@ -26,10 +26,10 @@ mod declarations;
 #[path = "metrics_tests.rs"]
 mod tests;
 
-// Factories extend typed Quickwit parents, inheriting process-wide labels. Each declaration
-// contributes exactly one inventory entry, even when Feuer registers it from several tiers.
+// Create metrics from Quickwit parents, inheriting global labels. Each declaration appears
+// once in the inventory, even when Feuer registers it from several tiers.
 #[derive(Debug)]
-enum Factory {
+enum CreateMetric {
     Counter(fn(&'static str, &[Cow<'static, str>]) -> BoxedCounter),
     Gauge(fn(&'static str, &[Cow<'static, str>]) -> BoxedGauge),
     Histogram(fn(&'static str, &[Cow<'static, str>]) -> BoxedHistogram),
@@ -40,9 +40,9 @@ struct Declaration {
     name: &'static str,
     description: &'static str,
     kind: MetricKind,
-    labels: &'static [&'static str],
+    label_names: &'static [&'static str],
     buckets: Option<fn() -> Vec<f64>>,
-    factory: Factory,
+    create_metric: CreateMetric,
 }
 
 impl Declaration {
@@ -53,10 +53,10 @@ impl Declaration {
             .unwrap_or_else(|| panic!("unregistered Feuer metric: {name}"))
     }
 
-    fn validate(&self, kind: MetricKind, description: &str, labels: &[&str]) {
+    fn validate(&self, kind: MetricKind, description: &str, label_names: &[&str]) {
         assert_eq!(self.kind, kind, "Feuer metric type changed: {}", self.name);
         assert_eq!(
-            self.labels, labels,
+            self.label_names, label_names,
             "Feuer label schema changed: {}",
             self.name
         );
@@ -68,11 +68,11 @@ impl Declaration {
     }
 }
 
-/// Forward native Feuer metrics through Quickwit's typed metric declarations.
+/// Forward Feuer metrics through Quickwit's metric declarations.
 ///
-/// The process recorder and global labels must be installed before first registration, as
-/// with other Quickwit metrics. Parents register the usual unlabeled base series. Only children
-/// receive observations, always with native labels plus the fixed caller-provided `cache` label.
+/// Install the recorder and global labels before the first registration. Parents register
+/// series with global labels. Children receive observations with Feuer's labels and the
+/// caller-provided `cache` label.
 #[derive(Debug)]
 pub(crate) struct QuickwitMetricsRegistry {
     pub(crate) cache_name: &'static str,
@@ -83,11 +83,11 @@ impl QuickwitMetricsRegistry {
         &self,
         name: &str,
         description: &str,
-        labels: &[&str],
+        label_names: &[&str],
         kind: MetricKind,
     ) -> MetricVec {
         let declaration = Declaration::lookup(name);
-        declaration.validate(kind, description, labels);
+        declaration.validate(kind, description, label_names);
         MetricVec {
             declaration,
             cache_name: self.cache_name,
@@ -131,12 +131,12 @@ impl RegistryOps for QuickwitMetricsRegistry {
         buckets: Vec<f64>,
     ) -> BoxedHistogramVec {
         let metric = self.register(&name, &desc, label_names, MetricKind::Histogram);
-        let expected = metric
+        let declared_buckets = metric
             .declaration
             .buckets
             .expect("histogram must declare buckets");
         assert_eq!(
-            expected(),
+            declared_buckets(),
             buckets,
             "Feuer histogram buckets changed: {name}"
         );
@@ -151,10 +151,10 @@ struct MetricVec {
 }
 
 impl MetricVec {
-    fn validate_values(&self, labels: &[Cow<'static, str>]) {
+    fn validate_label_count(&self, label_values: &[Cow<'static, str>]) {
         assert_eq!(
-            self.declaration.labels.len(),
-            labels.len(),
+            self.declaration.label_names.len(),
+            label_values.len(),
             "incorrect Feuer label value count: {}",
             self.declaration.name
         );
@@ -162,32 +162,32 @@ impl MetricVec {
 }
 
 impl CounterVecOps for MetricVec {
-    fn counter(&self, labels: &[Cow<'static, str>]) -> BoxedCounter {
-        self.validate_values(labels);
-        let Factory::Counter(create) = self.declaration.factory else {
+    fn counter(&self, label_values: &[Cow<'static, str>]) -> BoxedCounter {
+        self.validate_label_count(label_values);
+        let CreateMetric::Counter(create) = self.declaration.create_metric else {
             panic!("expected counter: {}", self.declaration.name);
         };
-        create(self.cache_name, labels)
+        create(self.cache_name, label_values)
     }
 }
 
 impl GaugeVecOps for MetricVec {
-    fn gauge(&self, labels: &[Cow<'static, str>]) -> BoxedGauge {
-        self.validate_values(labels);
-        let Factory::Gauge(create) = self.declaration.factory else {
+    fn gauge(&self, label_values: &[Cow<'static, str>]) -> BoxedGauge {
+        self.validate_label_count(label_values);
+        let CreateMetric::Gauge(create) = self.declaration.create_metric else {
             panic!("expected gauge: {}", self.declaration.name);
         };
-        create(self.cache_name, labels)
+        create(self.cache_name, label_values)
     }
 }
 
 impl HistogramVecOps for MetricVec {
-    fn histogram(&self, labels: &[Cow<'static, str>]) -> BoxedHistogram {
-        self.validate_values(labels);
-        let Factory::Histogram(create) = self.declaration.factory else {
+    fn histogram(&self, label_values: &[Cow<'static, str>]) -> BoxedHistogram {
+        self.validate_label_count(label_values);
+        let CreateMetric::Histogram(create) = self.declaration.create_metric else {
             panic!("expected histogram: {}", self.declaration.name);
         };
-        create(self.cache_name, labels)
+        create(self.cache_name, label_values)
     }
 }
 

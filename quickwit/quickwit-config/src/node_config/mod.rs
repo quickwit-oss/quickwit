@@ -387,7 +387,7 @@ impl SplitCacheLimits {
     }
 }
 
-/// Feuer storage cache with memory and optional disk tiers for immutable split ranges.
+/// Feuer cache settings for memory and optional disk storage.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StorageCacheConfig {
@@ -397,7 +397,7 @@ pub struct StorageCacheConfig {
     /// Set to zero to disable the disk tier and cache only in memory.
     #[serde(with = "crate::serde_utils::bytesize_serde")]
     pub disk_capacity: ByteSize,
-    /// Soft memory-tier eviction target, not a hard process-memory limit.
+    /// Memory eviction target. Downloads and bytes retained by callers may exceed it.
     #[serde(with = "crate::serde_utils::bytesize_serde")]
     pub memory_capacity: ByteSize,
 }
@@ -478,11 +478,11 @@ pub struct SearcherConfig {
     // TODO document and fix if necessary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub split_cache: Option<SplitCacheLimits>,
-    /// Process-wide Feuer cache for split footer and body ranges.
+    /// Feuer cache for split footer and body ranges.
     /// Omitted or `null` combines the legacy memory budgets (1 GB + 500 MB by default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub storage_cache: Option<StorageCacheConfig>,
-    /// Shared directory for independent Feuer files; per-cache paths override it.
+    /// Shared directory for cache files. Per-cache paths override it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub storage_cache_directory: Option<PathBuf>,
     #[serde(default = "SearcherConfig::default_request_timeout_secs")]
@@ -591,7 +591,7 @@ pub struct CacheConfig {
     capacity: Option<ByteSize>,
     #[serde(default)]
     policy: Option<CachePolicy>,
-    /// Optional disk tier for result caches. Other caches only support RAM.
+    /// Directory override for the optional disk tier of partial-request and predicate caches.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     path: Option<PathBuf>,
     #[serde(

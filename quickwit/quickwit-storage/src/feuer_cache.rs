@@ -75,8 +75,8 @@ impl FeuerIoQueues {
     }
 }
 
-/// A Feuer instance storing complete, immutable encoded results.
-/// Keys must include a format version; values for a given key must never change.
+/// A Feuer cache for immutable encoded results.
+/// Keys must include a format version. Values for a given key must never change.
 pub struct FeuerCache {
     cache: Option<feuer::Cache>,
 }
@@ -100,7 +100,7 @@ impl FeuerCache {
         ))
     }
 
-    /// Open an independent cache with the supplied shared queues and explicit capacities.
+    /// Open a cache with the supplied disk I/O queues.
     /// `file_name` must be distinct for caches in the same directory.
     /// `cache_name` identifies the cache in metrics; use a fixed name, not a path or request key.
     pub async fn open(
@@ -123,8 +123,8 @@ impl FeuerCache {
             .map(crate::stable_deref_bytes::into_owned_bytes)
     }
 
-    /// Admit an immutable object; an existing value for this key is retained.
-    /// Disk writes use Feuer's bounded, best-effort background queue.
+    /// Cache an immutable object. An existing value for this key is retained.
+    /// Disk writes use Feuer's best-effort background queue.
     pub async fn put(&self, key: String, bytes: OwnedBytes) -> bool {
         let Some(cache) = &self.cache else {
             return false;
@@ -257,7 +257,7 @@ mod tests {
             ));
         }
 
-        // Large objects bypass Feuer's timed small-entry buffer, so disk publication is observable.
+        // Large objects bypass Feuer's buffer for small objects, so disk publication is observable.
         let split_bytes = vec![3; 1 << 20];
         let download_bytes = split_bytes.clone();
         let split_key = format!("split-slice-v1:0:{}:same-key", split_bytes.len());
@@ -376,7 +376,7 @@ mod tests {
         cache_name: &'static str,
     ) -> FeuerCache {
         // Feuer releases directory locks after its background tasks drain. Retry only this
-        // expected shutdown race; all other failures must fail the test immediately.
+        // expected shutdown race. All other failures must fail the test immediately.
         tokio::time::timeout(Duration::from_secs(10), async {
             loop {
                 match FeuerCache::open(config, queues, file_name, cache_name).await {

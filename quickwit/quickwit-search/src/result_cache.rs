@@ -89,8 +89,7 @@ mod tests {
             "predicate",
             &quickwit_storage::metrics::PREDICATE_CACHE,
         );
-        // Feuer admits oversized immutable entries against its soft capacity target.
-        // The former MemorySizedCache rejected entries larger than its capacity.
+        // Feuer admits a result larger than its memory capacity target.
         assert!(cache.block_on(cache.put(&"key", OwnedBytes::new(&b"result"[..]))));
         assert_eq!(
             cache.block_on(cache.get(&"key")).unwrap().as_slice(),
@@ -134,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn test_object_keys_are_stable_and_separate_entries() {
+    fn test_object_keys_are_stable_and_distinguish_splits_and_predicates() {
         let borrowed_key = ("split", "predicate");
         let owned_key = ("split".to_string(), "predicate".to_string());
         assert_eq!(object_key(&borrowed_key), object_key(&owned_key));

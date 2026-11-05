@@ -174,7 +174,7 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[tokio::test]
-    async fn test_native_callback_exports_miss_hit_error_and_tail() {
+    async fn test_trace_callback_exports_miss_hit_and_error_on_drop() {
         use crate::split_range_cache::storage::get_or_fetch;
         use crate::split_range_cache::{buffer_for_test, open_split_range_cache};
 

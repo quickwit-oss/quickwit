@@ -316,12 +316,12 @@ This section contains the configuration options for a Searcher.
 | `predicate_cache` | Cache for predicate hit sets and known-absent terms. Accepts a memory capacity or a mapping with `memory_capacity` (alias `capacity`) and optional disk settings described below. Without disk settings, caches in memory and needs no directory. Disable with `0`. Legacy alias: `predicate_cache_capacity`. | `256M` |
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
 | `split_cache` | Searcher split cache configuration options defined in the section below. Cache disabled if unspecified. | |
-| `storage_cache` | Process-wide range cache for split footers, hotcache, fast fields, and other body ranges, with an optional disk tier. Explicit settings override the legacy memory budgets. Configuration options are defined below. | Memory-only, `1500M` |
+| `storage_cache` | Range cache for split footers, hotcache, fast fields, and other body ranges, with an optional disk tier. Explicit settings override the legacy memory budgets. Configuration options are defined below. | Memory-only, `1500M` |
 | `storage_cache_directory` | Shared directory for cache files. Per-cache `path` overrides it. Setting this directory alone does not enable disk caching. | |
 | `request_timeout_secs` | The time before a search request is cancelled. This should match the timeout of the stack calling into quickwit if there is one set.  | `30` |
 | `use_metastore_read_replica` | If true, routes read-only metastore requests from searchers to nodes running the `metastore_read_replica` service. Searchers require at least one `metastore_read_replica` node at startup and do not fall back to the primary metastore. | `false` |
 
-Split footers, hotcache bytes, and fast fields share the `storage_cache` with other split body ranges. The legacy fast-field and footer settings contribute memory budgets to this single cache. There are no separate fast-field or footer caches. When the range cache is disabled, opening a split fetches its footer from storage each time.
+Split footers, hotcache bytes, and fast fields share the `storage_cache` with other split body ranges. The legacy fast-field and footer settings contribute memory budgets to this single cache. When the range cache is disabled, opening a split fetches its footer from storage each time.
 
 ### Searcher split cache configuration
 
@@ -343,11 +343,11 @@ When `storage_cache` is omitted or set to `null`, Quickwit sums the `fast_field_
 | --- | --- | --- |
 | `path` | Optional directory override for this cache. Defaults to `searcher.storage_cache_directory`. One of them must be set when `disk_capacity` is positive. Created if missing and must sit on a usable filesystem. Memory-only split-range caching requires no directory. Explicitly empty paths are rejected. | |
 | `disk_capacity` | Disk capacity budget, including metadata and alignment. Set to `0` to disable the disk tier and cache only in memory. Alignment is handled internally. The configured value need not be rounded. | |
-| `memory_capacity` | Positive, soft memory-tier eviction target, required even when `disk_capacity` is `0`. Oversized downloads and bytes retained by callers may exceed it. This is not a process memory limit. | |
+| `memory_capacity` | Positive memory eviction target, required even when `disk_capacity` is `0`. Downloads and bytes retained by callers may exceed it. | |
 
 For `partial_request_cache` and `predicate_cache`, scalar capacities and mappings without disk settings use memory only, with no directory required, even when a shared directory is configured. `memory_capacity` sets the memory budget (default `64M` and `256M`, respectively), with `capacity` and the legacy `*_cache_capacity` names accepted as backward-compatible aliases. A scalar `0` or a zero memory capacity without disk settings disables the cache. To add a disk tier, set `disk_capacity` and either `searcher.storage_cache_directory` or a per-cache `path` override. A per-cache `path` requires `disk_capacity`.
 
-The list-fields metadata cache uses memory only. It remains an independent cache with the same memory capacity as `partial_request_cache`, including zero-capacity disabling. Result-cache disk settings do not enable a disk tier for list-fields metadata.
+The list-fields metadata cache uses memory only. It has the same memory capacity as `partial_request_cache` and is disabled when that capacity is zero.
 
 Capacities accept integer byte counts or human-readable values such as `64MiB`. Setting both `capacity` and `memory_capacity` in the same mapping is an error.
 
@@ -363,9 +363,9 @@ Each cache has independent memory and disk budgets. Caches can share a directory
 
 Lock files are named `.feuer.<filename>.lock`. Opening the same backing file twice fails. Initialization failures abort startup. A disk capacity of `0` enables memory-only operation on every supported platform without disk I/O or a directory. Positive disk capacities require Linux and a directory. Explicitly empty paths are rejected even in memory-only mode.
 
-Memory capacities are soft eviction targets, rather than process memory limits. See [cache metrics](../reference/metrics.md#feuer-cache-metrics) to monitor cache usage.
+See [cache metrics](../reference/metrics.md#feuer-cache-metrics) to monitor cache usage.
 
-Set `QW_FEUER_ACCESS_TRACE_URI` to an output prefix to export Feuer's native access traces using the node's storage configuration and credentials. Unset means disabled. An invalid or unwritable destination fails startup. Tracing can backpressure lookups, and packages are delivered at 8 MiB with no timed flush. See [Feuer access traces](../internals/feuer-access-trace.md) for the format and shutdown/completeness limitations.
+Set `QW_FEUER_ACCESS_TRACE_URI` to an output prefix to export Feuer access traces using the node's storage configuration and credentials. Leave it unset to disable tracing. An invalid or unwritable destination fails startup. Slow trace uploads can delay cache lookups. See [Feuer access traces](../internals/feuer-access-trace.md) for the format, delivery timing, and shutdown limitations.
 
 Example:
 

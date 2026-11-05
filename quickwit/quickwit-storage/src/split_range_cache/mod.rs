@@ -41,7 +41,7 @@ pub async fn open_split_range_cache_with_access_trace(
     Ok(access_trace::attach(cache, storage, run))
 }
 
-/// Open `split_cache` with explicit capacities and shared disk I/O concurrency.
+/// Open `split_cache` with shared disk I/O queues.
 /// Memory-only caches need no directory.
 /// Model each source request's fixed retrieval cost as 256,000 equivalent bytes.
 pub async fn open_split_range_cache(
