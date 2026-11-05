@@ -8254,7 +8254,6 @@ dependencies = [
  "assert-json-diff",
  "async-trait",
  "base64 0.23.1",
- "bytes",
  "bytesize",
  "fnv",
  "futures",
