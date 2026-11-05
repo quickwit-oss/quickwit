@@ -14,6 +14,8 @@ pub struct RetainShardsForSource {
 pub struct RetainShardsRequest {
     #[prost(message, repeated, tag = "1")]
     pub retain_shards_for_sources: ::prost::alloc::vec::Vec<RetainShardsForSource>,
+    #[prost(uint32, tag = "2")]
+    pub version: u32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]

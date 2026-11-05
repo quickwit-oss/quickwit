@@ -55,6 +55,7 @@ message RetainShardsForSource {
 
 message RetainShardsRequest {
   repeated RetainShardsForSource retain_shards_for_sources = 1;
+  uint32 version = 2;
 }
 
 message RetainShardsResponse {

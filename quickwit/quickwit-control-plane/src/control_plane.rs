@@ -195,7 +195,8 @@ impl Actor for ControlPlane {
 
         let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
 
-        self.ingest_controller.sync_with_all_ingesters(&self.model);
+        self.ingest_controller
+            .request_reconcile_with_all_ingesters(&self.model);
 
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlaneLoop);
 
@@ -669,7 +670,7 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
         self.model.delete_index(&index_uid);
 
         self.ingest_controller
-            .sync_with_ingesters(&ingester_needing_resync, &self.model);
+            .request_reconcile_with_ingesters(&ingester_needing_resync, &self.model);
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
@@ -842,7 +843,7 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
             };
 
         self.ingest_controller
-            .sync_with_ingesters(&ingesters_needing_resync, &self.model);
+            .request_reconcile_with_ingesters(&ingesters_needing_resync, &self.model);
 
         self.model.delete_source(&source_uid);
         let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);

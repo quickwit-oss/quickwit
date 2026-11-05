@@ -119,9 +119,12 @@ message GetOrCreateOpenShardsFailure {
 message AdviseResetShardsRequest {
   repeated quickwit.ingest.ShardIds shard_ids = 1;
   string ingester_id = 2;
+  uint32 version = 3;
 }
 
 message AdviseResetShardsResponse {
   repeated quickwit.ingest.ShardIds shards_to_delete = 1;
   repeated quickwit.ingest.ShardIdPositions shards_to_truncate = 2;
+  repeated quickwit.ingest.ShardIds shards_to_force_delete = 3;
+  repeated quickwit.ingest.ShardIds shards_to_keep = 4;
 }

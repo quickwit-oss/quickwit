@@ -29,14 +29,14 @@ use quickwit_common::pretty::PrettySample;
 use quickwit_common::{Progress, rate_limited_warn};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_proto::control_plane::{
-    AdviseResetShardsRequest, AdviseResetShardsResponse, GetOrCreateOpenShardsFailureReason,
-    GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
-    GetOrCreateOpenShardsSuccess,
+    ADVISE_RESET_SHARDS_V2, AdviseResetShardsRequest, AdviseResetShardsResponse,
+    GetOrCreateOpenShardsFailureReason, GetOrCreateOpenShardsRequest,
+    GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest, GetOrCreateOpenShardsSuccess,
 };
 use quickwit_proto::ingest::ingester::{
     AdvertiseShardsRequest, CloseShardsRequest, CloseShardsResponse, IngesterService,
     IngesterStatus, InitShardFailure, InitShardSubrequest, InitShardsRequest, InitShardsResponse,
-    RetainShardsForSource, RetainShardsRequest,
+    RETAIN_SHARDS_V2, RetainShardsForSource, RetainShardsRequest,
 };
 use quickwit_proto::ingest::{
     Shard, ShardIdPosition, ShardIdPositions, ShardIds, ShardPKey, ShardState,
@@ -412,28 +412,32 @@ impl IngestController {
     /// Sends a retain shard request to the given list of ingesters.
     ///
     /// If the request fails, we just log an error.
-    pub(crate) fn sync_with_ingesters(
+    pub(crate) fn request_reconcile_with_ingesters(
         &self,
         ingesters: &BTreeSet<NodeId>,
         model: &ControlPlaneModel,
     ) {
         for ingester in ingesters {
-            self.sync_with_ingester(ingester, model);
+            self.request_reconcile_with_ingester(ingester, model);
         }
     }
 
-    pub(crate) fn sync_with_all_ingesters(&self, model: &ControlPlaneModel) {
+    pub(crate) fn request_reconcile_with_all_ingesters(&self, model: &ControlPlaneModel) {
         let ingesters: Vec<NodeId> = self.ingester_pool.keys();
         for ingester in ingesters {
-            self.sync_with_ingester(&ingester, model);
+            self.request_reconcile_with_ingester(&ingester, model);
         }
     }
 
     /// Syncs the ingester in a fire and forget manner.
     ///
     /// The returned oneshot is just here for unit test to wait for the operation to terminate.
-    fn sync_with_ingester(&self, ingester_id: &NodeId, model: &ControlPlaneModel) -> WaitHandle {
-        info!(ingester = %ingester_id, "sync_with_ingester");
+    fn request_reconcile_with_ingester(
+        &self,
+        ingester_id: &NodeId,
+        model: &ControlPlaneModel,
+    ) -> WaitHandle {
+        info!(ingester = %ingester_id, "request_reconcile_with_ingester");
         let (wait_drop_guard, wait_handle) = WaitHandle::new();
         let Some(ingester) = self.ingester_pool.get(ingester_id) else {
             // TODO: (Maybe) We should mark the ingester as unavailable, and stop advertise its
@@ -441,7 +445,10 @@ impl IngestController {
             warn!("failed to sync with ingester `{ingester_id}`: not available");
             return wait_handle;
         };
-        let mut retain_shards_req = RetainShardsRequest::default();
+        let mut retain_shards_req = RetainShardsRequest {
+            version: RETAIN_SHARDS_V2,
+            ..Default::default()
+        };
         for (source_uid, shard_ids) in &*model.list_shards_for_node(ingester_id) {
             let shards_for_source = RetainShardsForSource {
                 index_uid: Some(source_uid.index_uid.clone()),
@@ -1109,13 +1116,24 @@ impl IngestController {
         request: AdviseResetShardsRequest,
         model: &ControlPlaneModel,
     ) -> AdviseResetShardsResponse {
-        info!(
-            "received advise reset shards request from `{}`",
-            request.ingester_id
-        );
+        let is_reconcile = request.version == ADVISE_RESET_SHARDS_V2;
+
+        if is_reconcile {
+            info!(
+                "received reconcile shards request from `{}`",
+                request.ingester_id
+            );
+        } else {
+            info!(
+                "received advise reset shards request from `{}`",
+                request.ingester_id
+            );
+        }
         debug!(shard_ids=?summarize_shard_ids(&request.shard_ids), "advise reset shards");
 
         let mut shards_to_delete: Vec<ShardIds> = Vec::new();
+        let mut shards_to_force_delete: Vec<ShardIds> = Vec::new();
+        let mut shards_to_keep: Vec<ShardIds> = Vec::new();
         let mut shards_to_truncate: Vec<ShardIdPositions> = Vec::new();
 
         for shard_ids in request.shard_ids {
@@ -1128,16 +1146,24 @@ impl IngestController {
             };
             let Some(shard_entries) = model.get_shards_for_source(&source_uid) else {
                 // The source no longer exists: we can safely delete all the shards.
-                shards_to_delete.push(shard_ids);
+                if is_reconcile {
+                    shards_to_force_delete.push(shard_ids);
+                } else {
+                    shards_to_delete.push(shard_ids);
+                }
                 continue;
             };
             let mut shard_ids_to_delete = Vec::new();
+            let mut shard_ids_to_keep = Vec::new();
             let mut shard_positions_to_truncate = Vec::new();
 
             for shard_id in shard_ids.shard_ids {
                 if let Some(shard_entry) = shard_entries.get(&shard_id) {
                     let publish_position_inclusive = shard_entry.publish_position_inclusive();
 
+                    if is_reconcile {
+                        shard_ids_to_keep.push(shard_id.clone());
+                    }
                     shard_positions_to_truncate.push(ShardIdPosition {
                         shard_id: Some(shard_id),
                         publish_position_inclusive: Some(publish_position_inclusive),
@@ -1145,6 +1171,13 @@ impl IngestController {
                 } else {
                     shard_ids_to_delete.push(shard_id);
                 }
+            }
+            if !shard_ids_to_keep.is_empty() {
+                shards_to_keep.push(ShardIds {
+                    index_uid: Some(source_uid.index_uid.clone()),
+                    source_id: source_uid.source_id.clone(),
+                    shard_ids: shard_ids_to_keep,
+                });
             }
             if !shard_ids_to_delete.is_empty() {
                 shards_to_delete.push(ShardIds {
@@ -1176,12 +1209,14 @@ impl IngestController {
                         })
                 })
                 .collect();
-            debug!(shard_ids_to_delete=?summarize_shard_ids(&shards_to_delete), shards_to_truncate=?shards_to_truncate, "advise reset shards response");
+            debug!(shard_ids_to_delete=?summarize_shard_ids(&shards_to_delete), shard_ids_to_force_delete=?summarize_shard_ids(&shards_to_force_delete), shard_ids_to_keep=?summarize_shard_ids(&shards_to_keep), shards_to_truncate=?shards_to_truncate, "advise reset shards response");
         }
 
         AdviseResetShardsResponse {
             shards_to_delete,
             shards_to_truncate,
+            shards_to_force_delete,
+            shards_to_keep,
         }
     }
 
@@ -3722,7 +3757,7 @@ mod tests {
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_3)),
         );
         let ingester_id = NodeId::from_str("node-1");
-        let wait_handle = controller.sync_with_ingester(&ingester_id, &model);
+        let wait_handle = controller.request_reconcile_with_ingester(&ingester_id, &model);
         wait_handle.wait().await;
         assert_eq!(count_calls.load(Ordering::Acquire), 1);
     }
@@ -3769,6 +3804,7 @@ mod tests {
                     shard_ids: vec![ShardId::from(3)],
                 },
             ],
+            version: 0,
         };
         let advise_reset_shards_response =
             controller.advise_reset_shards(advise_reset_shards_request, &model);
@@ -3797,6 +3833,77 @@ mod tests {
             shard_to_truncate.shard_positions[0].shard_id(),
             ShardId::from(1)
         );
+        assert_eq!(
+            shard_to_truncate.shard_positions[0].publish_position_inclusive(),
+            Position::offset(1337u64)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_ingest_controller_advise_reset_shards_v2() {
+        let metastore = MetastoreServiceClient::mocked();
+        let ingester_pool = IngesterPool::default();
+
+        let controller = IngestController::new(
+            metastore,
+            ingester_pool,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
+        );
+
+        let mut model = ControlPlaneModel::default();
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id_00: SourceId = "test-source-0".into();
+        let source_id_01: SourceId = "test-source-1".into();
+
+        let shards = vec![Shard {
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id_00.clone(),
+            shard_id: Some(ShardId::from(1)),
+            shard_state: ShardState::Open as i32,
+            publish_position_inclusive: Some(Position::offset(1337u64)),
+            ..Default::default()
+        }];
+        model.insert_shards(&index_uid, &source_id_00, shards);
+
+        let advise_reset_shards_request = AdviseResetShardsRequest {
+            ingester_id: "test-ingester".to_string(),
+            shard_ids: vec![
+                ShardIds {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: source_id_00.clone(),
+                    shard_ids: vec![ShardId::from(1), ShardId::from(2)],
+                },
+                ShardIds {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: source_id_01.clone(),
+                    shard_ids: vec![ShardId::from(3)],
+                },
+            ],
+            version: ADVISE_RESET_SHARDS_V2,
+        };
+        let advise_reset_shards_response =
+            controller.advise_reset_shards(advise_reset_shards_request, &model);
+
+        assert_eq!(advise_reset_shards_response.shards_to_keep.len(), 1);
+        let shard_to_keep = &advise_reset_shards_response.shards_to_keep[0];
+        assert_eq!(shard_to_keep.source_id, source_id_00);
+        assert_eq!(shard_to_keep.shard_ids, [ShardId::from(1)]);
+
+        assert_eq!(advise_reset_shards_response.shards_to_delete.len(), 1);
+        let shard_to_delete = &advise_reset_shards_response.shards_to_delete[0];
+        assert_eq!(shard_to_delete.source_id, source_id_00);
+        assert_eq!(shard_to_delete.shard_ids, [ShardId::from(2)]);
+
+        assert_eq!(advise_reset_shards_response.shards_to_force_delete.len(), 1);
+        let shard_to_force_delete = &advise_reset_shards_response.shards_to_force_delete[0];
+        assert_eq!(shard_to_force_delete.source_id, source_id_01);
+        assert_eq!(shard_to_force_delete.shard_ids, [ShardId::from(3)]);
+
+        assert_eq!(advise_reset_shards_response.shards_to_truncate.len(), 1);
+        let shard_to_truncate = &advise_reset_shards_response.shards_to_truncate[0];
+        assert_eq!(shard_to_truncate.source_id, source_id_00);
         assert_eq!(
             shard_to_truncate.shard_positions[0].publish_position_inclusive(),
             Position::offset(1337u64)

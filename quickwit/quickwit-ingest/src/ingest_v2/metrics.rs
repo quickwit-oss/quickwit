@@ -107,9 +107,17 @@ pub(super) static DECOMMISSION_SUCCEEDED: LazyCounter =
 pub(super) static DECOMMISSION_FAILED: LazyCounter =
     lazy_counter!(parent: DECOMMISSION_RESULT_TOTAL, "result" => "failure");
 
-pub(super) static RESET_SHARDS_OPERATIONS_TOTAL: LazyCounter = lazy_counter!(
-        name: "reset_shards_operations_total",
-        description: "Total number of reset shards operations performed.",
+pub(super) static RECONCILE_SHARDS_OPERATIONS_TOTAL: LazyCounter = lazy_counter!(
+        name: "reconcile_shards_operations_total",
+        description: "Total number of reconcile shards operations performed.",
+        subsystem: "ingest",
+);
+
+pub(super) static RECONCILE_SHARDS_UNSAFE_DELETES_TOTAL: LazyCounter = lazy_counter!(
+        name: "reconcile_shards_unsafe_deletes_total",
+        description: "Total number of shards the control plane advised deleting while they held \
+                      unpublished data or were open and not empty. These shards are closed \
+                      instead of deleted.",
         subsystem: "ingest",
 );
 
