@@ -429,8 +429,16 @@ impl IngestController {
         }
     }
 
-    /// Syncs the ingester in a fire and forget manner.
+    /// This is a versioned API. The versioning is necessary as a rollout mechanism.
+    /// V1 of the API instructed an ingester on which shards to truncate, and which to delete,
+    /// a control plane initiated mechanism.
     ///
+    /// V2 combines the logic of RetainShards with the API the ingester calls, AdviseResetShards,
+    /// to form an ingester initiated mechanism.
+    ///
+    /// V2 of RetainShards advises the ingester to call AdviseResetShards to reconcile the ingester
+    /// state with the control plane state. The legacy parts of the request remain for backwards
+    /// compatibility.
     /// The returned oneshot is just here for unit test to wait for the operation to terminate.
     fn request_reconcile_with_ingester(
         &self,
@@ -446,6 +454,9 @@ impl IngestController {
             return wait_handle;
         };
         let mut retain_shards_req = RetainShardsRequest {
+            // V2 advises the ingester to call AdviseResetShards, which will reconcile the shard
+            // state with the control plane.
+            // The legacy RetainShards logic is kept, for any ingesters running an older version.
             version: RETAIN_SHARDS_V2,
             ..Default::default()
         };
@@ -659,7 +670,8 @@ impl IngestController {
         Ok(response)
     }
 
-    /// Calls init shards on the ingesters hosting newly opened shards.
+    /// Opens new shards on ingesters. The shards can't receive data until `advertise_shards` is
+    /// called as well.
     async fn init_shards(
         &self,
         init_shard_subrequests: Vec<InitShardSubrequest>,
@@ -734,6 +746,9 @@ impl IngestController {
         }
     }
 
+    /// Shards have to be opened, and then explicitly acknowledged, in order to be eligible to index
+    /// data. After it's confirmed that a shard was successfully opened on the metastore and
+    /// ingester, it can be marked ready for data.
     async fn advertise_shards(
         &self,
         open_shards_response: &OpenShardsResponse,
@@ -1111,6 +1126,13 @@ impl IngestController {
         Ok(())
     }
 
+    /// This is a versioned API. The versioning is necessary as a rollout mechanism.
+    /// V1 of the API asked the control plane which shards to truncate and which to delete.
+    ///
+    /// V2 returns a complete view of the control plane's state of the ingester - which shards are
+    /// open and should be advertised, truncation positions, and which shards are not in the model.
+    /// Those shards should be deleted.
+    /// Shards for any index that was deleted should be force deleted.
     pub(crate) fn advise_reset_shards(
         &self,
         request: AdviseResetShardsRequest,
@@ -1209,7 +1231,11 @@ impl IngestController {
                         })
                 })
                 .collect();
-            debug!(shard_ids_to_delete=?summarize_shard_ids(&shards_to_delete), shard_ids_to_force_delete=?summarize_shard_ids(&shards_to_force_delete), shard_ids_to_keep=?summarize_shard_ids(&shards_to_keep), shards_to_truncate=?shards_to_truncate, "advise reset shards response");
+            debug!(
+                shard_ids_to_delete=?summarize_shard_ids(&shards_to_delete),
+                shard_ids_to_force_delete=?summarize_shard_ids(&shards_to_force_delete),
+                shard_ids_to_keep=?summarize_shard_ids(&shards_to_keep),
+                shards_to_truncate=?shards_to_truncate, "advise reset shards response");
         }
 
         AdviseResetShardsResponse {

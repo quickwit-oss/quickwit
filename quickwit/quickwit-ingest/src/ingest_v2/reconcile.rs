@@ -56,6 +56,16 @@ pub(super) struct ReconcileShardsTask {
     notify: Arc<Notify>,
 }
 
+/// While ingesters own shards and the data on them, the control plane is the source of truth for
+/// what shards exist, should be open, and their truncation positions (via the metastore). Every
+/// so often, it's necessary to reconcile the ingester state with the control plane's to prevent
+/// drift.
+///
+/// This operation is called ReconcileShards, but repurposes the legacy AdviseResetShards, which was
+/// how ingesters previously communicated with the control plane.
+///
+/// This task runs every RECONCILE_SHARDS_INTERVAL_SECS, or more frequently if the ingester WAL is
+/// under pressure. Those calls will reset the time until the next call.
 impl ReconcileShardsTask {
     pub fn spawn(
         self_node_id: NodeId,
