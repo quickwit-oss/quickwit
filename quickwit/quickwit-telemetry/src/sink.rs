@@ -14,9 +14,10 @@
 
 use std::time::Duration;
 
+use anyhow::{Context, ensure};
 use async_trait::async_trait;
 use reqwest::redirect::Policy;
-use reqwest::{Client, Response};
+use reqwest::{Client, Response, Url};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::debug;
 
@@ -32,29 +33,38 @@ fn telemetry_ingest_api_url() -> String {
     }
 }
 
+fn parse_endpoint(endpoint_str: &str) -> anyhow::Result<Url> {
+    let endpoint = Url::parse(endpoint_str).context("invalid `TELEMETRY_INGEST_API` URL")?;
+    ensure!(
+        matches!(endpoint.scheme(), "http" | "https"),
+        "`TELEMETRY_INGEST_API` must be an HTTP or HTTPS URL"
+    );
+    Ok(endpoint)
+}
+
 #[async_trait]
 pub trait Sink: Send + Sync + 'static {
     async fn send_payload(&self, payload: TelemetryPayload);
 }
 pub struct HttpClient {
     client: Client,
-    endpoint: String,
+    endpoint: Url,
 }
 
 impl HttpClient {
-    pub fn try_new() -> reqwest::Result<Self> {
+    pub fn try_new() -> anyhow::Result<Self> {
+        let endpoint = parse_endpoint(&telemetry_ingest_api_url())?;
         let client = Client::builder()
             .redirect(Policy::limited(3))
             .timeout(Duration::from_secs(10))
             .build()?;
-        Ok(HttpClient {
-            client,
-            endpoint: telemetry_ingest_api_url(),
-        })
+        Ok(HttpClient { client, endpoint })
     }
 
-    pub fn endpoint(&self) -> &str {
-        &self.endpoint
+    /// Returns the scheme, host and port of the endpoint, without the credentials, path or query
+    /// that a custom endpoint may hold, so that it can be logged.
+    pub fn endpoint_origin(&self) -> String {
+        self.endpoint.origin().ascii_serialization()
     }
 }
 
@@ -72,13 +82,30 @@ impl Sink for HttpClient {
         // only logged at the debug level.
         let send_result = self
             .client
-            .post(&self.endpoint)
+            .post(self.endpoint.clone())
             .json(&payload)
             .send()
             .await
             .and_then(Response::error_for_status);
         if let Err(error) = send_result {
             debug!(?error, "failed to send telemetry request");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_endpoint() {
+        assert!(parse_endpoint(DEFAULT_TELEMETRY_INGEST_API_URL).is_ok());
+        assert!(parse_endpoint("http://127.0.0.1:8080/").is_ok());
+        for invalid_endpoint in ["", "telemetry.quickwit.io", "ftp://telemetry.quickwit.io/"] {
+            assert!(
+                parse_endpoint(invalid_endpoint).is_err(),
+                "{invalid_endpoint}"
+            );
         }
     }
 }

@@ -77,7 +77,7 @@ By default, Quickwit sends the data over HTTPS to `telemetry.quickwit.io`, which
 
 For nodes running in the cloud, the country and city are usually those of the data center.
 
-To send the data somewhere else instead, for example to a local HTTP server to see exactly what is sent, set `TELEMETRY_INGEST_API` to a URL before starting Quickwit. Nothing then goes to `telemetry.quickwit.io`, and the relay is bypassed: the receiver gets the requests as Quickwit sends them, unencrypted with an `http://` URL. This does not turn telemetry off.
+To send the data somewhere else instead, for example to a local HTTP server to see exactly what is sent, set `TELEMETRY_INGEST_API` to a URL before starting Quickwit. Nothing then goes to `telemetry.quickwit.io`, and the relay is bypassed: the receiver gets the requests as Quickwit sends them, unencrypted with an `http://` URL. This does not turn telemetry off, but a value that is not an `http://` or `https://` URL does, with a warning.
 
 Releases 0.6.0 to 0.8.x send an older version of this data to the same address: the events other than `install`, each with its time, without the API counts, plus the version, services, OS, architecture, Kubernetes flag, session ID, host hash, number of dropped events, and the metastore, OTLP and Jaeger features. Their AWS Lambda indexer and searcher send `run_command` with only the `aws_lambda` feature.
 

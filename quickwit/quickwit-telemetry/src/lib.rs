@@ -74,7 +74,7 @@ pub fn start_telemetry_loop(
             }
         };
         is_new_install_opt = Some(is_new_install);
-        info!("telemetry to {} is enabled", http_client.endpoint());
+        info!("telemetry to {} is enabled", http_client.endpoint_origin());
         TelemetrySender::new(quickwit_info, http_client)
     });
     let Some(is_new_install) = is_new_install_opt else {

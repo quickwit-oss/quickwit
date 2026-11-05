@@ -147,6 +147,7 @@ pub enum QuickwitFeature {
     Jaeger,
     LambdaLeafSearch,
     Otlp,
+    /// Misspelled as in releases 0.6 to 0.8, so that the key stays the same in every version.
     PostgresqMetastore,
     S3CustomEndpoint,
     S3FlavorDigitalOcean,

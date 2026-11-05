@@ -865,7 +865,7 @@ Disables [telemetry](../telemetry.md) when set to any value, even an empty value
 
 ### TELEMETRY_INGEST_API
 
-Sends [telemetry](../telemetry.md) to this URL instead of `https://telemetry.quickwit.io/`. The URL is used as is, so the data is not encrypted with an `http://` URL. It does not turn telemetry off.
+Sends [telemetry](../telemetry.md) to this URL instead of `https://telemetry.quickwit.io/`. The URL is used as is, so the data is not encrypted with an `http://` URL. It does not turn telemetry off, but a value that is not an `http://` or `https://` URL does, with a warning.
 
 *Example*
 

@@ -8442,6 +8442,7 @@ dependencies = [
 name = "quickwit-telemetry"
 version = "0.9.3"
 dependencies = [
+ "anyhow",
  "async-trait",
  "enum-iterator",
  "hostname",

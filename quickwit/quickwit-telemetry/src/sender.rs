@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use tokio::sync::{Notify, oneshot};
 use tokio::task::JoinHandle;
-use tokio::time::Instant;
+use tokio::time::{Instant, MissedTickBehavior};
 
 use crate::payload::{
     ClientInfo, EventWithTimestamp, QuickwitTelemetryInfo, TELEMETRY_SCHEMA_VERSION,
@@ -159,6 +159,8 @@ fn start_monitor_if_server_running_task(inner: Arc<Inner>) {
         Instant::now() + TELEMETRY_RUNNING_EVENT_INTERVAL,
         TELEMETRY_RUNNING_EVENT_INTERVAL,
     );
+    // One event, not one per missed tick, when the process resumes after a pause.
+    interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
     tokio::spawn(async move {
         loop {
             interval.tick().await;
@@ -194,6 +196,10 @@ mod tests {
             payload.events[0].event,
             TelemetryEvent::Running { .. }
         ));
+
+        tokio::time::advance(TELEMETRY_RUNNING_EVENT_INTERVAL * 3).await;
+        let payload = rx.recv().await.unwrap();
+        assert_eq!(payload.events.len(), 1);
         loop_handle.terminate_telemetry().await;
     }
 

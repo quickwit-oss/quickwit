@@ -55,6 +55,8 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+    env:
+      QW_DISABLE_TELEMETRY: 1
     steps:
       - name: Free disk space
         run: |
