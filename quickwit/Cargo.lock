@@ -3316,7 +3316,7 @@ dependencies = [
 [[package]]
 name = "feuer"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=86efb7fda6a91bf62003d7e8021c5bba608960bb#86efb7fda6a91bf62003d7e8021c5bba608960bb"
+source = "git+https://github.com/PSeitz/feuer?rev=b5af89073def5948ff6e4b2963e7b61a832808e4#b5af89073def5948ff6e4b2963e7b61a832808e4"
 dependencies = [
  "bytes",
  "feuer-historian",
@@ -3331,7 +3331,7 @@ dependencies = [
 [[package]]
 name = "feuer-historian"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=86efb7fda6a91bf62003d7e8021c5bba608960bb#86efb7fda6a91bf62003d7e8021c5bba608960bb"
+source = "git+https://github.com/PSeitz/feuer?rev=b5af89073def5948ff6e4b2963e7b61a832808e4#b5af89073def5948ff6e4b2963e7b61a832808e4"
 dependencies = [
  "feuer-types",
  "rustc-hash",
@@ -3340,7 +3340,7 @@ dependencies = [
 [[package]]
 name = "feuer-memory"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=86efb7fda6a91bf62003d7e8021c5bba608960bb#86efb7fda6a91bf62003d7e8021c5bba608960bb"
+source = "git+https://github.com/PSeitz/feuer?rev=b5af89073def5948ff6e4b2963e7b61a832808e4#b5af89073def5948ff6e4b2963e7b61a832808e4"
 dependencies = [
  "bytes",
  "bytesize",
@@ -3355,7 +3355,7 @@ dependencies = [
 [[package]]
 name = "feuer-storage"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=86efb7fda6a91bf62003d7e8021c5bba608960bb#86efb7fda6a91bf62003d7e8021c5bba608960bb"
+source = "git+https://github.com/PSeitz/feuer?rev=b5af89073def5948ff6e4b2963e7b61a832808e4#b5af89073def5948ff6e4b2963e7b61a832808e4"
 dependencies = [
  "bytes",
  "feuer-historian",
@@ -3375,9 +3375,8 @@ dependencies = [
 [[package]]
 name = "feuer-types"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=86efb7fda6a91bf62003d7e8021c5bba608960bb#86efb7fda6a91bf62003d7e8021c5bba608960bb"
+source = "git+https://github.com/PSeitz/feuer?rev=b5af89073def5948ff6e4b2963e7b61a832808e4#b5af89073def5948ff6e4b2963e7b61a832808e4"
 dependencies = [
- "bytes",
  "bytesize",
  "xxhash-rust",
 ]

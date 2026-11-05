@@ -21,12 +21,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use feuer::Download;
 use quickwit_common::uri::Uri;
 use tokio::io::AsyncRead;
 use tokio::sync::watch;
 
-use super::{FeuerSplitRangeCache, config_for_test};
+use super::{FeuerSplitRangeCache, buffer_for_test, config_for_test};
 use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, OwnedBytes, PutPayload, RamStorageBuilder, Storage, StorageErrorKind,
@@ -304,10 +303,11 @@ async fn test_invalid_download_is_an_error_and_is_not_cached() {
     let cache = FeuerSplitRangeCache::open(&config_for_test(temp_dir.path()))
         .await
         .unwrap();
-    for bytes in [Bytes::new(), Bytes::from_static(b"ab")] {
+    // AlignedBuffer requires a positive length. Reject both short and oversized downloads.
+    for bytes in [Bytes::from_static(b"ab"), Bytes::from_static(b"abcde")] {
         let error = cache
             .get_or_fetch("object".to_owned(), 0..4, |_| async move {
-                Ok(Download::new(bytes))
+                Ok(buffer_for_test(bytes))
             })
             .await
             .unwrap_err();
@@ -315,7 +315,7 @@ async fn test_invalid_download_is_an_error_and_is_not_cached() {
     }
     let bytes = cache
         .get_or_fetch("object".to_owned(), 0..4, |_| async {
-            Ok(Download::new(Bytes::from_static(b"abcd")))
+            Ok(buffer_for_test(b"abcd"))
         })
         .await
         .unwrap();
@@ -489,7 +489,7 @@ async fn test_object_keys_do_not_alias() {
     ] {
         let bytes = cache
             .get_or_fetch(uri.to_owned(), 0..4, move |_| async move {
-                Ok(Download::new(Bytes::from_static(expected)))
+                Ok(buffer_for_test(expected))
             })
             .await
             .unwrap();

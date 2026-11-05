@@ -32,7 +32,7 @@ impl FeuerIoQueues {
         file_name: &'static str,
         cache_name: &'static str,
         fixed_retrieval_equivalent_bytes: Option<u64>,
-    ) -> anyhow::Result<feuer::TieredMemoryDiskCache> {
+    ) -> anyhow::Result<feuer::Cache> {
         let directory = if config.disk_capacity.as_u64() == 0 {
             std::path::Path::new("")
         } else {
@@ -50,39 +50,35 @@ impl FeuerIoQueues {
         });
         let registry: mixtrics::metrics::BoxedRegistry =
             Box::new(crate::split_range_cache::metrics::QuickwitMetricsRegistry { cache_name });
+        let builder = feuer::Cache::builder(cache_config)
+            .with_metrics(&registry)
+            .with_memory_retention_scorer(scorer.clone())
+            .with_disk_retention_scorer(scorer);
         #[cfg(target_os = "linux")]
-        let queues = if config.disk_capacity.as_u64() == 0 {
-            None
+        let builder = if config.disk_capacity.as_u64() == 0 {
+            builder
         } else {
-            Some(
-                self.queues
-                    .get_or_try_init(|| async {
-                        // Creating rings waits for their driver threads. Keep this off Tokio
-                        // workers.
-                        Ok::<_, anyhow::Error>(
-                            tokio::task::spawn_blocking(feuer::IoQueues::new).await??,
-                        )
-                    })
-                    .await?
-                    .clone(),
-            )
+            let queues = self
+                .queues
+                .get_or_try_init(|| async {
+                    // Creating rings waits for their driver threads. Keep this off Tokio
+                    // workers.
+                    Ok::<_, anyhow::Error>(
+                        tokio::task::spawn_blocking(feuer::IoQueues::new).await??,
+                    )
+                })
+                .await?
+                .clone();
+            builder.with_io_queues(queues)
         };
-        #[cfg(not(target_os = "linux"))]
-        let queues = None;
-        Ok(feuer::TieredMemoryDiskCache::open_with_retention_scorer(
-            cache_config,
-            Some(&registry),
-            queues,
-            scorer,
-        )
-        .await?)
+        Ok(builder.open().await?)
     }
 }
 
 /// A Feuer instance storing complete, immutable encoded results.
 /// Keys must include a format version; values for a given key must never change.
 pub struct FeuerCache {
-    cache: Option<feuer::TieredMemoryDiskCache>,
+    cache: Option<feuer::Cache>,
 }
 
 impl FeuerCache {
@@ -122,7 +118,7 @@ impl FeuerCache {
     pub async fn get(&self, key: String) -> Option<OwnedBytes> {
         self.cache
             .as_ref()?
-            .get_object(key)
+            .get(key)
             .await
             .map(crate::stable_deref_bytes::into_owned_bytes)
     }
@@ -134,7 +130,7 @@ impl FeuerCache {
             return false;
         };
         cache
-            .get_or_fetch_object(key, || async {
+            .get_or_fetch(key, || async {
                 Ok::<_, std::convert::Infallible>(Bytes::from_owner(bytes))
             })
             .await
@@ -265,14 +261,17 @@ mod tests {
         // Large objects bypass Feuer's timed small-entry buffer, so disk publication is observable.
         let split_bytes = vec![3; 1 << 20];
         let download_bytes = split_bytes.clone();
-        let bytes = split
-            .get_or_fetch(
-                "same-key".into(),
-                0..split_bytes.len(),
-                move |_| async move { Ok(feuer::Download::new(Bytes::from(download_bytes))) },
-            )
-            .await
-            .unwrap();
+        let bytes =
+            split
+                .get_or_fetch(
+                    "same-key".into(),
+                    0..split_bytes.len(),
+                    move |_| async move {
+                        Ok(crate::split_range_cache::buffer_for_test(download_bytes))
+                    },
+                )
+                .await
+                .unwrap();
         assert_eq!(bytes.as_ref(), split_bytes);
         let partial_bytes = vec![1; 1 << 20];
         let predicate_bytes = vec![2; 1 << 20];

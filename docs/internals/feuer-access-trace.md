@@ -15,22 +15,27 @@ and an approximate wall-clock start time captured **before** trace attachment.
 Look for `Feuer access trace enabled` and `Feuer access trace batch uploaded` logs.
 
 Packages are uploaded unchanged, without compression or sampling, in Feuer's
-[FETR v2 format](https://github.com/PSeitz/feuer/blob/965bfcb000bf4f9ce19f0bd715c8f8b0337e1095/access-trace.md).
+[FETR v1 format at Feuer b5af890](https://github.com/PSeitz/feuer/blob/b5af89073def5948ff6e4b2963e7b61a832808e4/access-trace.md).
 Each package has an eight-byte header followed by 41-byte events. Successful
 outcomes record the object payload length. Records contain no byte ranges.
 Request IDs are local to a run. Keep run directories separate. Only accesses
 reaching Feuer are traced. Callback outcomes can share a coalesced download and
 are not S3 GET counts. Each exact split slice is a separate whole-object key.
+Subranges of a coalesced download are copied into independent allocations and
+charged by payload length. An exclusively owned whole buffer moves into the
+cache without copying and is charged by capacity.
 Hashes include the URI and slice bounds, and payload lengths describe the
 requested slices. Trace records cannot reconstruct the original split bounds.
-FETR v1 captures use a different layout and must be decoded by version.
+Feuer now uses the v1 header for whole-object events. Older range-based v1
+captures have a different layout. Select the decoder using the producer revision
+as well as the header.
 Object hashes are not anonymized. Keep exports private.
 
 Feuer emits serial packages at 8 MiB, or drains the tail after all traced handles
 are dropped. **There is no timed or explicit flush.** Idle partial batches can
 remain buffered indefinitely. Upload errors retry the same key and payload every
 five seconds, in addition to storage-client retries. Slow uploads fill Feuer's
-65,536-event queue and backpressure lookups. Trace buffers are outside cache
+262,144-event queue and backpressure lookups. Trace buffers are outside cache
 capacity.
 
 Dropping handles schedules delivery but does not wait for uploads. Quickwit's

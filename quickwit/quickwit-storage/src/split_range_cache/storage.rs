@@ -21,7 +21,7 @@ use std::{fmt, io};
 use async_trait::async_trait;
 use bytes::Bytes;
 use fail::fail_point;
-use feuer::{Download, GetOrFetchError};
+use feuer::{AlignedBuffer, GetOrFetchError};
 use quickwit_common::uri::Uri;
 use tokio::io::AsyncRead;
 use tracing::error;
@@ -42,14 +42,14 @@ impl FeuerSplitRangeCache {
     ) -> StorageResult<Bytes>
     where
         F: FnOnce(Range<usize>) -> Fut + Send + 'static,
-        Fut: Future<Output = StorageResult<Download>> + Send + 'static,
+        Fut: Future<Output = StorageResult<AlignedBuffer>> + Send + 'static,
     {
         // Each exact split slice is a complete object to Feuer. Version the key so
         // persisted entries from the range API cannot be mistaken for whole objects.
         let cache_key = split_slice_key(&object_uri, &byte_range);
         let shared_download = self.downloads.share_download(&cache_key);
         self.cache
-            .get_or_fetch_object_with_allocation_charge(cache_key, || async {
+            .get_or_fetch(cache_key, || async move {
                 let (downloaded_range, download) = shared_download
                     .get_or_init(|| {
                         self.downloads
@@ -57,14 +57,24 @@ impl FeuerSplitRangeCache {
                     })
                     .clone()
                     .await?;
-                // The coalescer validates the merged download's length. Each entry exposes
-                // only this slice but retains and charges for the full backing allocation.
+                // Release the completed future so an unshared whole buffer can move into Feuer.
+                drop(shared_download);
+                let download = if byte_range == downloaded_range {
+                    match Arc::try_unwrap(download) {
+                        Ok(buffer) => {
+                            return Ok::<feuer::BytesAndMemoryCharge, StorageError>(
+                                buffer.into_inner().unwrap().into(),
+                            );
+                        }
+                        Err(download) => download,
+                    }
+                } else {
+                    download
+                };
+                // Each subrange owns its bytes instead of retaining the coalesced allocation.
                 let start = byte_range.start - downloaded_range.start;
                 let end = byte_range.end - downloaded_range.start;
-                Ok::<_, StorageError>((
-                    download.bytes().slice(start..end),
-                    download.allocation_charge(),
-                ))
+                Ok(Bytes::copy_from_slice(&download.lock().unwrap().as_ref()[start..end]).into())
             })
             .await
             .map_err(|error| match error {
@@ -143,7 +153,7 @@ impl Storage for FeuerSplitRangeStorage {
                 inner
                     .get_slice_into(&owned_path, fetch_range, buffer.as_mut_slice())
                     .await?;
-                Ok(buffer.into_download())
+                Ok(buffer)
             })
             .await
             .map(into_owned_bytes)

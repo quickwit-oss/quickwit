@@ -30,7 +30,7 @@ use crate::{FeuerIoQueues, StorageResolver};
 /// Process-wide Feuer cache for exact slices of immutable split objects.
 /// Each slice uses the whole-object API; cached slices cannot cover other requests.
 pub struct FeuerSplitRangeCache {
-    cache: feuer::TieredMemoryDiskCache,
+    cache: feuer::Cache,
     downloads: DownloadCoalescer,
 }
 
@@ -52,7 +52,7 @@ impl FeuerSplitRangeCache {
         Ok(cache)
     }
 
-    /// Open `split_cache` in the resolved directory with explicit disk and memory capacities.
+    /// Open `split_cache` with explicit capacities. Memory-only caches need no directory.
     pub async fn open(config: &DiskCacheConfig) -> anyhow::Result<Self> {
         let queues = FeuerIoQueues::default();
         Self::open_with_io_queues(config, &queues).await
@@ -71,6 +71,25 @@ impl FeuerSplitRangeCache {
             downloads: DownloadCoalescer::default(),
         })
     }
+}
+
+#[cfg(test)]
+#[test]
+fn test_memory_only_range_cache_needs_no_directory_or_runtime() {
+    let config = DiskCacheConfig {
+        path: None,
+        disk_capacity: bytesize::ByteSize::b(0),
+        memory_capacity: bytesize::ByteSize::mb(1),
+    };
+    futures::executor::block_on(FeuerSplitRangeCache::open(&config)).unwrap();
+}
+
+#[cfg(test)]
+pub(crate) fn buffer_for_test(bytes: impl AsRef<[u8]>) -> feuer::AlignedBuffer {
+    let bytes = bytes.as_ref();
+    let mut buffer = feuer::AlignedBuffer::allocate_zeroed(bytes.len()).unwrap();
+    buffer.as_mut_slice().copy_from_slice(bytes);
+    buffer
 }
 
 #[cfg(all(test, target_os = "linux"))]

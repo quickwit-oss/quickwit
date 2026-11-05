@@ -18,7 +18,7 @@ use std::ops::Range;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::Duration;
 
-use feuer::Download;
+use feuer::AlignedBuffer;
 use futures::FutureExt;
 use futures::future::{BoxFuture, Shared, WeakShared};
 
@@ -30,7 +30,8 @@ const BATCH_WINDOW: Duration = Duration::from_millis(1);
 const CLEANUP_INTERVAL: usize = 1024;
 
 // Feuer stores complete objects; retain the split offset alongside the shared download.
-type DownloadFuture = Shared<BoxFuture<'static, StorageResult<(Range<usize>, Download)>>>;
+type DownloadFuture =
+    Shared<BoxFuture<'static, StorageResult<(Range<usize>, Arc<Mutex<AlignedBuffer>>)>>>;
 
 #[derive(Default)]
 pub(super) struct DownloadCoalescer {
@@ -62,7 +63,8 @@ impl Pending {
 struct Batch {
     state: Arc<Mutex<BatchState>>,
     // Only callers own the download future. Dropping the last caller cancels it.
-    future: WeakShared<BoxFuture<'static, StorageResult<(Range<usize>, Download)>>>,
+    future:
+        WeakShared<BoxFuture<'static, StorageResult<(Range<usize>, Arc<Mutex<AlignedBuffer>>)>>>,
 }
 
 struct BatchState {
@@ -101,7 +103,7 @@ impl DownloadCoalescer {
     ) -> DownloadFuture
     where
         F: FnOnce(Range<usize>) -> Fut + Send + 'static,
-        Fut: Future<Output = StorageResult<Download>> + Send + 'static,
+        Fut: Future<Output = StorageResult<AlignedBuffer>> + Send + 'static,
     {
         let mut pending = self.pending.lock().unwrap();
         // Reclaim weak entries left behind by completed or cancelled requests,
@@ -145,13 +147,14 @@ impl DownloadCoalescer {
                 state.range.clone()
             };
             let download = fetch(range.clone()).await?;
-            if download.bytes().len() != range.len() {
+            if download.as_ref().len() != range.len() {
                 return Err(StorageErrorKind::Internal.with_error(anyhow::anyhow!(
                     "range download returned {} bytes for {range:?}",
-                    download.bytes().len()
+                    download.as_ref().len()
                 )));
             }
-            Ok((range, download))
+            // AlignedBuffer is Send but not Sync. Waiters only borrow it while copying.
+            Ok((range, Arc::new(Mutex::new(download))))
         }
         .boxed()
         .shared();
@@ -166,10 +169,10 @@ impl DownloadCoalescer {
 
 #[cfg(test)]
 mod tests {
-    use bytes::Bytes;
     use tokio::sync::watch;
 
     use super::*;
+    use crate::split_range_cache::buffer_for_test;
 
     const MIB: usize = 1024 * 1024;
 
@@ -179,9 +182,9 @@ mod tests {
     }
 
     impl FetchProbe {
-        async fn fetch(self, range: Range<usize>) -> StorageResult<Download> {
+        async fn fetch(self, range: Range<usize>) -> StorageResult<AlignedBuffer> {
             self.reads.lock().unwrap().push(range.clone());
-            Ok(Download::new(Bytes::from(vec![7; range.len()])))
+            Ok(buffer_for_test(vec![7; range.len()]))
         }
 
         fn ranges(&self) -> Vec<Range<usize>> {
@@ -208,7 +211,7 @@ mod tests {
             let (first, second) = tokio::join!(first, second);
             for (range, download) in [first.unwrap(), second.unwrap()] {
                 assert_eq!(range, 10..MIB + 30);
-                assert_eq!(download.bytes().len(), MIB + 20);
+                assert_eq!(download.lock().unwrap().as_ref().len(), MIB + 20);
             }
             assert_eq!(probe.ranges(), vec![10..MIB + 30]);
         }
@@ -260,7 +263,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(range, 0..9 * MIB);
-        assert_eq!(download.bytes().len(), 9 * MIB);
+        assert_eq!(download.lock().unwrap().as_ref().len(), 9 * MIB);
     }
 
     #[tokio::test(start_paused = true)]
@@ -269,7 +272,7 @@ mod tests {
         let (gate_tx, mut gate_rx) = watch::channel(false);
         let mut first = coalescer.get_or_create("object".into(), 10..20, move |range| async move {
             gate_rx.wait_for(|open| *open).await.unwrap();
-            Ok(Download::new(Bytes::from(vec![7; range.len()])))
+            Ok(buffer_for_test(vec![7; range.len()]))
         });
         assert!(futures::poll!(&mut first).is_pending());
         tokio::time::advance(Duration::from_millis(10)).await;
@@ -286,10 +289,10 @@ mod tests {
         gate_tx.send(true).unwrap();
         let (range, download) = covered.await.unwrap();
         assert_eq!(range, 10..20);
-        assert_eq!(download.bytes().len(), 10);
+        assert_eq!(download.lock().unwrap().as_ref().len(), 10);
         let (range, download) = separate.await.unwrap();
         assert_eq!(range, 21..30);
-        assert_eq!(download.bytes().len(), 9);
+        assert_eq!(download.lock().unwrap().as_ref().len(), 9);
         assert_eq!(probe.ranges(), vec![21..30]);
     }
 
@@ -299,7 +302,7 @@ mod tests {
         let (gate_tx, mut gate_rx) = watch::channel(false);
         let mut first = coalescer.get_or_create("object".into(), 10..20, move |range| async move {
             gate_rx.wait_for(|open| *open).await.unwrap();
-            Ok(Download::new(Bytes::from(vec![7; range.len()])))
+            Ok(buffer_for_test(vec![7; range.len()]))
         });
         let second = coalescer.get_or_create("object".into(), 30..40, |_| async {
             panic!("nearby request should share the pending download")
@@ -343,7 +346,7 @@ mod tests {
             } else {
                 let (range, download) = second.await.unwrap();
                 assert_eq!(range, 10..40);
-                assert_eq!(download.bytes().len(), 30);
+                assert_eq!(download.lock().unwrap().as_ref().len(), 30);
                 assert_eq!(probe.ranges(), vec![10..40]);
             }
         }
@@ -359,7 +362,7 @@ mod tests {
             let first = coalescer.get_or_create("object".into(), 0..10, move |_| async move {
                 if short_download {
                     // Covering the first request is insufficient for the merged 0..30 range.
-                    Ok(Download::new(Bytes::from(vec![0; 10])))
+                    Ok(buffer_for_test([0; 10]))
                 } else {
                     Err(StorageErrorKind::NotFound.with_error(anyhow::anyhow!("missing")))
                 }
@@ -381,57 +384,111 @@ mod tests {
         }
     }
 
-    #[cfg(target_os = "linux")]
     #[tokio::test]
-    async fn test_exact_slices_charge_shared_allocation_per_entry() {
+    async fn test_slice_ownership_and_memory_charge() {
         use metrics_util::debugging::{DebugValue, DebuggingRecorder};
 
-        use crate::split_range_cache::{FeuerSplitRangeCache, config_for_test};
+        use crate::split_range_cache::FeuerSplitRangeCache;
+        use crate::split_range_cache::metrics::QuickwitMetricsRegistry;
 
-        let recorder = DebuggingRecorder::new();
-        let snapshotter = recorder.snapshotter();
-        let _guard = ::metrics::set_default_local_recorder(&recorder);
-        let temp_dir = tempfile::tempdir().unwrap();
-        let cache = FeuerSplitRangeCache::open(&config_for_test(temp_dir.path()))
-            .await
-            .unwrap();
-        let mut buffer = cache.cache.allocate_buffer(4).unwrap();
-        buffer.as_mut_slice().copy_from_slice(b"bcde");
-        let download = buffer.into_download();
-        let allocation_charge = download.allocation_charge();
-        assert!(allocation_charge > download.bytes().len());
-        let fetched_download = download.clone();
-        let first = cache.get_or_fetch("object".into(), 1..2, move |range| async move {
-            assert_eq!(range, 1..5);
-            Ok(fetched_download)
-        });
-        let second = cache.get_or_fetch("object".into(), 4..5, |_| async {
-            panic!("second callback must share the merged download")
-        });
-        let (first, second) = tokio::join!(first, second);
-        for (range, bytes) in [(1..2, first.unwrap()), (4..5, second.unwrap())] {
-            let expected = download.bytes().slice(range.start - 1..range.end - 1);
-            assert_eq!(bytes, expected);
-            assert_eq!(bytes.as_ptr(), expected.as_ptr());
-            let hit = cache
-                .get_or_fetch("object".into(), range, |_| async {
-                    panic!("exact slice must hit memory")
-                })
-                .await
+        for coalesced in [false, true] {
+            let recorder = DebuggingRecorder::new();
+            let snapshotter = recorder.snapshotter();
+            let _guard = ::metrics::set_default_local_recorder(&recorder);
+            let registry: mixtrics::metrics::BoxedRegistry = Box::new(QuickwitMetricsRegistry {
+                cache_name: "split_range",
+            });
+            // Exclude idle buffers so this metric measures only cached entry charges.
+            let config = feuer::CacheConfig::new("", 0, 8 * MIB as u64)
+                .unwrap()
+                .with_idle_buffer_pool_percent(0)
                 .unwrap();
-            assert_eq!(hit.as_ptr(), bytes.as_ptr());
+            let cache = FeuerSplitRangeCache {
+                cache: feuer::Cache::builder(config)
+                    .with_metrics(&registry)
+                    .open()
+                    .await
+                    .unwrap(),
+                downloads: DownloadCoalescer::default(),
+            };
+            let mut buffer = cache.cache.allocate_buffer(4).unwrap();
+            buffer.as_mut_slice().copy_from_slice(b"bcde");
+            let source_address = buffer.as_ref().as_ptr() as usize;
+            let capacity = buffer.capacity();
+            assert!(capacity > 4);
+            let first_range = if coalesced { 1..2 } else { 1..5 };
+            let first = cache.get_or_fetch(
+                "object".into(),
+                first_range.clone(),
+                move |range| async move {
+                    assert_eq!(range, 1..5);
+                    Ok(buffer)
+                },
+            );
+            let second = async {
+                if coalesced {
+                    cache
+                        .get_or_fetch("object".into(), 4..5, |_| async {
+                            panic!("second callback must share the merged download")
+                        })
+                        .await
+                        .unwrap()
+                } else {
+                    bytes::Bytes::new()
+                }
+            };
+            let (first, second) = tokio::join!(first, second);
+            let mut entries = vec![(first_range, first.unwrap())];
+            if coalesced {
+                entries.push((4..5, second));
+            }
+            for (range, bytes) in entries {
+                assert_eq!(&bytes[..], &b"bcde"[range.start - 1..range.end - 1]);
+                if coalesced {
+                    assert_ne!(bytes.as_ptr() as usize, source_address + range.start - 1);
+                } else {
+                    assert_eq!(bytes.as_ptr() as usize, source_address);
+                }
+                let hit = cache
+                    .get_or_fetch("object".into(), range, |_| async {
+                        panic!("exact slice must hit memory")
+                    })
+                    .await
+                    .unwrap();
+                assert_eq!(hit.as_ptr(), bytes.as_ptr());
+            }
+            let metrics = snapshotter.snapshot().into_vec();
+            let charged_bytes = &metrics
+                .iter()
+                .find(|(key, _, _, _)| key.key().name() == "feuer_memory_used_bytes")
+                .unwrap()
+                .3;
+            let expected_charge = if coalesced { 2 } else { capacity };
+            assert_eq!(
+                charged_bytes,
+                &DebugValue::Gauge((expected_charge as f64).into())
+            );
+            if coalesced {
+                let used_buffers: Vec<_> = metrics
+                    .iter()
+                    .filter(|(key, _, _, _)| {
+                        key.key().name() == "feuer_io_buffer_pool_bytes"
+                            && key
+                                .key()
+                                .labels()
+                                .any(|label| label.key() == "status" && label.value() == "used")
+                    })
+                    .collect();
+                assert!(!used_buffers.is_empty());
+                for (_, _, _, bytes) in used_buffers {
+                    assert_eq!(
+                        bytes,
+                        &DebugValue::Gauge(0.0.into()),
+                        "coalesced buffer must be released"
+                    );
+                }
+            }
         }
-        let charged_bytes = snapshotter
-            .snapshot()
-            .into_vec()
-            .into_iter()
-            .find(|(key, _, _, _)| key.key().name() == "feuer_memory_used_bytes")
-            .unwrap()
-            .3;
-        assert_eq!(
-            charged_bytes,
-            DebugValue::Gauge(((2 * allocation_charge) as f64).into())
-        );
     }
 
     #[cfg(target_os = "linux")]

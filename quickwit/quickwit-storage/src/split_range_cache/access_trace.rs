@@ -35,7 +35,7 @@ pub(super) async fn open_run(
     let run = PathBuf::from(ulid::Ulid::generate().to_string());
     let manifest = serde_json::json!({
         "format": "FETR",
-        "version": 2,
+        "version": 1,
         "run": run,
         "unix_start_ns": SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos().to_string(),
         "node": std::env::var("QW_NODE_ID").ok(),
@@ -57,11 +57,7 @@ pub(super) async fn open_run(
     Ok((storage, run))
 }
 
-pub(super) fn attach(
-    cache: feuer::TieredMemoryDiskCache,
-    storage: Arc<dyn Storage>,
-    run: PathBuf,
-) -> feuer::TieredMemoryDiskCache {
+pub(super) fn attach(cache: feuer::Cache, storage: Arc<dyn Storage>, run: PathBuf) -> feuer::Cache {
     let mut sequence = 0u64;
     cache.with_trace(move |package| {
         let storage = storage.clone();
@@ -122,7 +118,7 @@ mod tests {
             let bytes = storage.get_all(&run.join("manifest.json")).await.unwrap();
             let manifest: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
             assert_eq!(manifest["format"], "FETR");
-            assert_eq!(manifest["version"], 2);
+            assert_eq!(manifest["version"], 1);
             assert_eq!(manifest["run"], run.to_str().unwrap());
             assert_eq!(manifest["cache"], serde_json::to_value(config()).unwrap());
             assert!(
@@ -159,7 +155,7 @@ mod tests {
                 .returning(move |path, payload| {
                     assert_eq!(path, Path::new("run/000000000000.feuer"));
                     let bytes = futures::executor::block_on(payload.read_all()).unwrap();
-                    assert_eq!(&bytes[..], b"FETR\x02\0\0\0package");
+                    assert_eq!(&bytes[..], b"FETR\x01\0\0\0package");
                     attempts += 1;
                     if attempts <= failures {
                         return Err(StorageErrorKind::Io
@@ -170,7 +166,7 @@ mod tests {
             upload(
                 Arc::new(storage),
                 PathBuf::from("run/000000000000.feuer"),
-                Bytes::from_static(b"FETR\x02\0\0\0package"),
+                Bytes::from_static(b"FETR\x01\0\0\0package"),
             )
             .await;
         }
@@ -179,9 +175,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_native_callback_exports_miss_hit_error_and_tail() {
-        use feuer::Download;
-
-        use crate::split_range_cache::FeuerSplitRangeCache;
+        use crate::split_range_cache::{FeuerSplitRangeCache, buffer_for_test};
 
         let (sender, receiver) = tokio::sync::oneshot::channel();
         let mut storage = MockStorage::new();
@@ -199,7 +193,7 @@ mod tests {
         cache.cache = attach(cache.cache, Arc::new(storage), PathBuf::from("run"));
         cache
             .get_or_fetch("object".into(), 0..4, |_| async {
-                Ok(Download::new(Bytes::from_static(b"data")))
+                Ok(buffer_for_test(b"data"))
             })
             .await
             .unwrap();
@@ -222,7 +216,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(&bytes[..8], b"FETR\x02\0\0\0");
+        assert_eq!(&bytes[..8], b"FETR\x01\0\0\0");
         let records: Vec<_> = bytes[8..].chunks_exact(41).collect();
         assert_eq!(bytes.len(), 8 + 6 * 41);
         assert_eq!(

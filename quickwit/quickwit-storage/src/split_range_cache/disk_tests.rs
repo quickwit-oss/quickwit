@@ -14,12 +14,10 @@
 
 use std::time::Duration;
 
-use bytes::Bytes;
 use bytesize::ByteSize;
-use feuer::Download;
 use metrics_util::debugging::{DebugValue, DebuggingRecorder};
 
-use super::{FeuerSplitRangeCache, config_for_test};
+use super::{FeuerSplitRangeCache, buffer_for_test, config_for_test};
 use crate::StorageErrorKind;
 
 #[tokio::test]
@@ -37,7 +35,7 @@ async fn test_disk_hit_after_memory_pressure() {
         .get_or_fetch("object".to_owned(), 0..512 * 1024, |_| async {
             let mut bytes = vec![0; 512 * 1024];
             bytes[..4].copy_from_slice(b"data");
-            Ok(Download::new(Bytes::from(bytes)))
+            Ok(buffer_for_test(bytes))
         })
         .await
         .unwrap();
@@ -72,7 +70,7 @@ async fn test_disk_hit_after_memory_pressure() {
         for index in 0..1024 {
             cache
                 .get_or_fetch(format!("pressure-{index}"), 0..1024 * 1024, |_| async {
-                    Ok(Download::new(Bytes::from(vec![0; 1024 * 1024])))
+                    Ok(buffer_for_test(vec![0; 1024 * 1024]))
                 })
                 .await
                 .unwrap();
