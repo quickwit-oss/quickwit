@@ -1312,6 +1312,8 @@ async fn test_leaf_search_fails_when_warmup_exceeds_split_max_allocation() {
         split_error.contains("out of warmup memory"),
         "unexpected split error: {split_error}"
     );
+    // Running out of warmup memory is not retried on another searcher.
+    assert!(!leaf_search_response.failed_splits[0].retryable_error);
 }
 
 #[tokio::test]

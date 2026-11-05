@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking**: `ingest_api.max_decompressed_body_size` must be between `ingest_api.max_body_size` and 4 GiB; node configs outside this range now fail validation at startup. Configs that set `content_length_limit` (or `max_body_size`) above 256 MiB must also raise `max_decompressed_body_size`.
 - `searcher.warmup_memory_budget` is now a hard limit: split searches reserve memory before downloading their warmup data, and fail instead of going over the budget
 - `searcher.warmup_single_split_initial_allocation` above `searcher.warmup_memory_budget` is now rejected at startup, even without a split cache
+- Leaf searches no longer retry, on another searcher, the splits that failed because their warmup would have gone over `searcher.warmup_memory_budget`
 
 ### Deprecated
 
