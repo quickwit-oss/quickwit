@@ -23,7 +23,7 @@ use crate::error::{ServiceError, ServiceErrorCode};
 include!("../codegen/quickwit/quickwit.cluster.rs");
 
 pub const CLUSTER_PLANE_FILE_DESCRIPTOR_SET: &[u8] =
-    include_bytes!("../codegen/quickwit/cluster_descriptor.bin");
+    include_bytes!(concat!(env!("OUT_DIR"), "/cluster_descriptor.bin"));
 
 pub type ClusterResult<T> = std::result::Result<T, ClusterError>;
 

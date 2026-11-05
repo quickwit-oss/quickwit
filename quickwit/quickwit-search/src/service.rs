@@ -60,7 +60,7 @@ pub struct SearchServiceImpl {
 /// error type that can be converted into an API Error.
 /// The REST API relies directly on the `SearchService`.
 /// Also, it is mockable.
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait SearchService: 'static + Send + Sync {
     /// Root search API.

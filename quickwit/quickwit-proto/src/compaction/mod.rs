@@ -23,7 +23,7 @@ use crate::error::{ServiceError, ServiceErrorCode};
 include!("../codegen/quickwit/quickwit.compaction.rs");
 
 pub const COMPACTION_FILE_DESCRIPTOR_SET: &[u8] =
-    include_bytes!("../codegen/quickwit/compaction_descriptor.bin");
+    include_bytes!(concat!(env!("OUT_DIR"), "/compaction_descriptor.bin"));
 
 pub type CompactionResult<T> = std::result::Result<T, CompactionError>;
 

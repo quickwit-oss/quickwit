@@ -18,17 +18,24 @@ use glob::glob;
 use quickwit_codegen::Codegen;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let out_dir = std::env::var("OUT_DIR")?;
+    let generated_dir = format!("{out_dir}/quickwit");
+    if std::path::Path::new(&generated_dir).try_exists()? {
+        std::fs::remove_dir_all(&generated_dir)?;
+    }
+    std::fs::create_dir_all(&generated_dir)?;
+    let out_dir = PathBuf::from(out_dir);
     // Prost + tonic + Quickwit codegen for control plane, indexing, metastore, ingest and search
     // services.
     //
     // Cluster service.
     let mut prost_config = prost_build::Config::default();
-    prost_config.file_descriptor_set_path("src/codegen/quickwit/cluster_descriptor.bin");
+    prost_config.file_descriptor_set_path(out_dir.join("cluster_descriptor.bin"));
 
     Codegen::builder()
         .with_prost_config(prost_config)
         .with_protos(&["protos/quickwit/cluster.proto"])
-        .with_output_dir("src/codegen/quickwit")
+        .with_output_dir(&generated_dir)
         .with_result_type_path("crate::cluster::ClusterResult")
         .with_error_type_path("crate::cluster::ClusterError")
         .generate_rpc_name_impls()
@@ -37,14 +44,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Compaction service.
     let mut prost_config = prost_build::Config::default();
-    prost_config.file_descriptor_set_path("src/codegen/quickwit/compaction_descriptor.bin");
+    prost_config.file_descriptor_set_path(out_dir.join("compaction_descriptor.bin"));
     prost_config.extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid");
 
     Codegen::builder()
         .with_prost_config(prost_config)
         .with_protos(&["protos/quickwit/compaction.proto"])
         .with_includes(&["protos"])
-        .with_output_dir("src/codegen/quickwit")
+        .with_output_dir(&generated_dir)
         .with_result_type_path("crate::compaction::CompactionResult")
         .with_error_type_path("crate::compaction::CompactionError")
         .generate_rpc_name_impls()
@@ -53,7 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Control plane.
     let mut prost_config = prost_build::Config::default();
-    prost_config.file_descriptor_set_path("src/codegen/quickwit/control_plane_descriptor.bin");
+    prost_config.file_descriptor_set_path(out_dir.join("control_plane_descriptor.bin"));
 
     prost_config
         .extern_path(
@@ -66,7 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_prost_config(prost_config)
         .with_protos(&["protos/quickwit/control_plane.proto"])
         .with_includes(&["protos"])
-        .with_output_dir("src/codegen/quickwit")
+        .with_output_dir(&generated_dir)
         .with_result_type_path("crate::control_plane::ControlPlaneResult")
         .with_error_type_path("crate::control_plane::ControlPlaneError")
         .run()
@@ -76,12 +83,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut prost_config = prost_build::Config::default();
     prost_config
         .bytes(["GetDebugInfoResponse.debug_info_json"])
-        .file_descriptor_set_path("src/codegen/quickwit/developer_descriptor.bin");
+        .file_descriptor_set_path(out_dir.join("developer_descriptor.bin"));
 
     Codegen::builder()
         .with_prost_config(prost_config)
         .with_protos(&["protos/quickwit/developer.proto"])
-        .with_output_dir("src/codegen/quickwit")
+        .with_output_dir(&generated_dir)
         .with_result_type_path("crate::developer::DeveloperResult")
         .with_error_type_path("crate::developer::DeveloperError")
         .generate_rpc_name_impls()
@@ -97,13 +104,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid")
         .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId")
-        .file_descriptor_set_path("src/codegen/quickwit/indexing_descriptor.bin");
+        .file_descriptor_set_path(out_dir.join("indexing_descriptor.bin"));
 
     Codegen::builder()
         .with_prost_config(prost_config)
         .with_protos(&["protos/quickwit/indexing.proto"])
         .with_includes(&["protos"])
-        .with_output_dir("src/codegen/quickwit")
+        .with_output_dir(&generated_dir)
         .with_result_type_path("crate::indexing::IndexingResult")
         .with_error_type_path("crate::indexing::IndexingError")
         .run()
@@ -133,13 +140,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "DeleteQuery.end_timestamp",
             "#[serde(skip_serializing_if = \"Option::is_none\")]",
         )
-        .file_descriptor_set_path("src/codegen/quickwit/metastore_descriptor.bin");
+        .file_descriptor_set_path(out_dir.join("metastore_descriptor.bin"));
 
     Codegen::builder()
         .with_prost_config(prost_config)
         .with_protos(&["protos/quickwit/metastore.proto"])
         .with_includes(&["protos"])
-        .with_output_dir("src/codegen/quickwit")
+        .with_output_dir(&generated_dir)
         .with_result_type_path("crate::metastore::MetastoreResult")
         .with_error_type_path("crate::metastore::MetastoreError")
         .generate_extra_service_methods()
@@ -184,7 +191,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Shard.update_timestamp",
             "#[serde(default = \"super::compatibility_shard_update_timestamp\")]",
         )
-        .file_descriptor_set_path("src/codegen/quickwit/ingest_descriptor.bin");
+        .file_descriptor_set_path(out_dir.join("ingest_descriptor.bin"));
 
     Codegen::builder()
         .with_prost_config(prost_config)
@@ -193,7 +200,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "protos/quickwit/router.proto",
         ])
         .with_includes(&["protos"])
-        .with_output_dir("src/codegen/quickwit")
+        .with_output_dir(&generated_dir)
         .with_result_type_path("crate::ingest::IngestV2Result")
         .with_error_type_path("crate::ingest::IngestV2Error")
         .generate_rpc_name_impls()
@@ -220,7 +227,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut prost_config = prost_build::Config::default();
     prost_config
-        .file_descriptor_set_path("src/codegen/quickwit/search_descriptor.bin")
+        .file_descriptor_set_path(out_dir.join("search_descriptor.bin"))
         .protoc_arg("--experimental_allow_proto3_optional")
         .field_attribute("SearchRequest.priority", "#[serde(default)]")
         .field_attribute("SearchRequest.query_source", "#[serde(default)]")
@@ -239,12 +246,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .type_attribute("SortByValue", "#[derive(Ord, PartialOrd)]")
         .type_attribute("SearchRequest", "#[derive(Hash, Eq)]")
         .type_attribute("PartialHit", "#[derive(Hash, Eq)]")
-        .out_dir("src/codegen/quickwit")
+        .out_dir(&generated_dir)
         .compile_with_config(
             prost_config,
             &[std::path::PathBuf::from("protos/quickwit/search.proto")],
             &[std::path::PathBuf::from("protos")],
         )?;
+
+    for entry in std::fs::read_dir(&generated_dir)? {
+        let entry = entry?;
+        let generated = std::fs::read(entry.path())?;
+        let destination = PathBuf::from("src/codegen/quickwit").join(entry.file_name());
+        if !destination.try_exists()? || std::fs::read(&destination)? != generated {
+            std::fs::write(destination, generated)?;
+        }
+    }
 
     // Jaeger proto
     let protos = find_protos("protos/third-party/jaeger");

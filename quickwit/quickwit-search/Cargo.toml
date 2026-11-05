@@ -19,7 +19,7 @@ fnv = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
 itertools = { workspace = true }
-mockall = { workspace = true }
+mockall = { workspace = true, optional = true }
 pin-project = { workspace = true }
 postcard = { workspace = true }
 prost = { workspace = true }
@@ -50,6 +50,7 @@ quickwit-storage = { workspace = true }
 
 [dev-dependencies]
 assert-json-diff = { workspace = true }
+mockall = { workspace = true }
 proptest = { workspace = true }
 serde_json = { workspace = true }
 
@@ -59,5 +60,5 @@ quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
-testsuite = []
+testsuite = ["dep:mockall"]
 ci-test = []

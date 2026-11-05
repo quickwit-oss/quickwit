@@ -27,7 +27,7 @@ pub use trace_id::{TraceId, TryFromTraceIdError};
 include!("../codegen/quickwit/quickwit.search.rs");
 
 pub const SEARCH_FILE_DESCRIPTOR_SET: &[u8] =
-    include_bytes!("../codegen/quickwit/search_descriptor.bin");
+    include_bytes!(concat!(env!("OUT_DIR"), "/search_descriptor.bin"));
 
 impl SearchRequest {
     pub fn time_range(&self) -> impl std::ops::RangeBounds<i64> {

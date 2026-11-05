@@ -95,7 +95,9 @@ pub use crate::search_job_placer::{Job, SearchJobPlacer};
 pub use crate::search_response_rest::{
     AggregationResults, SearchPlanResponseRest, SearchResponseRest,
 };
-pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
+#[cfg(any(test, feature = "testsuite"))]
+pub use crate::service::MockSearchService;
+pub use crate::service::{SearchService, SearchServiceImpl};
 
 /// A searcher pool entry: stable cluster identity plus the client used to dial it.
 ///
