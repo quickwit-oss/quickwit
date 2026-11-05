@@ -201,15 +201,14 @@ mod tests {
             .into_vec()
             .into_iter()
             .filter(|(key, _, _, _)| key.key().name() == "feuer_memory_capacity_bytes")
-            .map(|(key, _, _, value)| {
-                let cache_name = key
-                    .key()
-                    .labels()
-                    .find(|label| label.key() == "cache")
-                    .unwrap()
-                    .value()
-                    .to_owned();
-                (cache_name, value)
+            .filter_map(|(key, _, _, value)| {
+                let Some(cache_label) = key.key().labels().find(|label| label.key() == "cache")
+                else {
+                    // Typed metric parents are registered without observations.
+                    assert_eq!(value, DebugValue::Gauge(0.0.into()));
+                    return None;
+                };
+                Some((cache_label.value().to_owned(), value))
             })
             .collect();
         assert_eq!(capacities.len(), 3);

@@ -181,6 +181,11 @@ fn split_slice_key(object_uri: &str, byte_range: &Range<usize>) -> String {
     )
 }
 
+fn should_bypass_cache() -> bool {
+    fail_point!("split-range-cache-before-get", |_| true);
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use metrics_util::debugging::{DebugValue, DebuggingRecorder};
@@ -276,9 +281,9 @@ mod tests {
         let recorder = DebuggingRecorder::new();
         let snapshotter = recorder.snapshotter();
         let _guard = ::metrics::set_default_local_recorder(&recorder);
-        let registry: mixtrics::metrics::BoxedRegistry = Box::new(QuickwitMetricsRegistry {
-            cache_name: "split_range",
-        });
+        let cache_name = "slice_ownership";
+        let registry: mixtrics::metrics::BoxedRegistry =
+            Box::new(QuickwitMetricsRegistry { cache_name });
         // Exclude idle buffers so this metric measures only cached entry charges.
         let config = feuer::CacheConfig::new("", 0, 8 * 1024 * 1024)
             .unwrap()
@@ -311,7 +316,13 @@ mod tests {
         let metrics = snapshotter.snapshot().into_vec();
         let charged_bytes = &metrics
             .iter()
-            .find(|(key, _, _, _)| key.key().name() == "feuer_memory_used_bytes")
+            .find(|(key, _, _, _)| {
+                key.key().name() == "feuer_memory_used_bytes"
+                    && key
+                        .key()
+                        .labels()
+                        .any(|label| label.key() == "cache" && label.value() == cache_name)
+            })
             .unwrap()
             .3;
         assert_eq!(charged_bytes, &DebugValue::Gauge((capacity as f64).into()));
@@ -357,9 +368,4 @@ mod tests {
         }
         assert_ne!(key, "s3://bucket/a.split");
     }
-}
-
-fn should_bypass_cache() -> bool {
-    fail_point!("split-range-cache-before-get", |_| true);
-    false
 }

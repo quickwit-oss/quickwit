@@ -24,10 +24,10 @@ Quickwit exposes metrics for several cache components, including `fastfields`, `
 The `feuer_*` metrics use a `cache` label to identify the instance: `split_range`, `partial_request`, `predicate`, or `list_fields`. The labels below are additional to `cache`:
 
 - Lookups: `feuer_lookup_total{outcome}`, `feuer_lookup_bytes_total{source}`, and `feuer_lookup_duration_seconds{outcome}`. Counters distinguish memory hits, disk hits, callbacks, callback errors, and lookup-only misses. Durations record successful disk hits and callbacks, including callback work. Result-cache lookups use the lookup-only API and report misses separately from callback errors.
-- Memory: `feuer_memory_operations_total{operation}`, `feuer_memory_used_bytes`, `feuer_memory_capacity_bytes`, `feuer_memory_entries`, and `feuer_memory_compacted_payload_bytes_total`.
+- Memory: `feuer_memory_operations_total{operation}`, `feuer_memory_used_bytes`, `feuer_memory_capacity_bytes`, and `feuer_memory_entries`.
 - Disk: lookup counters and hit-only `feuer_disk_lookup_duration_seconds` (only `cache`), `feuer_disk_chunks{state}`, `feuer_disk_payload_bytes`, `feuer_disk_entries`, eviction and batch-byte counters, and `feuer_disk_io_*` metrics. I/O durations record successful operations only.
 
-See [Feuer's metric inventory](https://github.com/PSeitz/feuer/blob/965bfcb000bf4f9ce19f0bd715c8f8b0337e1095/metrics.md) for all names and label values. Concurrent lookups for the same exact key can share one fetch, so `feuer_lookup_total{outcome="callback"}` is not a remote GET count. Object-storage GET counters measure actual remote requests.
+See [Feuer's metric inventory](https://github.com/PSeitz/feuer/blob/b5af89073def5948ff6e4b2963e7b61a832808e4/metrics.md) for all names and label values. Concurrent lookups for the same exact key can share one fetch, so `feuer_lookup_total{outcome="callback"}` is not a remote GET count. Object-storage GET counters measure actual remote requests.
 
 ## CLI Metrics
 
