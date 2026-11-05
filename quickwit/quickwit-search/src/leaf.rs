@@ -2409,6 +2409,9 @@ async fn leaf_search_single_split_wrapper(
             &mut search_permit,
         )
         .await;
+    // A split search that ran out of warmup memory would likely run out of memory again on
+    // another node, and make that node's other searches fail too, so it is not retried.
+    let retryable_error = !search_permit.has_run_out_of_memory();
 
     // Explicitly drop the permit for readability.
     // This should always happen after the ephemeral search cache is dropped. The split's
@@ -2435,7 +2438,7 @@ async fn leaf_search_single_split_wrapper(
         Err(err) => locked_incremental_merge_collector.add_failed_split(SplitSearchError {
             split_id: split.split_id.clone(),
             error: format!("{err}"),
-            retryable_error: true,
+            retryable_error,
         }),
     }
     if let Some(last_hit) = locked_incremental_merge_collector.peek_worst_hit() {

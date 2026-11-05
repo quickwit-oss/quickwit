@@ -477,6 +477,15 @@ impl SearchPermit {
         self.warmup_memory.clone()
     }
 
+    /// Whether this split search failed to reserve warmup memory, because of the warmup memory
+    /// limit.
+    ///
+    /// Running out of memory depends on the query and on the node load, so retrying the split
+    /// search elsewhere is unlikely to help.
+    pub fn has_run_out_of_memory(&self) -> bool {
+        self.warmup_memory.has_run_out_of_memory()
+    }
+
     /// Shrinks the memory reservation to `max_memory_allocation`, but never below the memory in
     /// use. Does nothing if the reservation is already smaller.
     pub fn shrink_memory_allocation(&self, max_memory_allocation: ByteSize) {

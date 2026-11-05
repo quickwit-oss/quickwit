@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Ingest V2 flushes every WAL write to the OS before acknowledging it, instead of keeping the tail of the last write buffered in the process, so acknowledged documents survive an indexer process crash
 - The `quickwit_search_leaf_search_warmup_ongoing_num_bytes` gauge now reports the warmup memory reserved by split searches, including the initial allocation of granted permits, instead of the bytes held in warmup caches once the warmup is done
+- Leaf searches no longer retry, on another searcher, the splits that failed because their warmup would have gone over `searcher.warmup_memory_budget`
 
 ### Deprecated
 
