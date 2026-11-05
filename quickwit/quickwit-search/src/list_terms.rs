@@ -17,6 +17,7 @@ use std::ops::Bound;
 use std::sync::Arc;
 
 use anyhow::Context;
+use bytesize::ByteSize;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use quickwit_common::pretty::PrettySample;
@@ -38,7 +39,7 @@ use crate::cost::compute_split_query_cost;
 use crate::leaf::open_index_with_caches;
 use crate::metrics::{LEAF_LIST_TERMS_SPLITS_TOTAL, LEAF_SEARCH_SPLIT_DURATION_SECS};
 use crate::search_job_placer::group_jobs_by_index_id;
-use crate::search_permit_provider::compute_initial_memory_allocation;
+use crate::search_permit_provider::{SearchPermit, compute_initial_memory_allocation};
 use crate::{ClusterClient, SearchError, SearchJob, SearcherContext, resolve_index_patterns};
 
 /// Performs a distributed list terms.
@@ -218,10 +219,20 @@ async fn leaf_list_terms_single_split(
     search_request: &ListTermsRequest,
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
+    search_permit: &SearchPermit,
 ) -> crate::Result<LeafListTermsResponse> {
     let cache = ByteRangeCache::with_infinite_capacity();
-    let (index, _) =
-        open_index_with_caches(searcher_context, storage, &split, None, Some(cache)).await?;
+    let (index, hot_directory) = open_index_with_caches(
+        searcher_context,
+        storage,
+        &split,
+        None,
+        Some(cache),
+        Some(search_permit.warmup_memory()),
+    )
+    .await?;
+    // Listing terms cannot download more than the index, so we do not need to reserve more.
+    search_permit.shrink_memory_allocation(ByteSize(hot_directory.num_bytes_without_doc_store()));
     let split_schema = index.schema();
     let reader = index
         .reader_builder()
@@ -269,7 +280,9 @@ async fn leaf_list_terms_single_split(
         )
         .read_bytes_async()
         .await
-        .with_context(|| "failed to load sstable range")?;
+        // The cause is part of the message: `SearchError` only keeps the outermost context, and
+        // it can be that the warmup memory limit was exceeded.
+        .map_err(|io_error| anyhow::anyhow!("failed to load sstable range: {io_error}"))?;
 
         let mut range = dict.range();
         if let Some(limit) = search_request.max_hits {
@@ -339,7 +352,9 @@ pub async fn leaf_list_terms(
                 searcher_context
                     .searcher_config
                     .warmup_single_split_initial_allocation,
-            );
+            )
+            // A reservation above the total budget could never acquire a permit.
+            .min(searcher_context.searcher_config.warmup_memory_budget);
             // query_complexity_factor is 1.0 here (no effect) because list_terms doesn't execute
             // the query.
             let job_cost = compute_split_query_cost(split.num_docs, 1.0);
@@ -376,12 +391,15 @@ pub async fn leaf_list_terms(
                     request,
                     index_storage_clone,
                     split.clone(),
+                    &leaf_split_search_permit,
                 )
                 .await;
                 timer.observe_duration();
 
                 // Explicitly drop the permit for readability.
-                // This should always happen after the ephemeral search cache is dropped.
+                // This should always happen after the ephemeral search cache is dropped. The
+                // split's `CachingDirectory` holds the other reference to the warmup memory,
+                // together with the ephemeral search cache, so the warmup memory is freed here.
                 std::mem::drop(leaf_split_search_permit);
 
                 leaf_search_single_split_res.map_err(|err| (split.split_id.clone(), err))
