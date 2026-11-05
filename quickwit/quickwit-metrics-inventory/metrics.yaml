@@ -573,7 +573,7 @@ quickwit_search_leaf_search_targeted_splits:
 quickwit_search_leaf_search_warmup_ongoing_num_bytes:
   module: quickwit_search::metrics
   kind: gauge
-  description: Total bytes currently held in warmup caches across all in-flight split searches.
+  description: Warmup memory currently reserved by split searches, including the initial allocation of granted permits.
 quickwit_search_root_search_request_duration_seconds:
   module: quickwit_search::metrics
   kind: histogram

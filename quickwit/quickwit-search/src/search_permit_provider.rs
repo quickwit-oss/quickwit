@@ -31,6 +31,7 @@ use crate::metrics::{
     LEAF_SEARCH_SINGLE_SPLIT_TASKS_ONGOING, LEAF_SEARCH_SINGLE_SPLIT_TASKS_PENDING,
     SEARCHER_NODE_LOAD,
 };
+use crate::warmup_memory::{GlobalWarmupMemory, WarmupMemoryGuard};
 
 /// Distributor of permits to perform split search operation.
 ///
@@ -78,12 +79,16 @@ pub enum SearchPermitMessage {
         /// permits.
         permit_resp_tx: oneshot::Sender<Vec<SearchPermitFuture>>,
     },
-    UpdateMemory {
-        memory_delta: i64,
-    },
+    /// Sent by the [`GlobalWarmupMemory`] callback each time memory is freed, so that pending
+    /// permits can be granted.
+    ///
+    /// The memory is already freed when this message is sent.
+    MemoryFreed,
     FreeWarmupSlot,
+    /// Sent when a permit is dropped.
+    ///
+    /// The permit memory is freed separately, right after, with a `MemoryFreed` message.
     Drop {
-        memory_size: u64,
         warmup_slot_freed: bool,
     },
 }
@@ -116,13 +121,17 @@ impl SearchPermitProvider {
     pub fn new(num_download_slots: usize, memory_budget: ByteSize) -> Self {
         let (message_sender, message_receiver) = mpsc::unbounded_channel();
         let total_job_cost = Arc::new(AtomicUsize::new(0));
+        let weak_message_sender = message_sender.downgrade();
+        let warmup_memory =
+            GlobalWarmupMemory::with_limit_and_free_callback(memory_budget, move || {
+                send_if_still_running(&weak_message_sender, SearchPermitMessage::MemoryFreed);
+            });
         let actor = SearchPermitActor {
             msg_receiver: message_receiver,
             msg_sender: message_sender.downgrade(),
             num_warmup_slots_available: num_download_slots,
-            total_memory_budget: memory_budget.as_u64(),
+            warmup_memory,
             permits_requests: BinaryHeap::new(),
-            total_memory_allocated: 0u64,
             total_job_cost: total_job_cost.clone(),
         };
         let actor_join_handle = Arc::new(tokio::spawn(actor.run()));
@@ -203,11 +212,16 @@ struct SearchPermitActor {
     msg_receiver: mpsc::UnboundedReceiver<SearchPermitMessage>,
     msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
     num_warmup_slots_available: usize,
-    /// Note it is possible for memory_allocated to exceed memory_budget temporarily,
-    /// if and only if a split leaf search task ended up using more than `initial_allocation`.
-    /// When it happens, new permits will not be assigned until the memory is freed.
-    total_memory_budget: u64,
-    total_memory_allocated: u64,
+    /// Memory reserved by all granted permits.
+    ///
+    /// Permits are granted with [`GlobalWarmupMemory::try_allocate`]. Each time memory is freed,
+    /// the `GlobalWarmupMemory` callback sends a `MemoryFreed` message, so that the actor tries
+    /// again.
+    ///
+    /// Note it is possible for the allocated memory to exceed the limit temporarily, if and only
+    /// if a split leaf search task ended up using more than its initial allocation. When it
+    /// happens, new permits will not be assigned until the memory is freed.
+    warmup_memory: GlobalWarmupMemory,
     /// Sum of [`SplitSearchTaskMetadata::job_cost`] for all queued and active tasks.
     ///
     /// Incremented when a task enters [`Self::permits_requests`], decremented when
@@ -299,11 +313,13 @@ impl LeafPermitRequest {
         )
     }
 
-    fn pop_if_smaller_than(&mut self, max_size: u64) -> Option<SingleSplitPermitRequest> {
-        let peeked_single_split_req = self.single_split_permit_requests.as_slice().first()?;
-        if peeked_single_split_req.permit_size > max_size {
-            return None;
-        }
+    /// Memory required by the next single split permit request.
+    fn next_permit_size(&self) -> Option<u64> {
+        let next_single_split_req = self.single_split_permit_requests.as_slice().first()?;
+        Some(next_single_split_req.permit_size)
+    }
+
+    fn pop_next(&mut self) -> Option<SingleSplitPermitRequest> {
         let permit_request = self.single_split_permit_requests.next()?;
 
         if permit_request.job_cost > self.remaining_job_cost {
@@ -372,69 +388,55 @@ impl SearchPermitActor {
                 self.assign_available_permits();
                 let _ = permit_sender.send(permit_futures);
             }
-            SearchPermitMessage::UpdateMemory { memory_delta } => {
-                if self.total_memory_allocated as i64 + memory_delta < 0 {
-                    panic!("More memory released than allocated, should never happen.")
-                }
-                self.total_memory_allocated =
-                    (self.total_memory_allocated as i64 + memory_delta) as u64;
+            SearchPermitMessage::MemoryFreed => {
                 self.assign_available_permits();
             }
             SearchPermitMessage::FreeWarmupSlot => {
                 self.num_warmup_slots_available += 1;
                 self.assign_available_permits();
             }
-            SearchPermitMessage::Drop {
-                memory_size,
-                warmup_slot_freed,
-            } => {
+            SearchPermitMessage::Drop { warmup_slot_freed } => {
                 // total_job_cost is decremented synchronously in `SearchPermit::Drop`. This eases
                 // testing (no need to wait for the queue to drain to observe the cost was updated)
                 if !warmup_slot_freed {
                     self.num_warmup_slots_available += 1;
                 }
-                self.total_memory_allocated = self
-                    .total_memory_allocated
-                    .checked_sub(memory_size)
-                    .expect("More memory released than allocated, should never happen.");
                 self.assign_available_permits();
             }
         }
     }
 
-    fn pop_next_request_if_serviceable(&mut self) -> Option<SingleSplitPermitRequest> {
+    /// Pops the next request if a warmup slot is available and its memory can be allocated.
+    fn pop_next_request_if_serviceable(
+        &mut self,
+    ) -> Option<(SingleSplitPermitRequest, WarmupMemoryGuard)> {
         if self.num_warmup_slots_available == 0 {
             return None;
         }
-        let available_memory = self
-            .total_memory_budget
-            .checked_sub(self.total_memory_allocated)?;
         let mut peeked = self.permits_requests.peek_mut()?;
-
         assert!(
             !peeked.is_empty(),
             "unexpected empty permits_requests present in the search permit provider queue"
         );
-        if let Some(permit_request) = peeked.pop_if_smaller_than(available_memory) {
-            if peeked.is_empty() {
-                PeekMut::pop(peeked);
-            }
-            return Some(permit_request);
+        let permit_size = peeked.next_permit_size()?;
+        let memory_guard = self.warmup_memory.try_allocate(permit_size).ok()?;
+        let permit_request = peeked.pop_next()?;
+        if peeked.is_empty() {
+            PeekMut::pop(peeked);
         }
-        None
+        Some((permit_request, memory_guard))
     }
 
     fn assign_available_permits(&mut self) {
-        while let Some(permit_request) = self.pop_next_request_if_serviceable() {
+        while let Some((permit_request, memory_guard)) = self.pop_next_request_if_serviceable() {
             let ongoing_gauge_guard = GaugeGuard::new(&LEAF_SEARCH_SINGLE_SPLIT_TASKS_ONGOING, 1.0);
-            self.total_memory_allocated += permit_request.permit_size;
             self.num_warmup_slots_available -= 1;
             permit_request
                 .permit_sender
                 .send(SearchPermit {
                     _ongoing_gauge_guard: ongoing_gauge_guard,
                     msg_sender: self.msg_sender.clone(),
-                    memory_allocation: permit_request.permit_size,
+                    memory_guard,
                     warmup_slot_freed: false,
                     job_cost: permit_request.job_cost,
                     total_job_cost: self.total_job_cost.clone(),
@@ -451,7 +453,8 @@ impl SearchPermitActor {
 pub struct SearchPermit {
     _ongoing_gauge_guard: GaugeGuard,
     msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
-    memory_allocation: u64,
+    /// Memory reserved by this permit in the actor's [`GlobalWarmupMemory`].
+    memory_guard: WarmupMemoryGuard,
     warmup_slot_freed: bool,
     job_cost: usize,
     /// Shared with the actor; decremented in `Drop`.
@@ -469,11 +472,19 @@ impl SearchPermit {
     /// Update the memory usage attached to this permit.
     ///
     /// This will increase or decrease the available memory in the [`SearchPermitProvider`].
+    ///
+    /// Increasing the memory usage never fails, even if the warmup memory limit is exceeded.
     pub fn update_memory_usage(&mut self, new_memory_usage: ByteSize) {
         let new_usage_bytes = new_memory_usage.as_u64();
-        let memory_delta = new_usage_bytes as i64 - self.memory_allocation as i64;
-        self.memory_allocation = new_usage_bytes;
-        self.send_if_still_running(SearchPermitMessage::UpdateMemory { memory_delta });
+        let current_usage_bytes = self.memory_guard.num_bytes();
+        if new_usage_bytes > current_usage_bytes {
+            // Growing cannot unblock a pending permit, so the actor does not need to be woken up.
+            self.memory_guard
+                .grow_unchecked(new_usage_bytes - current_usage_bytes);
+            return;
+        }
+        // The `GlobalWarmupMemory` callback wakes up the actor.
+        self.memory_guard.shrink_to(new_usage_bytes);
     }
 
     /// Drop the warmup permit, allowing more downloads to be started. Only one
@@ -483,25 +494,15 @@ impl SearchPermit {
             return;
         }
         self.warmup_slot_freed = true;
-        self.send_if_still_running(SearchPermitMessage::FreeWarmupSlot);
+        send_if_still_running(&self.msg_sender, SearchPermitMessage::FreeWarmupSlot);
     }
 
     pub fn memory_allocation(&self) -> ByteSize {
-        ByteSize(self.memory_allocation)
+        ByteSize(self.memory_guard.num_bytes())
     }
 
     pub fn job_cost(&self) -> usize {
         self.job_cost
-    }
-
-    fn send_if_still_running(&self, msg: SearchPermitMessage) {
-        if let Some(sender) = self.msg_sender.upgrade() {
-            sender
-                .send(msg)
-                // Receiver instance in the event loop is never dropped or
-                // closed as long as there is a strong sender reference.
-                .expect("Receiver should live longer than sender");
-        }
     }
 }
 
@@ -522,10 +523,28 @@ impl Drop for SearchPermit {
         }
         // fetch_update returns the previous value, so subtract job_cost to get the new total.
         SEARCHER_NODE_LOAD.set(prev.saturating_sub(self.job_cost) as f64);
-        self.send_if_still_running(SearchPermitMessage::Drop {
-            memory_size: self.memory_allocation,
-            warmup_slot_freed: self.warmup_slot_freed,
-        });
+        send_if_still_running(
+            &self.msg_sender,
+            SearchPermitMessage::Drop {
+                warmup_slot_freed: self.warmup_slot_freed,
+            },
+        );
+        // The memory is freed when the `memory_guard` field is dropped, right after this function.
+        // The `GlobalWarmupMemory` callback then wakes up the actor.
+    }
+}
+
+/// Sends `msg` to the actor, unless the actor is stopped.
+fn send_if_still_running(
+    msg_sender: &mpsc::WeakUnboundedSender<SearchPermitMessage>,
+    msg: SearchPermitMessage,
+) {
+    if let Some(sender) = msg_sender.upgrade() {
+        sender
+            .send(msg)
+            // Receiver instance in the event loop is never dropped or
+            // closed as long as there is a strong sender reference.
+            .expect("Receiver should live longer than sender");
     }
 }
 
@@ -807,7 +826,7 @@ mod tests {
             .unwrap();
         drop(permit_fut1);
         let permit = permit_fut2.await;
-        assert_eq!(permit.memory_allocation, ByteSize::mb(10).as_u64());
+        assert_eq!(permit.memory_allocation(), ByteSize::mb(10));
         assert!(!permit_provider.actor_join_handle.is_finished());
 
         let _permit_fut3 = permit_provider
@@ -858,6 +877,52 @@ mod tests {
         permits[1].update_memory_usage(ByteSize::mb(6));
         let next_permit_fut = remaining_permit_futs.next().unwrap();
         try_get(next_permit_fut).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_memory_usage_over_limit_blocks_permits_until_freed() {
+        let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100));
+        let mut first_permit = permit_provider
+            .get_permits(make_splits(10, 1, 5, 0))
+            .await
+            .pop()
+            .unwrap()
+            .await;
+        // The actual memory usage can go over the limit.
+        first_permit.update_memory_usage(ByteSize::mb(150));
+        assert_eq!(first_permit.memory_allocation(), ByteSize::mb(150));
+        let mut pending_permit_futs = permit_provider
+            .get_permits(make_splits(10, 2, 5, 0))
+            .await
+            .into_iter();
+        // While over the limit, no permit is granted, even a small one.
+        let blocked_permit_fut = pending_permit_futs.next().unwrap();
+        try_get(blocked_permit_fut).await.err().unwrap();
+        // Shrinking the memory usage wakes up the actor and unblocks pending permits.
+        first_permit.update_memory_usage(ByteSize::mb(5));
+        let next_permit_fut = pending_permit_futs.next().unwrap();
+        let next_permit = try_get(next_permit_fut).await.unwrap();
+        drop(first_permit);
+        drop(next_permit);
+        let permit_actor = permit_provider.stop_and_unwrap().await;
+        assert_eq!(permit_actor.warmup_memory.allocated(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_all_memory_freed_after_permits_dropped() {
+        let permit_provider = SearchPermitProvider::new(2, ByteSize::mb(100));
+        let permit_futs = permit_provider.get_permits(make_splits(10, 6, 5, 0)).await;
+        // Drop a pending permit future before it is granted.
+        let mut permit_futs = permit_futs.into_iter();
+        drop(permit_futs.next_back());
+        for permit_fut in permit_futs {
+            let mut permit = permit_fut.await;
+            permit.update_memory_usage(ByteSize::mb(3));
+            permit.free_warmup_slot();
+        }
+        let permit_actor = permit_provider.stop_and_unwrap().await;
+        assert_eq!(permit_actor.warmup_memory.allocated(), 0);
+        assert!(permit_actor.permits_requests.is_empty());
     }
 
     #[tokio::test]
