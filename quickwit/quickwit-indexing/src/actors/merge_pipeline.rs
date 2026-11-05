@@ -40,7 +40,7 @@ use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
 
 use super::merge_planner::RunFinalizeMergePolicyAndQuit;
-use super::{MergeExecutor, MergePlanner, MergeSplitDownloader, Packager};
+use super::{MergeExecutor, MergePlanner, MergeSplitDownloader};
 use crate::actors::indexing_pipeline::wait_duration_before_retry;
 use crate::actors::publisher::DisconnectMergePlanner;
 use crate::actors::{MergeSchedulerService, Publisher, Uploader, UploaderType};
@@ -76,7 +76,6 @@ struct MergePipelineHandles {
     merge_planner: ActorHandle<MergePlanner>,
     merge_split_downloader: ActorHandle<MergeSplitDownloader>,
     merge_executor: ActorHandle<MergeExecutor>,
-    merge_packager: ActorHandle<Packager>,
     merge_uploader: ActorHandle<Uploader>,
     merge_publisher: ActorHandle<Publisher>,
     next_check_for_progress: Instant,
@@ -173,7 +172,6 @@ impl MergePipeline {
                 &handles.merge_planner,
                 &handles.merge_split_downloader,
                 &handles.merge_executor,
-                &handles.merge_packager,
                 &handles.merge_uploader,
                 &handles.merge_publisher,
             ];
@@ -293,14 +291,6 @@ impl MergePipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn(merge_uploader);
 
-        // Merge Packager
-        let tag_fields = self.params.doc_mapper.tag_named_fields()?;
-        let merge_packager = Packager::new("MergePackager", tag_fields, merge_uploader_mailbox);
-        let (merge_packager_mailbox, merge_packager_handle) = ctx
-            .spawn_actor()
-            .set_kill_switch(self.kill_switch.clone())
-            .spawn(merge_packager);
-
         let split_downloader_io_controls = IoControls::default()
             .set_throughput_limiter_opt(self.params.merge_io_throughput_limiter_opt.clone())
             .set_component("split_downloader_merge");
@@ -315,7 +305,8 @@ impl MergePipeline {
             self.params.metastore.clone(),
             self.params.doc_mapper.clone(),
             merge_executor_io_controls,
-            merge_packager_mailbox,
+            self.params.doc_mapper.tag_named_fields()?,
+            merge_uploader_mailbox,
             None,
         );
         let (merge_executor_mailbox, merge_executor_handle) = ctx
@@ -359,7 +350,6 @@ impl MergePipeline {
             merge_planner: merge_planner_handle,
             merge_split_downloader: merge_split_downloader_handle,
             merge_executor: merge_executor_handle,
-            merge_packager: merge_packager_handle,
             merge_uploader: merge_uploader_handle,
             merge_publisher: merge_publisher_handle,
             next_check_for_progress: Instant::now() + *HEARTBEAT,
@@ -374,7 +364,6 @@ impl MergePipeline {
                 handles.merge_planner.kill(),
                 handles.merge_split_downloader.kill(),
                 handles.merge_executor.kill(),
-                handles.merge_packager.kill(),
                 handles.merge_uploader.kill(),
                 handles.merge_publisher.kill(),
             );
