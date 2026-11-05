@@ -91,14 +91,14 @@ Quickwit does caching in many places to deliver a highly performing query engine
 
 In memory:
 
-- Split-range caching: Feuer's `storage_cache` retains split footers, hotcache bytes, fast fields, and other split body ranges in one shared cache. Hotcache is static data embedded in each split footer that speeds up opening the split. The range cache defaults to memory-only operation with a 1.5GB budget. When `storage_cache` is omitted or `null`, the legacy `fast_field_cache` and `split_footer_cache` capacities (including their `*_capacity` aliases) are summed, using defaults of `1G` and `500M` for omitted settings. An explicit `storage_cache` overrides those budgets. There are no separate fast-field or footer caches.
+- Split-range caching: `storage_cache` retains split footers, hotcache bytes, fast fields, and other split body ranges in one shared cache. Hotcache is static data embedded in each split footer that speeds up opening the split. The range cache defaults to memory-only operation with a 1.5GB budget. When `storage_cache` is omitted or `null`, the legacy `fast_field_cache` and `split_footer_cache` capacities (including their `*_capacity` aliases) are summed, using defaults of `1G` and `500M` for omitted settings. An explicit `storage_cache` overrides those budgets. There are no separate fast-field or footer caches.
 - Partial-request caching: Similar requests, such as dashboard queries with changing timestamp bounds, can reuse per-split partial results. `partial_request_cache` controls the memory target and optional disk tier.
 - Predicate caching: `predicate_cache` retains predicate hit sets and known-absent terms, with independent memory and optional disk budgets.
-- List-fields caching: Field metadata uses an independent Feuer memory cache with the same memory capacity as `partial_request_cache`.
+- List-fields caching: Field metadata uses an independent memory cache with the same memory capacity as `partial_request_cache`.
 
 On disk:
 
-- The shared range cache can use a disk tier by configuring `storage_cache` with a positive `disk_capacity` and a directory. Set `disk_capacity: 0` for memory-only operation without a directory. Predicate and partial-response caches can also use independent Feuer disk tiers.
+- The shared range cache can use a disk tier by configuring `storage_cache` with a positive `disk_capacity` and a directory. Set `disk_capacity: 0` for memory-only operation without a directory. Predicate and partial-response caches can also use independent disk tiers.
 - The split cache stores entire splits on disk. It can be enabled by setting the `split_cache` configuration fields. This cache can help reduce object store costs and load. Searchers populate this cache when splits are created or queried and evict them with a simple LRU strategy.
 
 Learn more about cache parameters in the [searcher configuration docs](../../configuration/node-config.md#searcher-configuration).
