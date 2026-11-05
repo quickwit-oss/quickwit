@@ -28,7 +28,10 @@ use quickwit_proto::search::{
     ReportSplitsRequest, ReportSplitsResponse, RootResourceStats, ScrollRequest,
     SearchPlanResponse, SearchRequest, SearchResponse, SnippetRequest,
 };
-use quickwit_storage::{FeuerSplitRangeCache, SearchSplitCache, StorageResolver};
+use quickwit_storage::{
+    SearchSplitCache, StorageResolver, open_split_range_cache,
+    open_split_range_cache_with_access_trace,
+};
 use tantivy::aggregation::AggregationLimitsGuard;
 
 use crate::invoker::LambdaLeafSearchInvoker;
@@ -413,7 +416,7 @@ pub struct SearcherContext {
     /// Search split cache. `None` if no split cache is configured.
     pub split_cache_opt: Option<Arc<SearchSplitCache>>,
     /// Process-wide cache for split byte ranges, with optional disk storage.
-    pub storage_cache_opt: Option<Arc<FeuerSplitRangeCache>>,
+    pub storage_cache_opt: Option<Arc<feuer::Cache>>,
     /// List fields cache. Caches the raw fields-metadata blob for a given split.
     pub list_fields_cache: ListFieldsCache,
     /// The aggregation limits are passed to limit the memory usage.
@@ -443,7 +446,7 @@ impl SearcherContext {
     pub fn new_without_invoker(
         searcher_config: SearcherConfig,
         split_cache_opt: Option<Arc<SearchSplitCache>>,
-        storage_cache_opt: Option<Arc<FeuerSplitRangeCache>>,
+        storage_cache_opt: Option<Arc<feuer::Cache>>,
     ) -> Self {
         Self::new(
             searcher_config,
@@ -457,7 +460,7 @@ impl SearcherContext {
     pub fn new(
         searcher_config: SearcherConfig,
         split_cache_opt: Option<Arc<SearchSplitCache>>,
-        storage_cache_opt: Option<Arc<FeuerSplitRangeCache>>,
+        storage_cache_opt: Option<Arc<feuer::Cache>>,
         lambda_invoker: Option<impl LambdaLeafSearchInvoker + 'static>,
     ) -> Self {
         let leaf_search_split_semaphore = SearchPermitProvider::new(
@@ -472,8 +475,11 @@ impl SearcherContext {
                 .map(|config| {
                     // Standalone and Lambda searchers do not run storage-cache initialization.
                     Arc::new(
-                        futures::executor::block_on(FeuerSplitRangeCache::open(&config))
-                            .expect("failed to initialize split range memory cache"),
+                        futures::executor::block_on(open_split_range_cache(
+                            &config,
+                            &quickwit_storage::FeuerIoQueues::default(),
+                        ))
+                        .expect("failed to initialize split range memory cache"),
                     )
                 })
         });
@@ -522,7 +528,7 @@ impl SearcherContext {
         let queues = quickwit_storage::FeuerIoQueues::default();
         if let Some(config) = &split_storage_cache {
             self.storage_cache_opt = Some(Arc::new(
-                FeuerSplitRangeCache::open_with_access_trace(config, resolver, &queues).await?,
+                open_split_range_cache_with_access_trace(config, resolver, &queues).await?,
             ));
         }
         if let Some(config) = &partial_request_storage_cache {

@@ -61,7 +61,8 @@ pub use feuer_cache::{FeuerCache, FeuerIoQueues};
 use quickwit_common::uri::Uri;
 pub use split_cache::SearchSplitCache;
 pub use split_range_cache::{
-    FeuerSplitRangeCache, FeuerSplitRangeStorage, wrap_storage_with_split_range_cache,
+    FeuerSplitRangeStorage, open_split_range_cache, open_split_range_cache_with_access_trace,
+    wrap_storage_with_split_range_cache,
 };
 pub use tantivy::directory::OwnedBytes;
 pub use versioned_component::VersionedComponent;

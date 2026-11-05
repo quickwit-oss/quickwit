@@ -26,56 +26,53 @@ use quickwit_common::uri::Uri;
 use tokio::io::AsyncRead;
 use tracing::error;
 
-use super::FeuerSplitRangeCache;
 use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, OwnedBytes, PutPayload, Storage, StorageError, StorageErrorKind, StorageResult,
 };
 
-impl FeuerSplitRangeCache {
-    pub(crate) async fn get_or_fetch<F, Fut>(
-        &self,
-        object_uri: String,
-        byte_range: Range<usize>,
-        fetch: F,
-    ) -> StorageResult<Bytes>
-    where
-        F: FnOnce(Range<usize>) -> Fut + Send + 'static,
-        Fut: Future<Output = StorageResult<AlignedBuffer>> + Send + 'static,
-    {
-        // Each exact split slice is a complete object to Feuer. Version the key so
-        // persisted entries from the range API cannot be mistaken for whole objects.
-        let cache_key = split_slice_key(&object_uri, &byte_range);
-        self.cache
-            .get_or_fetch(cache_key, || async move {
-                let buffer = fetch(byte_range.clone()).await?;
-                if buffer.as_ref().len() != byte_range.len() {
-                    return Err(StorageErrorKind::Internal.with_error(anyhow::anyhow!(
-                        "range download returned {} bytes for {byte_range:?}",
-                        buffer.as_ref().len()
-                    )));
-                }
-                Ok(buffer)
-            })
-            .await
-            .map_err(|error| match error {
-                GetOrFetchError::Callback(error) => error,
-            })
-    }
+pub(super) async fn get_or_fetch<F, Fut>(
+    cache: &feuer::Cache,
+    object_uri: String,
+    byte_range: Range<usize>,
+    fetch: F,
+) -> StorageResult<Bytes>
+where
+    F: FnOnce(Range<usize>) -> Fut + Send + 'static,
+    Fut: Future<Output = StorageResult<AlignedBuffer>> + Send + 'static,
+{
+    // Each exact split slice is a complete object to Feuer. Version the key so
+    // persisted entries from the range API cannot be mistaken for whole objects.
+    let cache_key = split_slice_key(&object_uri, &byte_range);
+    cache
+        .get_or_fetch(cache_key, || async move {
+            let buffer = fetch(byte_range.clone()).await?;
+            if buffer.as_ref().len() != byte_range.len() {
+                return Err(StorageErrorKind::Internal.with_error(anyhow::anyhow!(
+                    "range download returned {} bytes for {byte_range:?}",
+                    buffer.as_ref().len()
+                )));
+            }
+            Ok(buffer)
+        })
+        .await
+        .map_err(|error| match error {
+            GetOrFetchError::Callback(error) => error,
+        })
 }
 
 /// Read-only storage decorator caching exact slices of immutable split objects.
 #[derive(Clone)]
 pub struct FeuerSplitRangeStorage {
     inner: Arc<dyn Storage>,
-    cache: Arc<FeuerSplitRangeCache>,
+    cache: Arc<feuer::Cache>,
 }
 
 /// Wrap `storage` with a process-wide cache keyed by full object URI and exact byte range.
 /// Covering and overlapping cached slices do not serve different ranges.
 pub fn wrap_storage_with_split_range_cache(
-    cache: Arc<FeuerSplitRangeCache>,
+    cache: Arc<feuer::Cache>,
     storage: Arc<dyn Storage>,
 ) -> Arc<dyn Storage> {
     Arc::new(FeuerSplitRangeStorage {
@@ -128,16 +125,20 @@ impl Storage for FeuerSplitRangeStorage {
         let inner = self.inner.clone();
         let owned_path = path.to_owned();
         let cache = self.cache.clone();
-        self.cache
-            .get_or_fetch(object_uri, byte_range, move |fetch_range| async move {
-                let mut buffer = cache.cache.allocate_buffer(fetch_range.len())?;
+        get_or_fetch(
+            &self.cache,
+            object_uri,
+            byte_range,
+            move |fetch_range| async move {
+                let mut buffer = cache.allocate_buffer(fetch_range.len())?;
                 inner
                     .get_slice_into(&owned_path, fetch_range, buffer.as_mut_slice())
                     .await?;
                 Ok(buffer)
-            })
-            .await
-            .map(into_owned_bytes)
+            },
+        )
+        .await
+        .map(into_owned_bytes)
     }
 
     async fn get_slice_stream(
@@ -188,12 +189,15 @@ mod tests {
     use crate::split_range_cache::buffer_for_test;
     use crate::split_range_cache::metrics::QuickwitMetricsRegistry;
 
-    async fn memory_cache() -> FeuerSplitRangeCache {
-        FeuerSplitRangeCache::open(&quickwit_config::StorageCacheConfig {
-            path: None,
-            disk_capacity: bytesize::ByteSize::b(0),
-            memory_capacity: bytesize::ByteSize::mib(8),
-        })
+    async fn memory_cache() -> feuer::Cache {
+        crate::open_split_range_cache(
+            &quickwit_config::StorageCacheConfig {
+                path: None,
+                disk_capacity: bytesize::ByteSize::b(0),
+                memory_capacity: bytesize::ByteSize::mib(8),
+            },
+            &crate::FeuerIoQueues::default(),
+        )
         .await
         .unwrap()
     }
@@ -236,21 +240,25 @@ mod tests {
         for cancel in [false, true] {
             let cache = memory_cache().await;
             let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-            let mut first =
-                Box::pin(
-                    cache.get_or_fetch("object".into(), 0..4, move |_| async move {
-                        release_rx.await.unwrap();
-                        Ok(buffer_for_test(b"abcd"))
-                    }),
-                );
+            let mut first = Box::pin(get_or_fetch(
+                &cache,
+                "object".into(),
+                0..4,
+                move |_| async move {
+                    release_rx.await.unwrap();
+                    Ok(buffer_for_test(b"abcd"))
+                },
+            ));
             assert!(futures::poll!(first.as_mut()).is_pending());
-            let mut waiter =
-                Box::pin(
-                    cache.get_or_fetch("object".into(), 0..4, move |_| async move {
-                        assert!(cancel, "identical misses must share a successful fetch");
-                        Ok(buffer_for_test(b"abcd"))
-                    }),
-                );
+            let mut waiter = Box::pin(get_or_fetch(
+                &cache,
+                "object".into(),
+                0..4,
+                move |_| async move {
+                    assert!(cancel, "identical misses must share a successful fetch");
+                    Ok(buffer_for_test(b"abcd"))
+                },
+            ));
             assert!(futures::poll!(waiter.as_mut()).is_pending());
             if cancel {
                 drop(first);
@@ -276,33 +284,29 @@ mod tests {
             .unwrap()
             .with_idle_buffer_pool_percent(0)
             .unwrap();
-        let cache = FeuerSplitRangeCache {
-            cache: feuer::Cache::builder(config)
-                .with_metrics(&registry)
-                .open()
-                .await
-                .unwrap(),
-        };
-        let mut buffer = cache.cache.allocate_buffer(4).unwrap();
+        let cache = feuer::Cache::builder(config)
+            .with_metrics(&registry)
+            .open()
+            .await
+            .unwrap();
+        let mut buffer = cache.allocate_buffer(4).unwrap();
         buffer.as_mut_slice().copy_from_slice(b"bcde");
         let source_address = buffer.as_ref().as_ptr() as usize;
         let capacity = buffer.capacity();
         assert!(capacity > 4);
-        let bytes = cache
-            .get_or_fetch("object".into(), 1..5, move |range| async move {
-                assert_eq!(range, 1..5);
-                Ok(buffer)
-            })
-            .await
-            .unwrap();
+        let bytes = get_or_fetch(&cache, "object".into(), 1..5, move |range| async move {
+            assert_eq!(range, 1..5);
+            Ok(buffer)
+        })
+        .await
+        .unwrap();
         assert_eq!(&bytes[..], b"bcde");
         assert_eq!(bytes.as_ptr() as usize, source_address);
-        let hit = cache
-            .get_or_fetch("object".into(), 1..5, |_| async {
-                panic!("exact slice must hit memory")
-            })
-            .await
-            .unwrap();
+        let hit = get_or_fetch(&cache, "object".into(), 1..5, |_| async {
+            panic!("exact slice must hit memory")
+        })
+        .await
+        .unwrap();
         assert_eq!(hit.as_ptr(), bytes.as_ptr());
         let metrics = snapshotter.snapshot().into_vec();
         let charged_bytes = &metrics
@@ -317,27 +321,24 @@ mod tests {
     async fn test_failed_downloads_are_not_cached() {
         let cache = memory_cache().await;
         for payload in [b"ab".as_slice(), b"abcde".as_slice()] {
-            let error = cache
-                .get_or_fetch("object".into(), 0..4, move |_| async move {
-                    Ok(buffer_for_test(payload))
-                })
-                .await
-                .unwrap_err();
-            assert_eq!(error.kind(), StorageErrorKind::Internal);
-        }
-        let error = cache
-            .get_or_fetch("object".into(), 0..4, |_| async {
-                Err(StorageErrorKind::NotFound.with_error(anyhow::anyhow!("missing")))
+            let error = get_or_fetch(&cache, "object".into(), 0..4, move |_| async move {
+                Ok(buffer_for_test(payload))
             })
             .await
             .unwrap_err();
+            assert_eq!(error.kind(), StorageErrorKind::Internal);
+        }
+        let error = get_or_fetch(&cache, "object".into(), 0..4, |_| async {
+            Err(StorageErrorKind::NotFound.with_error(anyhow::anyhow!("missing")))
+        })
+        .await
+        .unwrap_err();
         assert_eq!(error.kind(), StorageErrorKind::NotFound);
-        let bytes = cache
-            .get_or_fetch("object".into(), 0..4, |_| async {
-                Ok(buffer_for_test(b"abcd"))
-            })
-            .await
-            .unwrap();
+        let bytes = get_or_fetch(&cache, "object".into(), 0..4, |_| async {
+            Ok(buffer_for_test(b"abcd"))
+        })
+        .await
+        .unwrap();
         assert_eq!(bytes.as_ref(), b"abcd");
     }
 

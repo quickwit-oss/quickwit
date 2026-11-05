@@ -357,9 +357,10 @@ mod tests {
         let snapshotter = recorder.snapshotter();
         let _guard = ::metrics::set_default_local_recorder(&recorder);
         let temp_dir = tempfile::tempdir().unwrap();
-        let _cache = super::super::FeuerSplitRangeCache::open(&super::super::config_for_test(
-            temp_dir.path(),
-        ))
+        let _cache = super::super::open_split_range_cache(
+            &super::super::config_for_test(temp_dir.path()),
+            &crate::FeuerIoQueues::default(),
+        )
         .await
         .unwrap();
         let mut registered = HashMap::new();

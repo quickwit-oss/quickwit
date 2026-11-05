@@ -175,7 +175,8 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_native_callback_exports_miss_hit_error_and_tail() {
-        use crate::split_range_cache::{FeuerSplitRangeCache, buffer_for_test};
+        use crate::split_range_cache::storage::get_or_fetch;
+        use crate::split_range_cache::{buffer_for_test, open_split_range_cache};
 
         let (sender, receiver) = tokio::sync::oneshot::channel();
         let mut storage = MockStorage::new();
@@ -189,27 +190,26 @@ mod tests {
                 Ok(())
             });
         // Memory-only avoids requiring io_uring for this callback integration test.
-        let mut cache = FeuerSplitRangeCache::open(&config()).await.unwrap();
-        cache.cache = attach(cache.cache, Arc::new(storage), PathBuf::from("run"));
-        cache
-            .get_or_fetch("object".into(), 0..4, |_| async {
-                Ok(buffer_for_test(b"data"))
-            })
+        let cache = open_split_range_cache(&config(), &crate::FeuerIoQueues::default())
             .await
             .unwrap();
-        cache
-            .get_or_fetch("object".into(), 0..4, |_| async {
-                panic!("a memory hit must not fetch")
-            })
-            .await
-            .unwrap();
+        let cache = attach(cache, Arc::new(storage), PathBuf::from("run"));
+        get_or_fetch(&cache, "object".into(), 0..4, |_| async {
+            Ok(buffer_for_test(b"data"))
+        })
+        .await
+        .unwrap();
+        get_or_fetch(&cache, "object".into(), 0..4, |_| async {
+            panic!("a memory hit must not fetch")
+        })
+        .await
+        .unwrap();
         assert!(
-            cache
-                .get_or_fetch("error".into(), 0..1, |_| async {
-                    Err(StorageErrorKind::Io.with_error(anyhow::anyhow!("source failed")))
-                })
-                .await
-                .is_err()
+            get_or_fetch(&cache, "error".into(), 0..1, |_| async {
+                Err(StorageErrorKind::Io.with_error(anyhow::anyhow!("source failed")))
+            })
+            .await
+            .is_err()
         );
         drop(cache);
         let bytes = tokio::time::timeout(Duration::from_secs(5), receiver)

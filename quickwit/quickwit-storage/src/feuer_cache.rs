@@ -147,7 +147,7 @@ mod tests {
     use metrics_util::debugging::{DebugValue, DebuggingRecorder};
 
     use super::*;
-    use crate::FeuerSplitRangeCache;
+    use crate::open_split_range_cache;
 
     #[tokio::test]
     async fn test_memory_only_instance_does_not_initialize_io_queues() {
@@ -181,7 +181,7 @@ mod tests {
         let split_config = config(directory.path().to_path_buf(), 8);
         let partial_config = config(directory.path().to_path_buf(), 16);
         let predicate_config = config(directory.path().to_path_buf(), 32);
-        let split = FeuerSplitRangeCache::open_with_io_queues(&split_config, &queues)
+        let split = open_split_range_cache(&split_config, &queues)
             .await
             .unwrap();
         let partial = FeuerCache::open(
@@ -261,17 +261,15 @@ mod tests {
         // Large objects bypass Feuer's timed small-entry buffer, so disk publication is observable.
         let split_bytes = vec![3; 1 << 20];
         let download_bytes = split_bytes.clone();
-        let bytes =
-            split
-                .get_or_fetch(
-                    "same-key".into(),
-                    0..split_bytes.len(),
-                    move |_| async move {
-                        Ok(crate::split_range_cache::buffer_for_test(download_bytes))
-                    },
-                )
-                .await
-                .unwrap();
+        let split_key = format!("split-slice-v1:0:{}:same-key", split_bytes.len());
+        let bytes = split
+            .get_or_fetch(split_key.clone(), move || async move {
+                Ok::<_, crate::StorageError>(crate::split_range_cache::buffer_for_test(
+                    download_bytes,
+                ))
+            })
+            .await
+            .unwrap();
         assert_eq!(bytes.as_ref(), split_bytes);
         let partial_bytes = vec![1; 1 << 20];
         let predicate_bytes = vec![2; 1 << 20];
@@ -346,9 +344,11 @@ mod tests {
         let predicate = reopen(&predicate_config, &queues, "predicate_cache", "predicate").await;
         // Reopening result-cache files must not disturb the still-open split cache.
         let bytes = split
-            .get_or_fetch("same-key".into(), 0..split_bytes.len(), |_| async {
-                Err(crate::StorageErrorKind::Internal
-                    .with_error(anyhow::anyhow!("cache hit must not fetch")))
+            .get_or_fetch(split_key, || async {
+                Err::<feuer::AlignedBuffer, _>(
+                    crate::StorageErrorKind::Internal
+                        .with_error(anyhow::anyhow!("cache hit must not fetch")),
+                )
             })
             .await
             .unwrap();

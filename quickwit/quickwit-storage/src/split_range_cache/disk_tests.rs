@@ -17,7 +17,8 @@ use std::time::Duration;
 use bytesize::ByteSize;
 use metrics_util::debugging::{DebugValue, DebuggingRecorder};
 
-use super::{FeuerSplitRangeCache, buffer_for_test, config_for_test};
+use super::storage::get_or_fetch;
+use super::{buffer_for_test, config_for_test, open_split_range_cache};
 use crate::StorageErrorKind;
 
 #[tokio::test]
@@ -28,17 +29,18 @@ async fn test_disk_hit_after_memory_pressure() {
     let temp_dir = tempfile::tempdir().unwrap();
     let mut config = config_for_test(temp_dir.path());
     config.memory_capacity = ByteSize::kib(64);
-    let cache = FeuerSplitRangeCache::open(&config).await.unwrap();
-    // Bypass Feuer's 60-second small-entry buffer so this test observes a disk write,
-    // rather than a hit from that buffer. Keep "data" at the start to identify the payload.
-    cache
-        .get_or_fetch("object".to_owned(), 0..512 * 1024, |_| async {
-            let mut bytes = vec![0; 512 * 1024];
-            bytes[..4].copy_from_slice(b"data");
-            Ok(buffer_for_test(bytes))
-        })
+    let cache = open_split_range_cache(&config, &crate::FeuerIoQueues::default())
         .await
         .unwrap();
+    // Bypass Feuer's 60-second small-entry buffer so this test observes a disk write,
+    // rather than a hit from that buffer. Keep "data" at the start to identify the payload.
+    get_or_fetch(&cache, "object".to_owned(), 0..512 * 1024, |_| async {
+        let mut bytes = vec![0; 512 * 1024];
+        bytes[..4].copy_from_slice(b"data");
+        Ok(buffer_for_test(bytes))
+    })
+    .await
+    .unwrap();
 
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
@@ -68,19 +70,20 @@ async fn test_disk_hit_after_memory_pressure() {
     // evicted, without depending on Feuer's process-local shard assignment.
     tokio::time::timeout(Duration::from_secs(10), async {
         for index in 0..1024 {
-            cache
-                .get_or_fetch(format!("pressure-{index}"), 0..1024 * 1024, |_| async {
-                    Ok(buffer_for_test(vec![0; 1024 * 1024]))
-                })
-                .await
-                .unwrap();
-            let bytes = cache
-                .get_or_fetch("object".to_owned(), 0..512 * 1024, |_| async {
-                    Err(StorageErrorKind::Internal
-                        .with_error(anyhow::anyhow!("disk hit must not fetch")))
-                })
-                .await
-                .unwrap();
+            get_or_fetch(
+                &cache,
+                format!("pressure-{index}"),
+                0..1024 * 1024,
+                |_| async { Ok(buffer_for_test(vec![0; 1024 * 1024])) },
+            )
+            .await
+            .unwrap();
+            let bytes = get_or_fetch(&cache, "object".to_owned(), 0..512 * 1024, |_| async {
+                Err(StorageErrorKind::Internal
+                    .with_error(anyhow::anyhow!("disk hit must not fetch")))
+            })
+            .await
+            .unwrap();
             assert_eq!(bytes.len(), 512 * 1024);
             assert_eq!(&bytes[..4], b"data");
             let disk_hit = snapshotter

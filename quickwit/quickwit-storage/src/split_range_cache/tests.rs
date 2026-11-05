@@ -25,7 +25,8 @@ use quickwit_common::uri::Uri;
 use tokio::io::AsyncRead;
 use tokio::sync::watch;
 
-use super::{FeuerSplitRangeCache, buffer_for_test, config_for_test};
+use super::storage::get_or_fetch;
+use super::{buffer_for_test, config_for_test, open_split_range_cache};
 use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, OwnedBytes, PutPayload, RamStorageBuilder, Storage, StorageErrorKind,
@@ -38,18 +39,17 @@ async fn test_split_range_cache_uses_configured_capacities() {
     let mut config = config_for_test(temp_dir.path());
     // Decimal megabytes are not MiB-aligned; Feuer handles alignment internally.
     config.disk_capacity = bytesize::ByteSize::mb(512);
-    let cache = FeuerSplitRangeCache::open(&config).await.unwrap();
+    let cache = open_split_range_cache(&config, &crate::FeuerIoQueues::default())
+        .await
+        .unwrap();
+    assert_eq!(cache.config().directory(), config.directory().unwrap());
+    assert_eq!(cache.config().file_name(), "split_cache");
     assert_eq!(
-        cache.cache.config().directory(),
-        config.directory().unwrap()
-    );
-    assert_eq!(cache.cache.config().file_name(), "split_cache");
-    assert_eq!(
-        cache.cache.config().disk_capacity(),
+        cache.config().disk_capacity(),
         config.disk_capacity.as_u64()
     );
     assert_eq!(
-        cache.cache.config().memory_capacity(),
+        cache.config().memory_capacity(),
         config.memory_capacity.as_u64()
     );
 }
@@ -304,25 +304,26 @@ async fn test_oversized_value_is_returned_and_cached() {
 #[tokio::test]
 async fn test_invalid_download_is_an_error_and_is_not_cached() {
     let temp_dir = tempfile::tempdir().unwrap();
-    let cache = FeuerSplitRangeCache::open(&config_for_test(temp_dir.path()))
-        .await
-        .unwrap();
+    let cache = open_split_range_cache(
+        &config_for_test(temp_dir.path()),
+        &crate::FeuerIoQueues::default(),
+    )
+    .await
+    .unwrap();
     // AlignedBuffer requires a positive length. Reject both short and oversized downloads.
     for bytes in [Bytes::from_static(b"ab"), Bytes::from_static(b"abcde")] {
-        let error = cache
-            .get_or_fetch("object".to_owned(), 0..4, |_| async move {
-                Ok(buffer_for_test(bytes))
-            })
-            .await
-            .unwrap_err();
-        assert_eq!(error.kind(), StorageErrorKind::Internal);
-    }
-    let bytes = cache
-        .get_or_fetch("object".to_owned(), 0..4, |_| async {
-            Ok(buffer_for_test(b"abcd"))
+        let error = get_or_fetch(&cache, "object".to_owned(), 0..4, |_| async move {
+            Ok(buffer_for_test(bytes))
         })
         .await
-        .unwrap();
+        .unwrap_err();
+        assert_eq!(error.kind(), StorageErrorKind::Internal);
+    }
+    let bytes = get_or_fetch(&cache, "object".to_owned(), 0..4, |_| async {
+        Ok(buffer_for_test(b"abcd"))
+    })
+    .await
+    .unwrap();
     assert_eq!(bytes.as_ref(), b"abcd");
 }
 
@@ -432,9 +433,12 @@ impl Fixture {
     async fn with_payload(payload: &[u8], gate_open: bool) -> Self {
         let temp_dir = tempfile::tempdir().unwrap();
         let cache = Arc::new(
-            FeuerSplitRangeCache::open(&config_for_test(temp_dir.path()))
-                .await
-                .unwrap(),
+            open_split_range_cache(
+                &config_for_test(temp_dir.path()),
+                &crate::FeuerIoQueues::default(),
+            )
+            .await
+            .unwrap(),
         );
         let ram: Arc<dyn Storage> = Arc::new(
             RamStorageBuilder::default()
@@ -484,19 +488,21 @@ async fn wait_until(predicate: impl Fn() -> bool, what: &str) {
 #[tokio::test]
 async fn test_object_keys_do_not_alias() {
     let temp_dir = tempfile::tempdir().unwrap();
-    let cache = FeuerSplitRangeCache::open(&config_for_test(temp_dir.path()))
-        .await
-        .unwrap();
+    let cache = open_split_range_cache(
+        &config_for_test(temp_dir.path()),
+        &crate::FeuerIoQueues::default(),
+    )
+    .await
+    .unwrap();
     for (uri, expected) in [
         ("s3://first/a.split", b"abcd"),
         ("s3://second/a.split", b"efgh"),
     ] {
-        let bytes = cache
-            .get_or_fetch(uri.to_owned(), 0..4, move |_| async move {
-                Ok(buffer_for_test(expected))
-            })
-            .await
-            .unwrap();
+        let bytes = get_or_fetch(&cache, uri.to_owned(), 0..4, move |_| async move {
+            Ok(buffer_for_test(expected))
+        })
+        .await
+        .unwrap();
         assert_eq!(bytes.as_ref(), expected);
     }
 }

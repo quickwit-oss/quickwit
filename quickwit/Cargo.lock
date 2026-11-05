@@ -8344,6 +8344,7 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "bytesize",
+ "feuer",
  "fnv",
  "futures",
  "http 1.5.0",

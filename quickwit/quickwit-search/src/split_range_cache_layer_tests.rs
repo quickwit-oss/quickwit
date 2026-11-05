@@ -20,8 +20,8 @@ use bytesize::ByteSize;
 use quickwit_config::{SearcherConfig, SplitCacheLimits, StorageCacheConfig};
 use quickwit_proto::search::SplitIdAndFooterOffsets;
 use quickwit_storage::{
-    CountingStorage, DownloadCounters, FeuerSplitRangeCache, OwnedBytes, PutPayload,
-    RamStorageBuilder, SearchSplitCache, SplitPayloadBuilder, Storage, StorageResolver,
+    CountingStorage, DownloadCounters, OwnedBytes, PutPayload, RamStorageBuilder, SearchSplitCache,
+    SplitPayloadBuilder, Storage, StorageResolver, open_split_range_cache,
     wrap_storage_with_split_range_cache,
 };
 
@@ -59,13 +59,16 @@ fn split_file_name() -> String {
     format!("{SPLIT_ID}.split")
 }
 
-async fn open_range_cache(dir: &Path) -> Arc<FeuerSplitRangeCache> {
+async fn open_range_cache(dir: &Path) -> Arc<feuer::Cache> {
     Arc::new(
-        FeuerSplitRangeCache::open(&StorageCacheConfig {
-            path: Some(dir.to_path_buf()),
-            disk_capacity: ByteSize::mib(512),
-            memory_capacity: ByteSize::mib(8),
-        })
+        open_split_range_cache(
+            &StorageCacheConfig {
+                path: Some(dir.to_path_buf()),
+                disk_capacity: ByteSize::mib(512),
+                memory_capacity: ByteSize::mib(8),
+            },
+            &quickwit_storage::FeuerIoQueues::default(),
+        )
         .await
         .unwrap(),
     )
@@ -78,7 +81,7 @@ fn wrap_counted_ram(split_bytes: &OwnedBytes) -> (Arc<dyn Storage>, Arc<Download
     CountingStorage::instrument_storage(Arc::new(ram))
 }
 
-fn context_with_range_cache(cache: Arc<FeuerSplitRangeCache>) -> SearcherContext {
+fn context_with_range_cache(cache: Arc<feuer::Cache>) -> SearcherContext {
     SearcherContext::new_without_invoker(SearcherConfig::default(), None, Some(cache))
 }
 
