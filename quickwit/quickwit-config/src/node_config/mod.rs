@@ -192,6 +192,12 @@ fn default_cert_poll_interval() -> HumanDuration {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndexerConfig {
+    /// Memory budget shared across all indexing pipelines on this node. Accounts for reported
+    /// Tantivy writer memory (including RAM directories) and raw input bytes of in-flight batches.
+    /// Sources stop emitting while at the limit; downstream work drains normally. Disabled by
+    /// default. In-flight work may overshoot the limit; this is not a total process memory limit.
+    #[serde(default)]
+    pub indexing_memory_limit: Option<ByteSize>,
     #[serde(default = "IndexerConfig::default_split_store_max_num_bytes")]
     pub split_store_max_num_bytes: ByteSize,
     #[serde(default = "IndexerConfig::default_split_store_max_num_splits")]
@@ -257,6 +263,7 @@ impl IndexerConfig {
     pub fn for_test() -> anyhow::Result<Self> {
         use quickwit_proto::indexing::PIPELINE_FULL_CAPACITY;
         let indexer_config = IndexerConfig {
+            indexing_memory_limit: None,
             enable_cooperative_indexing: false,
             enable_otlp_endpoint: true,
             split_store_max_num_bytes: ByteSize::mb(1),
@@ -273,6 +280,7 @@ impl IndexerConfig {
 impl Default for IndexerConfig {
     fn default() -> Self {
         Self {
+            indexing_memory_limit: None,
             enable_cooperative_indexing: Self::default_enable_cooperative_indexing(),
             enable_otlp_endpoint: Self::default_enable_otlp_endpoint(),
             split_store_max_num_bytes: Self::default_split_store_max_num_bytes(),
@@ -1093,6 +1101,25 @@ mod tests {
                     .unwrap(),
                 "1500m"
             );
+        }
+    }
+
+    #[test]
+    fn test_indexer_config_indexing_memory_limit() {
+        assert_eq!(IndexerConfig::default().indexing_memory_limit, None);
+        assert_eq!(
+            IndexerConfig::for_test().unwrap().indexing_memory_limit,
+            None
+        );
+        for (yaml, expected) in [
+            ("{}", None),
+            ("indexing_memory_limit: 2GiB", Some(ByteSize::gib(2))),
+        ] {
+            let config: IndexerConfig = serde_yaml::from_str(yaml).unwrap();
+            assert_eq!(config.indexing_memory_limit, expected);
+            let json = serde_json::to_string(&config).unwrap();
+            let roundtrip: IndexerConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(roundtrip, config);
         }
     }
 

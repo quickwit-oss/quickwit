@@ -142,6 +142,71 @@ mod tests {
     use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
     use crate::source::SourceActor;
+
+    #[tokio::test]
+    async fn test_source_memory_limit_accounts_for_in_flight_batches() -> anyhow::Result<()> {
+        use quickwit_common::metrics::IN_FLIGHT_INDEX_WRITER;
+        use quickwit_metrics::GaugeGuard;
+
+        use crate::models::{ProcessedDoc, ProcessedDocBatch};
+
+        let universe = Universe::new();
+        let writer = GaugeGuard::new(&IN_FLIGHT_INDEX_WRITER, 1.0);
+        let raw_batch = RawDocBatch::for_test(&[b"a"], 0..1);
+        let processed_batch = ProcessedDocBatch::new(
+            vec![ProcessedDoc {
+                doc: tantivy::TantivyDocument::default(),
+                timestamp_opt: None,
+                fingerprint_opt: None,
+                partition: 0,
+                num_bytes: 1,
+            }],
+            SourceCheckpointDelta::default(),
+            false,
+        );
+        let source = VecSource {
+            source_id: "test".to_string(),
+            source_params: VecSourceParams {
+                docs: vec![Bytes::from_static(b"b"), Bytes::from_static(b"c")],
+                batch_num_docs: 1,
+                ..Default::default()
+            },
+            next_item_idx: 0,
+            partition: PartitionId::from("test"),
+        };
+        let (mailbox, inbox) = universe.create_test_mailbox();
+        let actor = SourceActor::new(Box::new(source), mailbox)
+            .with_indexing_memory_limit(Some(bytesize::ByteSize(3)));
+        let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
+        universe.sleep(Duration::from_millis(150)).await;
+        assert_eq!(
+            handle.process_pending_and_observe().await["next_item_idx"],
+            0
+        );
+        assert!(inbox.drain_for_test_typed::<RawDocBatch>().is_empty());
+
+        // Releasing one batch admits one new batch, which is itself charged while queued.
+        drop(raw_batch);
+        universe.sleep(Duration::from_millis(150)).await;
+        assert_eq!(
+            handle.process_pending_and_observe().await["next_item_idx"],
+            1
+        );
+        drop(processed_batch);
+        universe.sleep(Duration::from_millis(150)).await;
+        assert_eq!(
+            handle.process_pending_and_observe().await["next_item_idx"],
+            2
+        );
+        let batches = inbox.drain_for_test_typed::<RawDocBatch>();
+        assert_eq!(batches.len(), 2);
+        drop(batches);
+        drop(writer);
+        let (status, _) = handle.join().await;
+        assert!(status.is_success());
+        universe.assert_quit().await;
+        Ok(())
+    }
     use crate::source::tests::SourceRuntimeBuilder;
 
     #[tokio::test]
