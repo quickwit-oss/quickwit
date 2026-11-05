@@ -8236,8 +8236,8 @@ dependencies = [
  "quickwit-proto",
  "quickwit-serve",
  "reqwest 0.13.5",
- "reqwest-middleware 0.5.2",
- "reqwest-retry 0.9.1",
+ "reqwest-middleware",
+ "reqwest-retry",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -9027,7 +9027,6 @@ dependencies = [
  "encoding_rs",
  "futures-core",
  "futures-util",
- "h2 0.4.20",
  "http 1.5.0",
  "http-body 1.1.0",
  "http-body-util",
@@ -9041,7 +9040,6 @@ dependencies = [
  "pin-project-lite",
  "quinn",
  "rustls 0.23.46",
- "rustls-native-certs",
  "rustls-pki-types",
  "serde",
  "serde_json",
@@ -9071,6 +9069,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-util",
+ "h2 0.4.20",
  "http 1.5.0",
  "http-body 1.1.0",
  "http-body-util",
@@ -9104,21 +9103,6 @@ dependencies = [
 
 [[package]]
 name = "reqwest-middleware"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57f17d28a6e6acfe1733fe24bcd30774d13bffa4b8a22535b4c8c98423088d4e"
-dependencies = [
- "anyhow",
- "async-trait",
- "http 1.5.0",
- "reqwest 0.12.28",
- "serde",
- "thiserror 1.0.69",
- "tower-service",
-]
-
-[[package]]
-name = "reqwest-middleware"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07bc3f1384cffa4f274dad2d4ddd73aed32fed8f786d96c6be8aa4e5fd3c3b58"
@@ -9134,26 +9118,6 @@ dependencies = [
 
 [[package]]
 name = "reqwest-retry"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "105747e3a037fe5bf17458d794de91149e575b6183fc72c85623a44abb9683f5"
-dependencies = [
- "anyhow",
- "async-trait",
- "futures",
- "getrandom 0.2.17",
- "http 1.5.0",
- "hyper 1.12.0",
- "reqwest 0.12.28",
- "reqwest-middleware 0.4.2",
- "retry-policies",
- "thiserror 2.0.21",
- "tokio",
- "wasmtimer",
-]
-
-[[package]]
-name = "reqwest-retry"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe2412db2af7d2268e7a5406be0431f37d9eb67ff390f35b395716f5f06c2eaa"
@@ -9165,7 +9129,7 @@ dependencies = [
  "http 1.5.0",
  "hyper 1.12.0",
  "reqwest 0.13.5",
- "reqwest-middleware 0.5.2",
+ "reqwest-middleware",
  "retry-policies",
  "thiserror 2.0.21",
  "tokio",
@@ -11918,9 +11882,9 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vrl"
-version = "0.37.0"
+version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a862151998a9dba2ef69c72d5d86a1bb4a22890b9b2f9f7109a142d7b9946aff"
+checksum = "4241d28d1df0ab3979373d7a8fdbf09002df248f348b4ef9962ade93c9ac8dbd"
 dependencies = [
  "aes 0.9.3",
  "aes-siv",
@@ -11990,11 +11954,12 @@ dependencies = [
  "rand 0.9.5",
  "regex",
  "relative-path",
- "reqwest 0.12.28",
- "reqwest-middleware 0.4.2",
- "reqwest-retry 0.8.0",
+ "reqwest 0.13.5",
+ "reqwest-middleware",
+ "reqwest-retry",
  "roxmltree 0.21.1",
  "rust_decimal",
+ "rustls 0.23.46",
  "seahash",
  "serde",
  "serde_json",
@@ -12020,7 +11985,7 @@ dependencies = [
  "uuid",
  "woothee",
  "xxhash-rust",
- "zstd 0.13.3",
+ "zstd 0.14.3",
 ]
 
 [[package]]

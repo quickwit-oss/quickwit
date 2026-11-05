@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Ingest V2 flushes every WAL write to the OS before acknowledging it, instead of keeping the tail of the last write buffered in the process, so acknowledged documents survive an indexer process crash
+- Upgrade VRL to 0.38. `to_unix_timestamp` with `unit: "nanoseconds"` is now fallible, so a source transform that calls it without handling the error no longer compiles and the index metadata containing that source fails to load. Before upgrading, change these calls to `to_unix_timestamp!(...)`, which earlier versions accept with a warning. `http_request` now verifies HTTPS certificates with the platform verifier
 
 ### Deprecated
 
