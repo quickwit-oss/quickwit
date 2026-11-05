@@ -21,7 +21,7 @@ Quickwit exposes metrics for several cache components, including `fastfields`, `
 
 ### Feuer cache metrics
 
-Feuer metrics are exported on `/metrics` with their original names and native labels, plus a `cache` label identifying the instance: `split_range` (`disk_cache`), `partial_request` (`partial_request_cache`), `predicate` (`predicate_cache`), or `list_fields`. Sum over `cache` to aggregate instances. All caches expose the native lookup and memory metrics. Disk-backed caches additionally expose disk and I/O buffer-pool metrics. The labels listed below are additional to `cache`:
+Feuer metrics are exported on `/metrics` with their original names and native labels, plus a `cache` label identifying the instance: `split_range` (`storage_cache`), `partial_request` (`partial_request_cache`), `predicate` (`predicate_cache`), or `list_fields`. Sum over `cache` to aggregate instances. All caches expose the native lookup and memory metrics. Disk-backed caches additionally expose disk and I/O buffer-pool metrics. The labels listed below are additional to `cache`:
 
 - Lookups: `feuer_lookup_total{outcome}`, `feuer_lookup_bytes_total{source}`, and `feuer_lookup_duration_seconds{outcome}`. Counters distinguish memory hits, disk hits, callbacks, callback errors, and lookup-only misses. Durations record successful disk hits and callbacks, including callback work. Result-cache lookups use the lookup-only API and report misses separately from callback errors.
 - Memory: `feuer_memory_operations_total{operation}`, `feuer_memory_used_bytes`, `feuer_memory_capacity_bytes`, `feuer_memory_entries`, and `feuer_memory_compacted_payload_bytes_total`.
@@ -37,7 +37,7 @@ Feuer's read-buffer pool shares the configured memory capacity with cached alloc
 | `feuer_memory_capacity_bytes` | Gauge | Configured memory capacity for the cache instance, shared with its buffer pool. |
 | `feuer_io_buffer_pool_bytes` | Gauge | Allocation capacity per `bucket` and `status`. Used bytes are charged to `feuer_memory_used_bytes` only when held by cache entries. Do not add these gauges. |
 
-See [Feuer's metric inventory](https://github.com/PSeitz/feuer/blob/965bfcb000bf4f9ce19f0bd715c8f8b0337e1095/metrics.md) for all names and label values. Concurrent callback downloads are coalesced, so `feuer_lookup_total{outcome="callback"}` is not a remote GET count. Object-storage GET counters measure actual remote requests.
+See [Feuer's metric inventory](https://github.com/PSeitz/feuer/blob/965bfcb000bf4f9ce19f0bd715c8f8b0337e1095/metrics.md) for all names and label values. Concurrent lookups for the same exact key can share one fetch, so `feuer_lookup_total{outcome="callback"}` is not a remote GET count. Object-storage GET counters measure actual remote requests.
 
 ## CLI Metrics
 

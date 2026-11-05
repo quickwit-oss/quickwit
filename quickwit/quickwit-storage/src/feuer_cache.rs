@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use bytes::Bytes;
-use quickwit_config::DiskCacheConfig;
+use quickwit_config::StorageCacheConfig;
 
 use crate::OwnedBytes;
 
@@ -28,7 +28,7 @@ pub struct FeuerIoQueues {
 impl FeuerIoQueues {
     pub(crate) async fn open(
         &self,
-        config: &DiskCacheConfig,
+        config: &StorageCacheConfig,
         file_name: &'static str,
         cache_name: &'static str,
         fixed_retrieval_equivalent_bytes: Option<u64>,
@@ -87,7 +87,7 @@ impl FeuerCache {
         if capacity == 0 {
             return Ok(Self { cache: None });
         }
-        let config = DiskCacheConfig {
+        let config = StorageCacheConfig {
             path: None,
             disk_capacity: bytesize::ByteSize::b(0),
             memory_capacity: bytesize::ByteSize::b(capacity),
@@ -104,7 +104,7 @@ impl FeuerCache {
     /// `file_name` must be distinct for caches in the same directory.
     /// `cache_name` identifies the cache in metrics; use a fixed name, not a path or request key.
     pub async fn open(
-        config: &DiskCacheConfig,
+        config: &StorageCacheConfig,
         queues: &FeuerIoQueues,
         file_name: &'static str,
         cache_name: &'static str,
@@ -362,8 +362,8 @@ mod tests {
         }
     }
 
-    fn config(path: std::path::PathBuf, disk_mib: u64) -> DiskCacheConfig {
-        DiskCacheConfig {
+    fn config(path: std::path::PathBuf, disk_mib: u64) -> StorageCacheConfig {
+        StorageCacheConfig {
             path: Some(path),
             disk_capacity: ByteSize::mib(disk_mib),
             memory_capacity: ByteSize::mib(disk_mib / 8),
@@ -371,7 +371,7 @@ mod tests {
     }
 
     async fn reopen(
-        config: &DiskCacheConfig,
+        config: &StorageCacheConfig,
         queues: &FeuerIoQueues,
         file_name: &'static str,
         cache_name: &'static str,

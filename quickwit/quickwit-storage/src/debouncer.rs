@@ -195,8 +195,7 @@ impl<T: Storage> Storage for DebouncedStorage<T> {
         range: Range<usize>,
         buffer: &mut [u8],
     ) -> StorageResult<()> {
-        // The split-range coalescer shares downloads before allocating caller-owned buffers.
-        // Forward directly so backend accounting and streaming overrides are preserved.
+        // Forward caller-owned buffers directly to preserve backend accounting and streaming.
         self.underlying.get_slice_into(path, range, buffer).await
     }
 

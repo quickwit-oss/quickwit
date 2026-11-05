@@ -198,7 +198,7 @@ async fn test_get_all_is_not_cached() {
 }
 
 #[tokio::test]
-async fn test_initiating_caller_drop_surviving_waiter_succeeds() {
+async fn test_initiating_caller_drop_surviving_waiter_restarts_fetch() {
     let fixture = Fixture::new_with_blocked_lower_read().await;
     let path = Path::new(SPLIT_PATH);
     let mut initiating = Box::pin(fixture.storage.get_slice(path, 0..4));
@@ -207,14 +207,18 @@ async fn test_initiating_caller_drop_surviving_waiter_succeeds() {
         result = &mut initiating => panic!("fetch completed before release: {result:?}"),
         () = fixture.wait_until_lower_read_started() => {}
     }
-    // Join the shared download before dropping the initiating caller.
+    // Feuer lets the waiter take over with its own callback after cancellation.
     let mut waiter = Box::pin(fixture.storage.get_slice(path, 0..4));
     assert!(futures::poll!(waiter.as_mut()).is_pending());
     drop(initiating);
-    assert_eq!(fixture.gate_tx.receiver_count(), 2, "source must survive");
+    assert_eq!(
+        fixture.gate_tx.receiver_count(),
+        1,
+        "source must be canceled"
+    );
     fixture.release_lower_read();
     assert_eq!(waiter.await.unwrap().as_slice(), b"abcd");
-    assert_eq!(fixture.lower_reads(), 1);
+    assert_eq!(fixture.lower_reads(), 2);
 }
 
 #[tokio::test]
@@ -248,10 +252,10 @@ async fn test_last_caller_dropped_cancels_download_and_next_request_retries() {
     let mut waiter = Box::pin(fixture.storage.get_slice(path, 0..4));
     assert!(futures::poll!(waiter.as_mut()).is_pending());
     assert_eq!(fixture.lower_reads(), 1);
-    // One receiver belongs to LowerProbe; the other to the shared source future.
+    // One receiver belongs to LowerProbe; the other to the executing source future.
     assert_eq!(fixture.gate_tx.receiver_count(), 2);
     drop(initiating);
-    assert_eq!(fixture.gate_tx.receiver_count(), 2);
+    assert_eq!(fixture.gate_tx.receiver_count(), 1);
     drop(waiter);
     assert_eq!(
         fixture.gate_tx.receiver_count(),

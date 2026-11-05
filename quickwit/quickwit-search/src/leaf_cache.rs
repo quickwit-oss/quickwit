@@ -57,7 +57,7 @@ impl LeafSearchCache {
             ),
         }
     }
-    pub fn with_disk_cache(cache: FeuerCache) -> Self {
+    pub fn with_storage_cache(cache: FeuerCache) -> Self {
         Self {
             content: ResultCache::disk(cache),
         }
@@ -246,7 +246,7 @@ impl PredicateCacheImpl {
         }
     }
 
-    pub fn with_disk_cache(cache: FeuerCache) -> Self {
+    pub fn with_storage_cache(cache: FeuerCache) -> Self {
         Self {
             content: ResultCache::disk(cache),
             enabled: true,
@@ -624,18 +624,18 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let mut config: quickwit_config::SearcherConfig =
             serde_json::from_value(serde_json::json!({
-                "disk_cache": {"disk_capacity": "8MiB", "memory_capacity": "1MiB"},
+                "storage_cache": {"disk_capacity": "8MiB", "memory_capacity": "1MiB"},
                 "partial_request_cache": {"disk_capacity": "16MiB", "memory_capacity": "1MiB"},
                 "predicate_cache": {"disk_capacity": "32MiB", "memory_capacity": "2MiB"},
             }))
             .unwrap();
-        config.disk_cache_directory = Some(directory.path().to_path_buf());
+        config.storage_cache_directory = Some(directory.path().to_path_buf());
         let mut context = crate::SearcherContext::new_without_invoker(config, None, None);
         context
-            .initialize_disk_caches(&quickwit_storage::StorageResolver::unconfigured())
+            .initialize_storage_caches(&quickwit_storage::StorageResolver::unconfigured())
             .await
             .unwrap();
-        assert!(context.disk_cache_opt.is_some());
+        assert!(context.storage_cache_opt.is_some());
         assert!(context.predicate_cache.is_enabled());
         for file_name in ["split_cache", "predicate_cache", "partial_response_cache"] {
             assert!(directory.path().join(file_name).is_file());

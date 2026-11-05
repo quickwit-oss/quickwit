@@ -387,11 +387,11 @@ impl SplitCacheLimits {
     }
 }
 
-/// Feuer memory and optional disk cache for ranges of immutable split objects.
+/// Feuer storage cache with memory and optional disk tiers for immutable split ranges.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct DiskCacheConfig {
-    /// Override the shared searcher disk cache directory.
+pub struct StorageCacheConfig {
+    /// Override the shared searcher storage cache directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<PathBuf>,
     /// Set to zero to disable the disk tier and cache only in memory.
@@ -402,11 +402,11 @@ pub struct DiskCacheConfig {
     pub memory_capacity: ByteSize,
 }
 
-impl DiskCacheConfig {
+impl StorageCacheConfig {
     /// Return the directory after resolving the shared searcher setting.
     pub fn directory(&self) -> anyhow::Result<&Path> {
         let path = self.path.as_deref().context(
-            "path or disk_cache_directory must be set when disk_capacity is greater than zero",
+            "path or storage_cache_directory must be set when disk_capacity is greater than zero",
         )?;
         ensure!(!path.as_os_str().is_empty(), "path must not be empty");
         Ok(path)
@@ -427,7 +427,7 @@ impl DiskCacheConfig {
         }
         ensure!(
             self.memory_capacity.as_u64() > 0,
-            "disk_cache.memory_capacity must be positive"
+            "storage_cache.memory_capacity must be positive"
         );
         Ok(())
     }
@@ -435,7 +435,7 @@ impl DiskCacheConfig {
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
         Self {
-            path: Some(PathBuf::from("/tmp/quickwit-disk-cache")),
+            path: Some(PathBuf::from("/tmp/quickwit-storage-cache")),
             disk_capacity: ByteSize::gib(300),
             memory_capacity: ByteSize::gib(1),
         }
@@ -449,7 +449,7 @@ pub struct SearcherConfig {
     pub aggregation_bucket_limit: u32,
 
     /// Legacy fast-field memory budget, combined with the footer budget by
-    /// [`Self::resolved_disk_cache`] when `disk_cache` is omitted.
+    /// [`Self::resolved_storage_cache`] when `storage_cache` is omitted.
     #[serde(alias = "fast_field_cache_capacity")]
     #[serde(default, deserialize_with = "deserialize_optional_fast_field_cache")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -481,10 +481,10 @@ pub struct SearcherConfig {
     /// Process-wide Feuer cache for split footer and body ranges.
     /// Omitted or `null` combines the legacy memory budgets (1 GB + 500 MB by default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub disk_cache: Option<DiskCacheConfig>,
+    pub storage_cache: Option<StorageCacheConfig>,
     /// Shared directory for independent Feuer files; per-cache paths override it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub disk_cache_directory: Option<PathBuf>,
+    pub storage_cache_directory: Option<PathBuf>,
     #[serde(default = "SearcherConfig::default_request_timeout_secs")]
     request_timeout_secs: NonZeroU64,
     #[serde(default = "SearcherConfig::default_request_timeout_secs")]
@@ -629,7 +629,10 @@ impl CacheConfig {
 
     /// Validate result-cache settings and resolve optional disk configuration.
     /// Without disk settings, returns `None` so callers use the memory capacity directly.
-    pub fn disk_cache(&self, directory: Option<&Path>) -> anyhow::Result<Option<DiskCacheConfig>> {
+    pub fn storage_cache(
+        &self,
+        directory: Option<&Path>,
+    ) -> anyhow::Result<Option<StorageCacheConfig>> {
         self.validate_feuer()?;
         let Some(disk_capacity) = self.disk_capacity else {
             ensure!(
@@ -642,7 +645,7 @@ impl CacheConfig {
             self.capacity().as_u64() > 0,
             "memory_capacity must be positive for Feuer"
         );
-        let config = DiskCacheConfig {
+        let config = StorageCacheConfig {
             path: self.path.clone(),
             disk_capacity,
             memory_capacity: self.capacity(),
@@ -794,8 +797,8 @@ impl Default for SearcherConfig {
             aggregation_memory_limit: ByteSize::mb(500),
             aggregation_bucket_limit: 65000,
             split_cache: None,
-            disk_cache: None,
-            disk_cache_directory: None,
+            storage_cache: None,
+            storage_cache_directory: None,
             request_timeout_secs: Self::default_request_timeout_secs(),
             leaf_request_timeout_secs: Self::default_request_timeout_secs(),
             storage_timeout_policy: None,
@@ -819,10 +822,10 @@ impl SearcherConfig {
     fn default_request_timeout_secs() -> NonZeroU64 {
         NonZeroU64::new(30).unwrap()
     }
-    /// Resolve split range caching. Explicit `disk_cache` settings take precedence.
+    /// Resolve split range caching. Explicit `storage_cache` settings take precedence.
     /// Otherwise, the legacy budgets sum to a memory-only cache. A zero sum disables it.
-    pub fn resolved_disk_cache(&self) -> anyhow::Result<Option<DiskCacheConfig>> {
-        // Validate legacy settings even when an explicit disk_cache overrides their budgets.
+    pub fn resolved_storage_cache(&self) -> anyhow::Result<Option<StorageCacheConfig>> {
+        // Validate legacy settings even when an explicit storage_cache overrides their budgets.
         for (name, config) in [
             ("fast_field_cache", &self.fast_field_cache),
             ("split_footer_cache", &self.split_footer_cache),
@@ -833,11 +836,11 @@ impl SearcherConfig {
                     .with_context(|| format!("invalid {name}"))?;
             }
         }
-        if let Some(config) = &self.disk_cache {
+        if let Some(config) = &self.storage_cache {
             return Ok(Some(
                 config
-                    .resolve_directory(self.disk_cache_directory.as_deref())
-                    .context("invalid disk_cache")?,
+                    .resolve_directory(self.storage_cache_directory.as_deref())
+                    .context("invalid storage_cache")?,
             ));
         }
         let fast_field_capacity = self
@@ -857,7 +860,7 @@ impl SearcherConfig {
         if memory_capacity == 0 {
             return Ok(None);
         }
-        Ok(Some(DiskCacheConfig {
+        Ok(Some(StorageCacheConfig {
             path: None,
             disk_capacity: ByteSize::b(0),
             memory_capacity: ByteSize::b(memory_capacity),
@@ -865,19 +868,19 @@ impl SearcherConfig {
     }
 
     fn validate(&self) -> anyhow::Result<()> {
-        if let Some(directory) = &self.disk_cache_directory {
+        if let Some(directory) = &self.storage_cache_directory {
             ensure!(
                 !directory.as_os_str().is_empty(),
-                "disk_cache_directory must not be empty"
+                "storage_cache_directory must not be empty"
             );
         }
-        self.resolved_disk_cache()?;
-        let directory = self.disk_cache_directory.as_deref();
+        self.resolved_storage_cache()?;
+        let directory = self.storage_cache_directory.as_deref();
         self.partial_request_cache
-            .disk_cache(directory)
+            .storage_cache(directory)
             .context("invalid partial_request_cache")?;
         self.predicate_cache
-            .disk_cache(directory)
+            .storage_cache(directory)
             .context("invalid predicate_cache")?;
         if let Some(split_cache_limits) = self.split_cache {
             if self.max_num_concurrent_split_searches
@@ -1238,12 +1241,12 @@ mod tests {
     #[test]
     fn test_cache_defaults_and_capacity_aliases() {
         let defaults = SearcherConfig::default();
-        assert!(defaults.disk_cache.is_none());
+        assert!(defaults.storage_cache.is_none());
         assert!(defaults.fast_field_cache.is_none());
         assert!(defaults.split_footer_cache.is_none());
         assert_eq!(
-            defaults.resolved_disk_cache().unwrap().unwrap(),
-            DiskCacheConfig {
+            defaults.resolved_storage_cache().unwrap().unwrap(),
+            StorageCacheConfig {
                 path: None,
                 disk_capacity: ByteSize::b(0),
                 memory_capacity: ByteSize::mb(1500),
@@ -1251,7 +1254,7 @@ mod tests {
         );
         for yaml in [
             "{}",
-            "disk_cache: null",
+            "storage_cache: null",
             "fast_field_cache: {}\nsplit_footer_cache: {virtual_caches: []}",
             "partial_request_cache_capacity: 64M\npredicate_cache_capacity: 256M",
             "partial_request_cache: {memory_capacity: 64M}\npredicate_cache: {capacity: 256M, \
@@ -1260,15 +1263,15 @@ mod tests {
             let config: SearcherConfig = serde_yaml::from_str(yaml).unwrap();
             config.validate().unwrap();
             assert_eq!(
-                config.resolved_disk_cache().unwrap(),
-                defaults.resolved_disk_cache().unwrap()
+                config.resolved_storage_cache().unwrap(),
+                defaults.resolved_storage_cache().unwrap()
             );
             assert_eq!(config.partial_request_cache.capacity(), ByteSize::mb(64));
             assert_eq!(config.predicate_cache.capacity(), ByteSize::mb(256));
             for cache in [&config.partial_request_cache, &config.predicate_cache] {
                 assert!(
                     cache
-                        .disk_cache(config.disk_cache_directory.as_deref())
+                        .storage_cache(config.storage_cache_directory.as_deref())
                         .unwrap()
                         .is_none()
                 );
@@ -1303,8 +1306,8 @@ mod tests {
             let config: SearcherConfig = serde_yaml::from_str(yaml).unwrap();
             config.validate().unwrap();
             assert_eq!(
-                config.resolved_disk_cache().unwrap().unwrap(),
-                DiskCacheConfig {
+                config.resolved_storage_cache().unwrap().unwrap(),
+                StorageCacheConfig {
                     path: None,
                     disk_capacity: ByteSize::b(0),
                     memory_capacity,
@@ -1322,42 +1325,57 @@ mod tests {
             config.validate().unwrap();
             for cache in [&config.partial_request_cache, &config.predicate_cache] {
                 assert_eq!(cache.capacity(), ByteSize::b(0));
-                assert!(cache.disk_cache(None).unwrap().is_none());
+                assert!(cache.storage_cache(None).unwrap().is_none());
             }
-            assert!(config.resolved_disk_cache().unwrap().is_none());
+            assert!(config.resolved_storage_cache().unwrap().is_none());
         }
     }
 
     #[test]
-    fn test_disk_cache_directory_overrides() {
+    fn test_storage_cache_directory_overrides() {
         let mut config: SearcherConfig = serde_yaml::from_str(
-            "disk_cache_directory: /tmp/feuer\ndisk_cache: {disk_capacity: 300GiB, \
+            "storage_cache_directory: /tmp/feuer\nstorage_cache: {disk_capacity: 300GiB, \
              memory_capacity: 1GiB}\npartial_request_cache: {disk_capacity: \
              20GiB}\npredicate_cache: {disk_capacity: 0}",
         )
         .unwrap();
         config.validate().unwrap();
-        let directory = config.disk_cache_directory.as_deref();
+        let directory = config.storage_cache_directory.as_deref();
         for cache in [
-            config.resolved_disk_cache().unwrap(),
-            config.partial_request_cache.disk_cache(directory).unwrap(),
-            config.predicate_cache.disk_cache(directory).unwrap(),
+            config.resolved_storage_cache().unwrap(),
+            config
+                .partial_request_cache
+                .storage_cache(directory)
+                .unwrap(),
+            config.predicate_cache.storage_cache(directory).unwrap(),
         ] {
             assert_eq!(cache.unwrap().directory().unwrap(), Path::new("/tmp/feuer"));
         }
         // Resolution leaves the user-specified configuration unchanged.
         let serialized = serde_json::to_value(&config).unwrap();
-        assert!(serialized["disk_cache"].get("path").is_none());
-        assert_eq!(serialized["disk_cache_directory"], "/tmp/feuer");
+        assert!(serialized["storage_cache"].get("path").is_none());
+        assert_eq!(
+            serialized["storage_cache"]["disk_capacity"],
+            ByteSize::gib(300).as_u64()
+        );
+        assert_eq!(serialized["storage_cache_directory"], "/tmp/feuer");
+        assert!(serialized.get("disk_cache").is_none());
+        assert!(serialized.get("disk_cache_directory").is_none());
         assert!(serialized.get("fast_field_cache").is_none());
+        let roundtrip: SearcherConfig = serde_json::from_value(serialized).unwrap();
+        assert_eq!(roundtrip.storage_cache, config.storage_cache);
+        assert_eq!(
+            roundtrip.storage_cache_directory,
+            config.storage_cache_directory
+        );
 
-        config.disk_cache.as_mut().unwrap().path = Some(PathBuf::from("/tmp/split"));
+        config.storage_cache.as_mut().unwrap().path = Some(PathBuf::from("/tmp/split"));
         config.predicate_cache.path = Some(PathBuf::from("/tmp/predicate"));
         config.validate().unwrap();
         for (cache, path) in [
-            (config.resolved_disk_cache().unwrap(), "/tmp/split"),
+            (config.resolved_storage_cache().unwrap(), "/tmp/split"),
             (
-                config.predicate_cache.disk_cache(directory).unwrap(),
+                config.predicate_cache.storage_cache(directory).unwrap(),
                 "/tmp/predicate",
             ),
         ] {
@@ -1366,7 +1384,7 @@ mod tests {
     }
 
     #[test]
-    fn test_disk_cache_overrides_legacy_budgets() {
+    fn test_storage_cache_overrides_legacy_budgets() {
         for legacy in [
             "",
             "fast_field_cache: 0\nsplit_footer_cache: 0",
@@ -1379,26 +1397,30 @@ mod tests {
                 "path: /tmp/cache, disk_capacity: 1G, memory_capacity: 128M",
             ] {
                 let config: SearcherConfig =
-                    serde_yaml::from_str(&format!("{legacy}\ndisk_cache: {{{settings}}}")).unwrap();
+                    serde_yaml::from_str(&format!("{legacy}\nstorage_cache: {{{settings}}}"))
+                        .unwrap();
                 config.validate().unwrap();
-                assert_eq!(config.resolved_disk_cache().unwrap(), config.disk_cache);
+                assert_eq!(
+                    config.resolved_storage_cache().unwrap(),
+                    config.storage_cache
+                );
             }
         }
     }
 
     #[test]
-    fn test_disk_cache_memory_only() {
+    fn test_storage_cache_memory_only() {
         let config: SearcherConfig = serde_yaml::from_str(
-            "disk_cache: {disk_capacity: 0, memory_capacity: 32M}\npartial_request_cache: \
+            "storage_cache: {disk_capacity: 0, memory_capacity: 32M}\npartial_request_cache: \
              {disk_capacity: 0, memory_capacity: 32M}\npredicate_cache: {disk_capacity: 0, \
              memory_capacity: 32M}",
         )
         .unwrap();
         config.validate().unwrap();
         for cache in [
-            config.resolved_disk_cache().unwrap(),
-            config.partial_request_cache.disk_cache(None).unwrap(),
-            config.predicate_cache.disk_cache(None).unwrap(),
+            config.resolved_storage_cache().unwrap(),
+            config.partial_request_cache.storage_cache(None).unwrap(),
+            config.predicate_cache.storage_cache(None).unwrap(),
         ] {
             let cache = cache.unwrap();
             assert!(cache.path.is_none());
@@ -1407,7 +1429,7 @@ mod tests {
         }
 
         let config: SearcherConfig =
-            serde_yaml::from_str("disk_cache: {disk_capacity: 0, memory_capacity: 0}").unwrap();
+            serde_yaml::from_str("storage_cache: {disk_capacity: 0, memory_capacity: 0}").unwrap();
         let error = format!("{:#}", config.validate().unwrap_err());
         assert!(
             error.contains("memory_capacity must be positive"),
@@ -1439,15 +1461,16 @@ mod tests {
     fn test_cache_rejects_invalid_settings() {
         for (yaml, message) in [
             (
-                "disk_cache_directory: ''",
-                "disk_cache_directory must not be empty",
+                "storage_cache_directory: ''",
+                "storage_cache_directory must not be empty",
             ),
             (
-                "disk_cache: {disk_capacity: 1G, memory_capacity: 1M}",
-                "path or disk_cache_directory must be set when disk_capacity is greater than zero",
+                "storage_cache: {disk_capacity: 1G, memory_capacity: 1M}",
+                "path or storage_cache_directory must be set when disk_capacity is greater than \
+                 zero",
             ),
             (
-                "disk_cache_directory: /tmp/cache\ndisk_cache: {path: '', disk_capacity: 0, \
+                "storage_cache_directory: /tmp/cache\nstorage_cache: {path: '', disk_capacity: 0, \
                  memory_capacity: 1M}",
                 "path must not be empty",
             ),
@@ -1457,7 +1480,8 @@ mod tests {
             ),
             (
                 "predicate_cache: {disk_capacity: 1G}",
-                "path or disk_cache_directory must be set when disk_capacity is greater than zero",
+                "path or storage_cache_directory must be set when disk_capacity is greater than \
+                 zero",
             ),
             (
                 "partial_request_cache: {path: '', disk_capacity: 1G}",
@@ -1509,12 +1533,15 @@ mod tests {
                     "path and disk_capacity are only supported",
                 ),
             ] {
-                for explicit in ["", "disk_cache: {disk_capacity: 0, memory_capacity: 128M}"] {
+                for explicit in [
+                    "",
+                    "storage_cache: {disk_capacity: 0, memory_capacity: 128M}",
+                ] {
                     let config: SearcherConfig = serde_yaml::from_str(&format!(
                         "{name}: {{capacity: 0, {settings}}}\n{explicit}"
                     ))
                     .unwrap();
-                    let error = format!("{:#}", config.resolved_disk_cache().unwrap_err());
+                    let error = format!("{:#}", config.resolved_storage_cache().unwrap_err());
                     assert!(error.contains(name) && error.contains(message), "{error}");
                 }
             }

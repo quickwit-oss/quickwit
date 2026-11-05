@@ -1,6 +1,6 @@
 # Feuer access traces
 
-Set `QW_FEUER_ACCESS_TRACE_URI` on searchers with `searcher.disk_cache` enabled:
+Set `QW_FEUER_ACCESS_TRACE_URI` on searchers with `searcher.storage_cache` enabled:
 
 ```text
 QW_FEUER_ACCESS_TRACE_URI=s3://my-bucket/access-traces/my-benchmark
@@ -19,11 +19,11 @@ Packages are uploaded unchanged, without compression or sampling, in Feuer's
 Each package has an eight-byte header followed by 41-byte events. Successful
 outcomes record the object payload length. Records contain no byte ranges.
 Request IDs are local to a run. Keep run directories separate. Only accesses
-reaching Feuer are traced. Callback outcomes can share a coalesced download and
-are not S3 GET counts. Each exact split slice is a separate whole-object key.
-Subranges of a coalesced download are copied into independent allocations and
-charged by payload length. An exclusively owned whole buffer moves into the
-cache without copying and is charged by capacity.
+reaching Feuer are traced. Concurrent lookups for the same exact slice can share
+one fetch, so callback outcomes are not S3 GET counts. Each exact split slice is
+a separate whole-object key and different ranges are fetched independently.
+The downloaded buffer moves into the cache without copying and is charged by
+capacity.
 Hashes include the URI and slice bounds, and payload lengths describe the
 requested slices. Trace records cannot reconstruct the original split bounds.
 Feuer now uses the v1 header for whole-object events. Older range-based v1

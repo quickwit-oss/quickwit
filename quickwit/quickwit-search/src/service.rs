@@ -413,7 +413,7 @@ pub struct SearcherContext {
     /// Search split cache. `None` if no split cache is configured.
     pub split_cache_opt: Option<Arc<SearchSplitCache>>,
     /// Process-wide cache for split byte ranges, with optional disk storage.
-    pub disk_cache_opt: Option<Arc<FeuerSplitRangeCache>>,
+    pub storage_cache_opt: Option<Arc<FeuerSplitRangeCache>>,
     /// List fields cache. Caches the raw fields-metadata blob for a given split.
     pub list_fields_cache: ListFieldsCache,
     /// The aggregation limits are passed to limit the memory usage.
@@ -443,12 +443,12 @@ impl SearcherContext {
     pub fn new_without_invoker(
         searcher_config: SearcherConfig,
         split_cache_opt: Option<Arc<SearchSplitCache>>,
-        disk_cache_opt: Option<Arc<FeuerSplitRangeCache>>,
+        storage_cache_opt: Option<Arc<FeuerSplitRangeCache>>,
     ) -> Self {
         Self::new(
             searcher_config,
             split_cache_opt,
-            disk_cache_opt,
+            storage_cache_opt,
             None::<Box<dyn LambdaLeafSearchInvoker>>,
         )
     }
@@ -457,20 +457,20 @@ impl SearcherContext {
     pub fn new(
         searcher_config: SearcherConfig,
         split_cache_opt: Option<Arc<SearchSplitCache>>,
-        disk_cache_opt: Option<Arc<FeuerSplitRangeCache>>,
+        storage_cache_opt: Option<Arc<FeuerSplitRangeCache>>,
         lambda_invoker: Option<impl LambdaLeafSearchInvoker + 'static>,
     ) -> Self {
         let leaf_search_split_semaphore = SearchPermitProvider::new(
             searcher_config.max_num_concurrent_split_searches,
             searcher_config.warmup_memory_budget,
         );
-        let disk_cache_opt = disk_cache_opt.or_else(|| {
+        let storage_cache_opt = storage_cache_opt.or_else(|| {
             searcher_config
-                .resolved_disk_cache()
+                .resolved_storage_cache()
                 .expect("invalid split range cache config")
                 .filter(|config| config.disk_capacity.as_u64() == 0)
                 .map(|config| {
-                    // Standalone and Lambda searchers do not run disk-cache initialization.
+                    // Standalone and Lambda searchers do not run storage-cache initialization.
                     Arc::new(
                         futures::executor::block_on(FeuerSplitRangeCache::open(&config))
                             .expect("failed to initialize split range memory cache"),
@@ -495,7 +495,7 @@ impl SearcherContext {
             leaf_search_cache,
             list_fields_cache,
             split_cache_opt,
-            disk_cache_opt,
+            storage_cache_opt,
             aggregation_limit,
             lambda_invoker,
         }
@@ -503,29 +503,30 @@ impl SearcherContext {
 
     /// Open independent Feuer cache instances sharing one disk I/O queue set.
     /// Must complete before publishing this context to search tasks. Startup failures are fatal.
-    pub async fn initialize_disk_caches(
+    pub async fn initialize_storage_caches(
         &mut self,
         resolver: &StorageResolver,
     ) -> anyhow::Result<()> {
         let config = &self.searcher_config;
-        let directory = config.disk_cache_directory.as_deref();
-        let split_disk_cache = config.resolved_disk_cache()?;
-        let partial_request_disk_cache = config.partial_request_cache.disk_cache(directory)?;
-        let predicate_disk_cache = config.predicate_cache.disk_cache(directory)?;
-        if split_disk_cache.is_none()
-            && partial_request_disk_cache.is_none()
-            && predicate_disk_cache.is_none()
+        let directory = config.storage_cache_directory.as_deref();
+        let split_storage_cache = config.resolved_storage_cache()?;
+        let partial_request_storage_cache =
+            config.partial_request_cache.storage_cache(directory)?;
+        let predicate_storage_cache = config.predicate_cache.storage_cache(directory)?;
+        if split_storage_cache.is_none()
+            && partial_request_storage_cache.is_none()
+            && predicate_storage_cache.is_none()
         {
             return Ok(());
         }
         let queues = quickwit_storage::FeuerIoQueues::default();
-        if let Some(config) = &split_disk_cache {
-            self.disk_cache_opt = Some(Arc::new(
+        if let Some(config) = &split_storage_cache {
+            self.storage_cache_opt = Some(Arc::new(
                 FeuerSplitRangeCache::open_with_access_trace(config, resolver, &queues).await?,
             ));
         }
-        if let Some(config) = &partial_request_disk_cache {
-            self.leaf_search_cache = LeafSearchCache::with_disk_cache(
+        if let Some(config) = &partial_request_storage_cache {
+            self.leaf_search_cache = LeafSearchCache::with_storage_cache(
                 quickwit_storage::FeuerCache::open(
                     config,
                     &queues,
@@ -535,8 +536,8 @@ impl SearcherContext {
                 .await?,
             );
         }
-        if let Some(config) = &predicate_disk_cache {
-            self.predicate_cache = Arc::new(PredicateCacheImpl::with_disk_cache(
+        if let Some(config) = &predicate_storage_cache {
+            self.predicate_cache = Arc::new(PredicateCacheImpl::with_storage_cache(
                 quickwit_storage::FeuerCache::open(config, &queues, "predicate_cache", "predicate")
                     .await?,
             ));
@@ -568,25 +569,25 @@ mod tests {
     #[tokio::test]
     async fn test_memory_caches_need_no_directory() {
         let explicit: SearcherConfig = serde_json::from_value(serde_json::json!({
-            "disk_cache": {"disk_capacity": 0, "memory_capacity": "1MiB"},
+            "storage_cache": {"disk_capacity": 0, "memory_capacity": "1MiB"},
             "partial_request_cache": {"disk_capacity": 0, "memory_capacity": "1MiB"},
             "predicate_cache": {"disk_capacity": 0, "memory_capacity": "1MiB"},
         }))
         .unwrap();
         for config in [SearcherConfig::default(), explicit] {
             let mut context = SearcherContext::new_without_invoker(config, None, None);
-            assert!(context.disk_cache_opt.is_some());
+            assert!(context.storage_cache_opt.is_some());
             context
-                .initialize_disk_caches(&StorageResolver::unconfigured())
+                .initialize_storage_caches(&StorageResolver::unconfigured())
                 .await
                 .unwrap();
-            assert!(context.disk_cache_opt.is_some());
+            assert!(context.storage_cache_opt.is_some());
             assert!(context.predicate_cache.is_enabled());
         }
     }
 
     #[tokio::test]
-    async fn test_disk_initialization_propagates_invalid_configuration() {
+    async fn test_storage_cache_initialization_propagates_invalid_configuration() {
         let mut config = SearcherConfig::default();
         config.predicate_cache = serde_json::from_value(serde_json::json!({
             "memory_capacity": "1MiB",
@@ -595,10 +596,14 @@ mod tests {
         .unwrap();
         let mut context = SearcherContext::new_without_invoker(config, None, None);
         let error = context
-            .initialize_disk_caches(&StorageResolver::unconfigured())
+            .initialize_storage_caches(&StorageResolver::unconfigured())
             .await
             .unwrap_err();
-        assert!(error.to_string().contains("path or disk_cache_directory"));
+        assert!(
+            error
+                .to_string()
+                .contains("path or storage_cache_directory")
+        );
     }
 
     #[tokio::test]
@@ -627,11 +632,11 @@ mod tests {
                 let mut context = SearcherContext::new_without_invoker(config.clone(), None, None);
                 if initialize {
                     context
-                        .initialize_disk_caches(&StorageResolver::unconfigured())
+                        .initialize_storage_caches(&StorageResolver::unconfigured())
                         .await
                         .unwrap();
                 }
-                assert_eq!(context.disk_cache_opt.is_some(), enabled);
+                assert_eq!(context.storage_cache_opt.is_some(), enabled);
                 let reads_before = counters.snapshot().1;
                 for num_reads in 1..=2 {
                     let (hotcache, bundle) = open_split_bundle(&context, storage.clone(), &offsets)

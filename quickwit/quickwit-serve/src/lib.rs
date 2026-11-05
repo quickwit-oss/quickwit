@@ -778,9 +778,9 @@ pub async fn serve_quickwit(
 
     if node_config.is_service_enabled(QuickwitService::Searcher) {
         searcher_context
-            .initialize_disk_caches(&storage_resolver)
+            .initialize_storage_caches(&storage_resolver)
             .await
-            .context("failed to open searcher disk caches")?;
+            .context("failed to open searcher storage caches")?;
     }
 
     let searcher_context = Arc::new(searcher_context);

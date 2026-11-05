@@ -13,7 +13,6 @@
 // limitations under the License.
 
 mod access_trace;
-mod coalescer;
 #[cfg(all(test, target_os = "linux"))]
 mod disk_tests;
 pub(crate) mod metrics;
@@ -21,23 +20,21 @@ mod storage;
 #[cfg(all(test, target_os = "linux"))]
 mod tests;
 
-use quickwit_config::DiskCacheConfig;
+use quickwit_config::StorageCacheConfig;
 pub use storage::{FeuerSplitRangeStorage, wrap_storage_with_split_range_cache};
 
-use self::coalescer::DownloadCoalescer;
 use crate::{FeuerIoQueues, StorageResolver};
 
 /// Process-wide Feuer cache for exact slices of immutable split objects.
 /// Each slice uses the whole-object API; cached slices cannot cover other requests.
 pub struct FeuerSplitRangeCache {
     cache: feuer::Cache,
-    downloads: DownloadCoalescer,
 }
 
 impl FeuerSplitRangeCache {
     /// Open the cache and optionally export native traces to `QW_FEUER_ACCESS_TRACE_URI`.
     pub async fn open_with_access_trace(
-        config: &DiskCacheConfig,
+        config: &StorageCacheConfig,
         resolver: &StorageResolver,
         queues: &FeuerIoQueues,
     ) -> anyhow::Result<Self> {
@@ -53,7 +50,7 @@ impl FeuerSplitRangeCache {
     }
 
     /// Open `split_cache` with explicit capacities. Memory-only caches need no directory.
-    pub async fn open(config: &DiskCacheConfig) -> anyhow::Result<Self> {
+    pub async fn open(config: &StorageCacheConfig) -> anyhow::Result<Self> {
         let queues = FeuerIoQueues::default();
         Self::open_with_io_queues(config, &queues).await
     }
@@ -61,14 +58,13 @@ impl FeuerSplitRangeCache {
     /// Open an independent split-range instance using shared disk I/O concurrency.
     /// Model each source request's fixed retrieval cost as 256,000 equivalent bytes.
     pub async fn open_with_io_queues(
-        config: &DiskCacheConfig,
+        config: &StorageCacheConfig,
         queues: &FeuerIoQueues,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             cache: queues
                 .open(config, "split_cache", "split_range", Some(256_000))
                 .await?,
-            downloads: DownloadCoalescer::default(),
         })
     }
 }
@@ -76,7 +72,7 @@ impl FeuerSplitRangeCache {
 #[cfg(test)]
 #[test]
 fn test_memory_only_range_cache_needs_no_directory_or_runtime() {
-    let config = DiskCacheConfig {
+    let config = StorageCacheConfig {
         path: None,
         disk_capacity: bytesize::ByteSize::b(0),
         memory_capacity: bytesize::ByteSize::mb(1),
@@ -93,8 +89,8 @@ pub(crate) fn buffer_for_test(bytes: impl AsRef<[u8]>) -> feuer::AlignedBuffer {
 }
 
 #[cfg(all(test, target_os = "linux"))]
-pub(crate) fn config_for_test(path: impl AsRef<std::path::Path>) -> DiskCacheConfig {
-    DiskCacheConfig {
+pub(crate) fn config_for_test(path: impl AsRef<std::path::Path>) -> StorageCacheConfig {
+    StorageCacheConfig {
         path: Some(path.as_ref().to_path_buf()),
         disk_capacity: bytesize::ByteSize::mib(512),
         memory_capacity: bytesize::ByteSize::mib(8),

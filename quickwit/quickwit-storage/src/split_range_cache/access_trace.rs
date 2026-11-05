@@ -19,7 +19,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::Context;
 use bytes::Bytes;
 use quickwit_common::uri::Uri;
-use quickwit_config::DiskCacheConfig;
+use quickwit_config::StorageCacheConfig;
 use tracing::{error, info};
 
 use crate::{Storage, StorageResolver};
@@ -29,7 +29,7 @@ const RETRY_INTERVAL: Duration = Duration::from_secs(5);
 pub(super) async fn open_run(
     destination: &str,
     resolver: &StorageResolver,
-    config: &DiskCacheConfig,
+    config: &StorageCacheConfig,
 ) -> anyhow::Result<(Arc<dyn Storage>, PathBuf)> {
     let storage = resolver.resolve(&destination.parse::<Uri>()?).await?;
     let run = PathBuf::from(ulid::Ulid::generate().to_string());
@@ -97,8 +97,8 @@ mod tests {
     use super::*;
     use crate::{MockStorage, StorageErrorKind};
 
-    fn config() -> DiskCacheConfig {
-        DiskCacheConfig {
+    fn config() -> StorageCacheConfig {
+        StorageCacheConfig {
             path: Some(PathBuf::from("unused")),
             disk_capacity: ByteSize::b(0),
             memory_capacity: ByteSize::mib(8),

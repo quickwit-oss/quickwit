@@ -132,7 +132,7 @@ pub(crate) async fn open_split_bundle(
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<(OwnedBytes, BundleStorage)> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
-    let range_cached_storage: Arc<dyn Storage> = match &searcher_context.disk_cache_opt {
+    let range_cached_storage: Arc<dyn Storage> = match &searcher_context.storage_cache_opt {
         Some(cache) => wrap_storage_with_split_range_cache(cache.clone(), index_storage.clone()),
         None => index_storage.clone(),
     };
@@ -208,7 +208,7 @@ fn configure_storage_retries(
 }
 
 /// Opens a `tantivy::Index` for the given split with several cache layers:
-/// - A split byte-range cache given by `SearcherContext.disk_cache_opt`, including footer bytes.
+/// - A split byte-range cache given by `SearcherContext.storage_cache_opt`, including footer bytes.
 /// - An ephemeral unbounded cache directory (whose lifetime is tied to the returned `Index` if no
 ///   `ByteRangeCache` is provided).
 pub(crate) async fn open_index_with_caches(

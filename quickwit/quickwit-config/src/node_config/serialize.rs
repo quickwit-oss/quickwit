@@ -912,8 +912,8 @@ mod tests {
                 max_splits_per_search: None,
                 _max_num_concurrent_split_streams: Some(serde::de::IgnoredAny),
                 split_cache: None,
-                disk_cache: None,
-                disk_cache_directory: None,
+                storage_cache: None,
+                storage_cache_directory: None,
                 request_timeout_secs: NonZeroU64::new(30).unwrap(),
                 leaf_request_timeout_secs: NonZeroU64::new(30).unwrap(),
                 storage_timeout_policy: Some(crate::StorageTimeoutPolicy {

@@ -17,7 +17,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use bytesize::ByteSize;
-use quickwit_config::{DiskCacheConfig, SearcherConfig, SplitCacheLimits};
+use quickwit_config::{SearcherConfig, SplitCacheLimits, StorageCacheConfig};
 use quickwit_proto::search::SplitIdAndFooterOffsets;
 use quickwit_storage::{
     CountingStorage, DownloadCounters, FeuerSplitRangeCache, OwnedBytes, PutPayload,
@@ -61,7 +61,7 @@ fn split_file_name() -> String {
 
 async fn open_range_cache(dir: &Path) -> Arc<FeuerSplitRangeCache> {
     Arc::new(
-        FeuerSplitRangeCache::open(&DiskCacheConfig {
+        FeuerSplitRangeCache::open(&StorageCacheConfig {
             path: Some(dir.to_path_buf()),
             disk_capacity: ByteSize::mib(512),
             memory_capacity: ByteSize::mib(8),

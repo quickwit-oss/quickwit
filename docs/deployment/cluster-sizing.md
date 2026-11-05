@@ -58,11 +58,11 @@ Searcher nodes:
 - Provision more RAM if you expect many concurrent aggregation requests. By
   default, each request can use up to 500MB of RAM on each node.
 - Avoid instances with less than 4GB of RAM
-- Budget for the shared Feuer range cache (`disk_cache`), which defaults to 1.5GB
+- Budget for the shared Feuer range cache (`storage_cache`), which defaults to 1.5GB
   in memory. This combines the legacy 1GB fast-field and 500MB footer budgets.
-  An explicit `disk_cache` replaces those budgets. Result-cache budgets are additional.
+  An explicit `storage_cache` replaces those budgets. Result-cache budgets are additional.
 - Searchers use disk when the [whole-split cache](../configuration/node-config.md#searcher-split-cache-configuration)
-  or a [Feuer disk tier](../configuration/node-config.md#searcher-disk-cache-configuration)
+  or a [Feuer disk tier](../configuration/node-config.md#searcher-storage-cache-configuration)
   is explicitly enabled. The range cache's memory-only mode needs no directory.
   Account for the independent memory and disk budgets of the split-range,
   predicate, and partial-response caches.
