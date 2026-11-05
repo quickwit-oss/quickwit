@@ -1,24 +1,12 @@
 #!/bin/bash
 
-RESULT=0
+git grep -n -E '(warn|info|error|debug)!\("[A-Z][a-z]|(warn|info|error|debug)!.*\."\);' -- ':(glob)**/src/**/*.rs'
+RESULT=$?
 
-for file in $(git ls-files | grep -E "src/.*\.rs$")
-do
-    if [ ! -e "$file" ]; then
-        continue
-    fi
-    LOG_STARTING_WITH_UPPERCASE=$(grep -E -n "(warn|info|error|debug)!\(\"[A-Z][a-z]" $file)
-    DIFFRESULT=$?
-    LOG_ENDING_WITH_PERIOD=$(grep -E -n "(warn|info|error|debug)!.*\.\"\);" $file)
-    DIFFRESULT=$(($DIFFRESULT && $?))
-    if [ $DIFFRESULT -eq 0 ]; then
-      echo "===================="
-      echo $file
-      echo $LOG_STARTING_WITH_UPPERCASE
-      echo $LOG_ENDING_WITH_PERIOD
-      echo $FAULTY_LINES
-      RESULT=1
-    fi
-done
-
-exit $RESULT
+if [ "$RESULT" -eq 1 ]; then
+    exit 0
+fi
+if [ "$RESULT" -eq 0 ]; then
+    exit 1
+fi
+exit "$RESULT"

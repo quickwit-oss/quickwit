@@ -28,11 +28,12 @@ http = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true, optional = true }
+ipnetwork = { workspace = true }
 itertools = { workspace = true }
 metrics = { workspace = true }
 opentelemetry = { workspace = true }
 pin-project = { workspace = true }
-pnet = { workspace = true }
+pnet_datalink = { workspace = true }
 prometheus = { workspace = true }
 quickwit-metrics = { workspace = true }
 rand = { workspace = true }
@@ -69,6 +70,7 @@ jemalloc-profiled = [
 hyper-util = { workspace = true }
 metrics-util = { workspace = true }
 opentelemetry_sdk = { workspace = true }
+pnet = { workspace = true }
 proptest = { workspace = true }
 serde_json = { workspace = true }
 serial_test = { workspace = true }

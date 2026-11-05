@@ -1,5 +1,5 @@
 [build]
-rustflags = ["--cfg", "tokio_unstable"]
+rustflags = "--cfg tokio_unstable"
 rustdocflags = ["--cfg", "tokio_unstable"]
 
 [target.x86_64-unknown-linux-gnu]

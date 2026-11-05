@@ -47,6 +47,29 @@ Run `make test-all` to run all tests.
 * `make docker-compose-down` - stops Docker services.
 * `make docker-compose-logs` - shows Docker logs.
 
+## Checking Rust changes
+
+Run `cargo check` from `quickwit/` to check the workspace. During development,
+`cargo check -p quickwit-search` checks that crate and its dependencies without
+checking its dependents. Run the full workspace check before submitting changes.
+
+`make fix` first runs a cached Clippy check and applies automatic fixes only when
+the diagnostics contain applicable suggestions. Every run still formats sources,
+checks license headers and log formatting, lints migrations, and checks for unused
+dependencies. `make fix-test` runs the same workflow followed by `cargo nextest run`.
+The helper runs through the resolved Python interpreter without site initialization
+to preserve compiler environment variables when using macOS's Python launcher.
+
+`cargo nextest run` reuses unchanged test executables and runs the selected tests
+again. Use `cargo nextest run --no-run` to measure the build step separately.
+
+`quickwit-proto` generates Quickwit protobuf Rust sources in Cargo's `OUT_DIR`
+before copying changed contents into `src/codegen/quickwit/`. Intermediate
+generation steps can overwrite the same module, so only the final contents are
+compared and copied. This preserves timestamps when the generated code is
+unchanged. Binary descriptors stay in `OUT_DIR` so separate build configurations
+do not invalidate each other's inputs.
+
 ## Start the UI
 1. Switch to the `quickwit` subdirectory of the project and create a data directory `qwdata` there if it doesn't exist
 2. Start a server `cargo r run --config ../config/quickwit.yaml`

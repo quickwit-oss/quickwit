@@ -32,7 +32,7 @@ pub mod router;
 include!("../codegen/quickwit/quickwit.ingest.rs");
 
 pub const INGEST_FILE_DESCRIPTOR_SET: &[u8] =
-    include_bytes!("../codegen/quickwit/ingest_descriptor.bin");
+    include_bytes!(concat!(env!("OUT_DIR"), "/ingest_descriptor.bin"));
 
 pub type IngestV2Result<T> = std::result::Result<T, IngestV2Error>;
 

@@ -17,19 +17,16 @@ dependency-licenses.html: Cargo.lock scripts/about.hbs scripts/about.toml
 	@echo "Checking dependency licenses"
 	@cargo about generate -c scripts/about.toml scripts/about.hbs -o dependency-licenses.html --workspace
 
+.PHONY: fix
 fix:
-	@echo "Running cargo clippy --fix"
-	@cargo clippy --workspace --all-features --tests --fix --allow-dirty --allow-staged
+	@python_executable="$$(python3 -S -c 'import sys; print(sys.executable)')" && \
+		"$$python_executable" -S scripts/fix_if_needed.py
 	@$(MAKE) fmt
 	@$(MAKE) migrations-lint
 	@$(MAKE) unused-deps
 
 .PHONY: fix-test
-fix-test:
-	@python3 scripts/fix_if_needed.py
-	@$(MAKE) fmt
-	@$(MAKE) migrations-lint
-	@$(MAKE) unused-deps
+fix-test: fix
 	cargo nextest run
 
 migrations-lint:

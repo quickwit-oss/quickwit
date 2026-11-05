@@ -1,28 +1,36 @@
 #!/bin/bash
 
-RESULT=0
+python3 - <<'PY'
+import itertools
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
 
-for file in $(git ls-files | \
-    grep "build\|src\|proto" | \
-    grep -e "\.proto\|\.rs\|\.ts" | \
-    grep -v "quickwit-proto/protos/third-party" | \
-    grep -v "quickwit-proto/src" | \
-    grep -v "/codegen/" \
-)
-do
-    if [ ! -e "$file" ]; then
+expected_header = subprocess.check_output(["sed", r"s/{\\d+}/2021/", ".license_header.txt"])
+tracked_files = subprocess.check_output(["git", "ls-files", "-z"]).split(b"\0")
+result = 0
+for tracked_file in tracked_files:
+    filename = os.fsdecode(tracked_file)
+    if not re.search(r"build|src|proto", filename):
         continue
-    fi
-    diff <(sed 's/{\\d+}/2021/' .license_header.txt) <(head -n 14 $file) > /dev/null
-    DIFFRESULT=$?
-    if [ $DIFFRESULT -ne 0 ]; then
-        grep -q -i 'begin quickwit-codegen' $file
-        GREPRESULT=$?
-        if [ $GREPRESULT -ne 0 ]; then
-            echo "Incomplete or missing license header in $file"
-            RESULT=1
-        fi
-    fi
-done
-
-exit $RESULT
+    if not re.search(r"\.proto|\.rs|\.ts", filename):
+        continue
+    if any(excluded in filename for excluded in (
+        "quickwit-proto/protos/third-party", "quickwit-proto/src", "/codegen/"
+    )):
+        continue
+    path = Path(filename)
+    if not path.exists():
+        continue
+    with path.open("rb") as source:
+        if b"".join(itertools.islice(source, 14)) == expected_header:
+            continue
+        source.seek(0)
+        if b"begin quickwit-codegen" in source.read().lower():
+            continue
+    print(f"Incomplete or missing license header in {filename}")
+    result = 1
+sys.exit(result)
+PY
