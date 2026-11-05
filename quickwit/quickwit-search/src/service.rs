@@ -464,6 +464,19 @@ impl SearcherContext {
             searcher_config.max_num_concurrent_split_searches,
             searcher_config.warmup_memory_budget,
         );
+        let disk_cache_opt = disk_cache_opt.or_else(|| {
+            searcher_config
+                .resolved_disk_cache()
+                .expect("invalid split range cache config")
+                .filter(|config| config.disk_capacity.as_u64() == 0)
+                .map(|config| {
+                    // Standalone and Lambda searchers do not run disk-cache initialization.
+                    Arc::new(
+                        futures::executor::block_on(FeuerSplitRangeCache::open(&config))
+                            .expect("failed to initialize split range memory cache"),
+                    )
+                })
+        });
         let leaf_search_cache = LeafSearchCache::new(&searcher_config.partial_request_cache);
         let predicate_cache = PredicateCacheImpl::new(&searcher_config.predicate_cache);
         let list_fields_cache = ListFieldsCache::new(&searcher_config.partial_request_cache);
@@ -543,11 +556,14 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_config::SearcherConfig;
+    use quickwit_proto::search::SplitIdAndFooterOffsets;
     use quickwit_storage::{
-        CountingStorage, RamStorageBuilder, StorageResolver, wrap_storage_with_split_range_cache,
+        CountingStorage, PutPayload, RamStorageBuilder, SplitPayloadBuilder, Storage,
+        StorageResolver,
     };
 
     use super::SearcherContext;
+    use crate::leaf::open_split_bundle;
 
     #[tokio::test]
     async fn test_memory_caches_need_no_directory() {
@@ -559,6 +575,7 @@ mod tests {
         .unwrap();
         for config in [SearcherConfig::default(), explicit] {
             let mut context = SearcherContext::new_without_invoker(config, None, None);
+            assert!(context.disk_cache_opt.is_some());
             context
                 .initialize_disk_caches(&StorageResolver::unconfigured())
                 .await
@@ -585,33 +602,55 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_legacy_fast_field_settings_control_split_range_caching() {
-        for name in ["fast_field_cache", "fast_field_cache_capacity"] {
-            for capacity in [0, 1024] {
-                let config = serde_json::from_value(serde_json::json!({name: capacity})).unwrap();
-                let mut context = SearcherContext::new_without_invoker(config, None, None);
-                context
-                    .initialize_disk_caches(&StorageResolver::unconfigured())
-                    .await
-                    .unwrap();
-                assert_eq!(context.disk_cache_opt.is_some(), capacity > 0);
-                let (mut storage, counters) = CountingStorage::instrument_storage(Arc::new(
-                    RamStorageBuilder::default().put("a.split", b"abc").build(),
-                ));
-                if let Some(cache) = context.disk_cache_opt {
-                    storage = wrap_storage_with_split_range_cache(cache, storage);
+    async fn test_legacy_budgets_cache_footer_and_body_without_disk() {
+        let mut builder = SplitPayloadBuilder::default();
+        builder.add_payload("segment.fast".to_string(), Box::new(b"FASTDATA".to_vec()));
+        let payload = builder.finalize(b"HOT").unwrap();
+        let offsets = SplitIdAndFooterOffsets {
+            split_id: "legacy".to_string(),
+            split_footer_start: payload.footer_range.start,
+            split_footer_end: payload.footer_range.end,
+            ..Default::default()
+        };
+        let split_bytes = payload.read_all().await.unwrap();
+        let storage = RamStorageBuilder::default()
+            .put("legacy.split", split_bytes.as_slice())
+            .build();
+        let (storage, counters) = CountingStorage::instrument_storage(Arc::new(storage));
+        for enabled in [false, true] {
+            let config: SearcherConfig = serde_json::from_value(serde_json::json!({
+                "fast_field_cache": 0,
+                "split_footer_cache_capacity": if enabled { 3_000_000 } else { 0 },
+            }))
+            .unwrap();
+            for initialize in [false, true] {
+                let mut context = SearcherContext::new_without_invoker(config.clone(), None, None);
+                if initialize {
+                    context
+                        .initialize_disk_caches(&StorageResolver::unconfigured())
+                        .await
+                        .unwrap();
                 }
-                for _ in 0..2 {
+                assert_eq!(context.disk_cache_opt.is_some(), enabled);
+                let reads_before = counters.snapshot().1;
+                for num_reads in 1..=2 {
+                    let (hotcache, bundle) = open_split_bundle(&context, storage.clone(), &offsets)
+                        .await
+                        .unwrap();
+                    assert_eq!(hotcache.as_slice(), b"HOT");
                     assert_eq!(
-                        storage
-                            .get_slice(Path::new("a.split"), 0..3)
+                        bundle
+                            .get_slice(Path::new("segment.fast"), 0..8)
                             .await
                             .unwrap()
                             .as_slice(),
-                        b"abc"
+                        b"FASTDATA"
+                    );
+                    assert_eq!(
+                        counters.snapshot().1 - reads_before,
+                        if enabled { 2 } else { 2 * num_reads }
                     );
                 }
-                assert_eq!(counters.snapshot().1, if capacity == 0 { 2 } else { 1 });
             }
         }
     }

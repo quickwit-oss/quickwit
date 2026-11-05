@@ -2455,7 +2455,10 @@ mod tests {
             .put("uncached.split", split_bytes.as_slice())
             .build();
         let (storage, counters) = CountingStorage::instrument_storage(Arc::new(storage));
-        let context = SearcherContext::for_test();
+        let mut config = SearcherConfig::default();
+        config.fast_field_cache = Some(quickwit_config::CacheConfig::no_cache());
+        config.split_footer_cache = Some(quickwit_config::CacheConfig::no_cache());
+        let context = SearcherContext::new_without_invoker(config, None, None);
         let offsets = SplitIdAndFooterOffsets {
             split_id: "uncached".to_string(),
             split_footer_start: footer_range.start,

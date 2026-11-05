@@ -905,6 +905,7 @@ mod tests {
                 aggregation_memory_limit: ByteSize::gb(1),
                 aggregation_bucket_limit: 500_000,
                 fast_field_cache: Some(CacheConfig::default_with_capacity(ByteSize::gb(10))),
+                split_footer_cache: None,
                 partial_request_cache: CacheConfig::default_with_capacity(ByteSize::mb(64)),
                 predicate_cache: CacheConfig::default_with_capacity(ByteSize::mb(256)),
                 max_num_concurrent_split_searches: 150,
