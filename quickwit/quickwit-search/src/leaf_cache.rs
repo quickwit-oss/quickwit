@@ -307,14 +307,14 @@ impl PredicateCacheImpl {
     }
 }
 
+#[async_trait::async_trait]
 impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
-    fn get(
+    async fn get(
         &self,
         split_id: String,
         query_ast_json: String,
     ) -> Option<(SegmentId, quickwit_query::query_ast::HitSet)> {
-        self.content
-            .block_on(self.get_async(split_id, query_ast_json))
+        self.get_async(split_id, query_ast_json).await
     }
 
     fn put(
@@ -581,8 +581,8 @@ mod tests {
         assert_ne!(reference_key, serialize_key(&other_split, &request));
     }
 
-    #[test]
-    fn test_predicate_cache_separates_keys() {
+    #[tokio::test]
+    async fn test_predicate_cache_separates_keys() {
         let cache = PredicateCacheImpl::new(&ByteSize::mb(64).into());
         let segment_id = SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
 
@@ -595,19 +595,39 @@ mod tests {
 
         let (cached_segment_id, cached_hits) = cache
             .get("split-1".to_string(), "first-query".to_string())
+            .await
             .unwrap();
         assert_eq!(cached_segment_id, segment_id);
         assert!(cached_hits.is_empty());
         assert!(
             cache
                 .get("split-1".to_string(), "second-query".to_string())
+                .await
                 .is_none()
         );
         assert!(
             cache
                 .get("split-2".to_string(), "first-query".to_string())
+                .await
                 .is_none()
         );
+    }
+
+    #[tokio::test]
+    async fn test_predicate_cache_reads_with_runtime_handle() {
+        // Exercise the saved-runtime path on every platform. A synchronous get would call
+        // Handle::block_on inside this async task, even when the backing cache is in memory.
+        let cache = PredicateCacheImpl::with_storage_cache(
+            quickwit_storage::FeuerCache::memory(1_000_000, "predicate").unwrap(),
+        );
+        assert!(cache.get("split".into(), "query".into()).await.is_none());
+        let segment = SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
+        cache
+            .put_async("split".into(), "query".into(), segment, HitSet::empty())
+            .await;
+        let (cached_segment, hits) = cache.get("split".into(), "query".into()).await.unwrap();
+        assert_eq!(cached_segment, segment);
+        assert!(hits.is_empty());
     }
 
     #[test]
@@ -698,26 +718,28 @@ mod tests {
         predicate
             .put_async("split".into(), "term".into(), segment, HitSet::empty())
             .await;
-        // Exercise Tantivy's synchronous API on a CPU thread while the test's runtime drives I/O.
+        // Disk-backed reads can run directly on the async task.
+        let (cached_segment, hits) = predicate.get("split".into(), "term".into()).await.unwrap();
+        assert_eq!(cached_segment, segment);
+        assert!(hits.is_empty());
+        let predicate_for_write = predicate.clone();
         quickwit_common::thread_pool::run_cpu_intensive(move || {
-            let (cached_segment, hits) = predicate.get("split".into(), "term".into()).unwrap();
-            assert_eq!(cached_segment, segment);
-            assert!(hits.is_empty());
-            predicate.put(
+            predicate_for_write.put(
                 "split".into(),
                 "other-term".into(),
                 segment,
                 HitSet::empty(),
             );
-            assert!(
-                predicate
-                    .get("split".into(), "other-term".into())
-                    .unwrap()
-                    .1
-                    .is_empty()
-            );
         })
         .await
         .unwrap();
+        assert!(
+            predicate
+                .get("split".into(), "other-term".into())
+                .await
+                .unwrap()
+                .1
+                .is_empty()
+        );
     }
 }

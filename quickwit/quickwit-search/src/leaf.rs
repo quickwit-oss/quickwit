@@ -39,8 +39,8 @@ use quickwit_proto::search::{
 };
 use quickwit_proto::types::SplitId;
 use quickwit_query::query_ast::{
-    BoolQuery, CacheNode, HitSet, PredicateCache, QueryAst, QueryAstTransformer, RangeQuery,
-    TermQuery, get_or_compile_cached_fst_regex,
+    BoolQuery, CacheNode, HitSet, QueryAst, QueryAstTransformer, RangeQuery, TermQuery,
+    get_or_compile_cached_fst_regex,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
@@ -731,30 +731,22 @@ async fn leaf_search_single_split(
         agg_context_params,
     )?;
 
-    let predicate_cache =
-        if collector.requires_scoring() || !ctx.searcher_context.predicate_cache.is_enabled() {
-            None
-        } else {
-            Some((
-                ctx.searcher_context.predicate_cache.clone() as Arc<dyn PredicateCache>,
-                split.split_id.clone(),
-            ))
-        };
+    let mut query_ast_for_build = query_ast.clone();
+    if !collector.requires_scoring() && ctx.searcher_context.predicate_cache.is_enabled() {
+        quickwit_query::query_ast::PredicateCacheInjector {
+            cache: ctx.searcher_context.predicate_cache.clone(),
+            split_id: split.split_id.clone(),
+        }
+        .resolve(&mut query_ast_for_build)
+        .await;
+    }
+    let (query, mut warmup_info) =
+        ctx.doc_mapper
+            .query(index.schema(), query_ast_for_build, false)?;
     let priority = Priority::Normal {
         priority: search_request.priority,
         job_cost: search_permit.job_cost(),
     };
-    // Predicate injection may read from disk through Tantivy's synchronous cache API.
-    // Build the query on the search CPU pool using the request's priority and job cost.
-    let doc_mapper = ctx.doc_mapper.clone();
-    let schema = index.schema();
-    let query_ast_for_build = query_ast.clone();
-    let (query, mut warmup_info) = crate::search_thread_pool()
-        .run_cpu_intensive_with_priority(priority, move || {
-            doc_mapper.query(schema, query_ast_for_build, false, predicate_cache)
-        })
-        .await
-        .map_err(|_| SearchError::Internal("query construction panicked".to_string()))??;
 
     let collector_warmup_info = collector.warmup_info();
     warmup_info.merge(collector_warmup_info);

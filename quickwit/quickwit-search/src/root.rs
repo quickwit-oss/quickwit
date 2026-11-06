@@ -252,12 +252,7 @@ fn validate_request_and_build_metadata(
         )?;
 
         // Validates the query by effectively building it against the current schema.
-        doc_mapper.query(
-            doc_mapper.schema(),
-            query_ast_resolved_for_index,
-            true,
-            None,
-        )?;
+        doc_mapper.query(doc_mapper.schema(), query_ast_resolved_for_index, true)?;
 
         let index_metadata_for_leaf_search = IndexMetasForLeafSearch {
             index_uri: index_metadata.index_uri().clone(),
@@ -1427,7 +1422,6 @@ pub async fn search_plan(
         doc_mapper.schema(),
         request_metadata.query_ast_resolved.clone(),
         true,
-        None,
     )?;
     let merge_collector = make_merge_collector(&search_request, Default::default())?;
     warmup_info.merge(merge_collector.warmup_info());

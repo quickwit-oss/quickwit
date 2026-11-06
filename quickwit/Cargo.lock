@@ -8285,6 +8285,7 @@ name = "quickwit-query"
 version = "0.9.3"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64 0.23.1",
  "bitpacking",
  "criterion",
@@ -8304,6 +8305,7 @@ dependencies = [
  "tantivy-fst",
  "thiserror 2.0.21",
  "time",
+ "tokio",
  "tracing",
  "unicode-segmentation",
 ]

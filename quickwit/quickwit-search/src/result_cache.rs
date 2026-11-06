@@ -59,8 +59,8 @@ impl ResultCache {
         self.cache.put(object_key(key), bytes).await
     }
 
-    /// Bridge Tantivy's synchronous predicate API. Disk-backed calls MUST run on a CPU or
-    /// blocking thread, never a Tokio worker. The saved runtime drives Feuer's I/O tasks.
+    /// Wait synchronously for a cache operation, including predicate-cache writes.
+    /// Disk-backed calls use `Handle::block_on` and must run outside an async task.
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
         match &self.runtime {
             Some(runtime) => runtime.block_on(future),
