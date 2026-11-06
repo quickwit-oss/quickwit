@@ -15,8 +15,8 @@
 use std::sync::Mutex;
 
 use quickwit_storage::{
-    BundleStorage, MockStorage, MockStorageCache, PutPayload, SplitPayloadBuilder,
-    wrap_storage_with_cache,
+    BundleStorage, CoalescingStorage, MockStorage, MockStorageCache, PutPayload,
+    SplitPayloadBuilder, wrap_storage_with_cache,
 };
 
 use super::*;
@@ -66,12 +66,20 @@ async fn test_batch_through_directory_caches_and_bundle() {
             recorded_reads.lock().unwrap().push(range.clone());
             Ok(bytes.slice(range))
         });
+    let storage = Arc::new(CoalescingStorage::new(Arc::new(storage)));
     let (bundle, _) =
-        BundleStorage::open_from_split_bytes(Arc::new(storage), "split.split".into(), footer)
-            .unwrap();
+        BundleStorage::open_from_split_bytes(storage, "split.split".into(), footer).unwrap();
     let mut cache = MockStorageCache::default();
-    cache.expect_get().times(2).return_const(None);
-    cache.expect_put().times(1).return_const(());
+    cache.expect_get().times(4).returning(|path, range| {
+        assert_eq!(path, Path::new(TEST_PATH));
+        assert!([2..4, 10..12, 7..9].contains(&range));
+        None
+    });
+    cache.expect_put().times(4).returning(|path, range, bytes| {
+        assert_eq!(path, Path::new(TEST_PATH));
+        assert!([2..4, 10..12, 7..9].contains(&range));
+        assert_eq!(bytes.as_slice(), &CONTENT[range]);
+    });
     let storage = wrap_storage_with_cache(Arc::new(cache), Arc::new(bundle));
     let storage_directory = StorageDirectory::new(storage);
     let caching_directory = CachingDirectory::new_unbounded(Arc::new(storage_directory.clone()));
@@ -85,7 +93,7 @@ async fn test_batch_through_directory_caches_and_bundle() {
     assert_eq!(*reads.lock().unwrap(), vec![5..7]); // Bundled file starts after "pad".
     reads.lock().unwrap().clear();
 
-    // FileSlice translates offsets before the caches remove hits and StorageDirectory plans misses.
+    // FileSlice translates offsets before the caches remove hits and storage collects misses.
     let file = FileSlice::new(handle).slice(2..14);
     let ranges = vec![8..10, 2..4, 0..2, 5..7, 8..10, 4..4];
     let expected: Vec<&[u8]> = vec![b"ab", b"45", b"23", b"78", b"ab", b""];
@@ -94,7 +102,7 @@ async fn test_batch_through_directory_caches_and_bundle() {
         bytes.iter().map(OwnedBytes::as_slice).collect::<Vec<_>>(),
         expected
     );
-    // Misses 10..12, 7..9, 10..12 become one 7..12 download, translated by the bundle to 10..15.
+    // The bundle translates misses to 13..15, 10..12, 13..15. Storage downloads 10..15.
     assert_eq!(*reads.lock().unwrap(), vec![10..15]);
 
     for (range, expected_bytes) in ranges.iter().zip(&expected) {

@@ -616,6 +616,38 @@ mod tests {
     const DEFAULT_SPLIT_TAIL_WINDOW_NUM_BYTES: u64 = 1024 * 1024;
 
     #[tokio::test]
+    async fn test_coalesces_ranges_from_different_bundled_files() {
+        let mut backend = crate::MockStorage::default();
+        backend
+            .expect_get_slice_stream()
+            .times(1)
+            .returning(|path, range| {
+                assert_eq!(path, Path::new("split"));
+                assert_eq!(range, 101..123);
+                Ok(Box::new(std::io::Cursor::new(
+                    (101u8..123).collect::<Vec<_>>(),
+                )))
+            });
+        let storage = BundleStorage {
+            storage: Arc::new(crate::CoalescingStorage::new(Arc::new(backend))),
+            bundle_filepath: PathBuf::from("split"),
+            file_ranges: BundleFileRanges {
+                files: HashMap::from([
+                    (PathBuf::from("first"), 100..110),
+                    (PathBuf::from("second"), 120..130),
+                ]),
+            },
+        };
+        let (first, second) = tokio::try_join!(
+            storage.get_slice(Path::new("first"), 1..3),
+            storage.get_slice(Path::new("second"), 1..3),
+        )
+        .unwrap();
+        assert_eq!(first.as_slice(), &[101, 102]);
+        assert_eq!(second.as_slice(), &[121, 122]);
+    }
+
+    #[tokio::test]
     async fn bundle_storage_locates_footer_from_object_storage() {
         let mut split_payload_builder = SplitPayloadBuilder::default();
         split_payload_builder.add_payload("fields".to_string(), Box::new(b"fields".to_vec()));
