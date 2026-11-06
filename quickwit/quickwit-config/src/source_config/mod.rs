@@ -77,9 +77,8 @@ impl SourceConfig {
 
     /// Checks that the VRL transform, if any, compiles.
     ///
-    /// Deserializing a `SourceConfig` does not compile its transform: whether a script compiles
-    /// depends on the VRL version, and a source stored by an older version must stay readable.
-    /// This must be called wherever a new or updated source config is accepted.
+    /// Deserialization does not compile it, so that a source stored with an older VRL stays
+    /// readable. This must be called wherever a new or updated source config is accepted.
     pub fn validate_transform(&self) -> anyhow::Result<()> {
         let Some(transform_config) = &self.transform_config else {
             return Ok(());

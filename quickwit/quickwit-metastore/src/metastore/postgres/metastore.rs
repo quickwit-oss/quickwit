@@ -2150,8 +2150,7 @@ mod tests {
             .index_uid()
             .clone();
 
-        // Writes reject transforms that do not compile, so we store the source directly, as a
-        // version of Quickwit built with an older VRL could have.
+        // `add_source` rejects this transform, so we store it directly.
         let mut source_config = SourceConfig::for_test("test-source", SourceParams::void());
         source_config.transform_config = Some(TransformConfig::for_test("foo"));
         let mut index_metadata = metastore

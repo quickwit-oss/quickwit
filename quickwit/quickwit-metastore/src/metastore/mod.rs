@@ -1144,8 +1144,8 @@ mod tests {
         let request = AddSourceRequest::try_from_source_config(index_uid, &source_config).unwrap();
         let result = request.deserialize_source_config();
 
-        // Transforms are only compiled when Quickwit is built with the `vrl` feature.
-        if source_config.validate_transform().is_ok() {
+        let vrl_feature_enabled = source_config.validate_transform().is_err();
+        if !vrl_feature_enabled {
             result.unwrap();
             return;
         }

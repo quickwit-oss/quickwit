@@ -94,13 +94,12 @@ pub fn load_source_config_update(
 impl SourceConfigForSerialization {
     /// Checks the validity of the `SourceConfig` as a "deserializable source".
     ///
-    /// Remarks:
+    /// Two remarks:
     /// - This does not check connectivity, it just validate configuration, without performing any
     ///   IO. See `check_connectivity(..)`.
     /// - This is used each time the `SourceConfig` is deserialized (at creation but also during
     ///   communications with the metastore). When ingesting from stdin, we programmatically create
     ///   an invalid `SourceConfig` and only use it locally.
-    /// - This does not compile the VRL transform. See [`SourceConfig::validate_transform`].
     fn validate_and_build(self) -> anyhow::Result<SourceConfig> {
         if !RESERVED_SOURCE_IDS.contains(&self.source_id.as_str()) {
             validate_identifier("source", &self.source_id)?;
