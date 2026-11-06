@@ -17,18 +17,20 @@ use std::time::Duration;
 use quickwit_common::metrics::{
     MEMORY_ACTIVE_BYTES, MEMORY_ALLOCATED_BYTES, MEMORY_RESIDENT_BYTES,
 };
-use quickwit_common::rate_limited_warn;
+use quickwit_common::{CountingAllocator, rate_limited_warn};
 use tikv_jemallocator::Jemalloc;
 use tracing::error;
 
 #[cfg(feature = "jemalloc-profiled")]
 #[global_allocator]
-pub static GLOBAL: quickwit_common::jemalloc_profiled::JemallocProfiled =
-    quickwit_common::jemalloc_profiled::JemallocProfiled(Jemalloc);
+pub static GLOBAL: CountingAllocator<quickwit_common::jemalloc_profiled::JemallocProfiled> =
+    CountingAllocator(quickwit_common::jemalloc_profiled::JemallocProfiled(
+        Jemalloc,
+    ));
 
 #[cfg(not(feature = "jemalloc-profiled"))]
 #[global_allocator]
-pub static GLOBAL: Jemalloc = Jemalloc;
+pub static GLOBAL: CountingAllocator<Jemalloc> = CountingAllocator(Jemalloc);
 
 const JEMALLOC_METRICS_POLLING_INTERVAL: Duration = Duration::from_secs(5);
 
