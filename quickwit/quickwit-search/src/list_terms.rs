@@ -395,6 +395,9 @@ pub async fn leaf_list_terms(
                 )
                 .await;
                 timer.observe_duration();
+                // A split that ran out of warmup memory would likely run out of memory again on
+                // another node, so it is not retried.
+                let retryable_error = !leaf_split_search_permit.has_run_out_of_memory();
 
                 // Explicitly drop the permit for readability.
                 // This should always happen after the ephemeral search cache is dropped. The
@@ -402,20 +405,26 @@ pub async fn leaf_list_terms(
                 // together with the ephemeral search cache, so the warmup memory is freed here.
                 std::mem::drop(leaf_split_search_permit);
 
-                leaf_search_single_split_res.map_err(|err| (split.split_id.clone(), err))
+                leaf_search_single_split_res.map_err(|err| SplitSearchError {
+                    split_id: split.split_id.clone(),
+                    error: err.to_string(),
+                    retryable_error,
+                })
             }
         })
         .collect();
 
     let split_search_results = futures::future::join_all(leaf_search_single_split_futures).await;
 
-    let (split_search_responses, errors): (Vec<LeafListTermsResponse>, Vec<(String, SearchError)>) =
-        split_search_results
-            .into_iter()
-            .partition_map(|split_search_res| match split_search_res {
-                Ok(split_search_resp) => Either::Left(split_search_resp),
-                Err(err) => Either::Right(err),
-            });
+    let (split_search_responses, failed_splits): (
+        Vec<LeafListTermsResponse>,
+        Vec<SplitSearchError>,
+    ) = split_search_results
+        .into_iter()
+        .partition_map(|split_search_res| match split_search_res {
+            Ok(split_search_resp) => Either::Left(split_search_resp),
+            Err(err) => Either::Right(err),
+        });
 
     let merged_iter = split_search_responses
         .into_iter()
@@ -428,14 +437,6 @@ pub async fn leaf_list_terms(
         merged_iter.collect()
     };
 
-    let failed_splits = errors
-        .into_iter()
-        .map(|(split_id, err)| SplitSearchError {
-            split_id,
-            error: err.to_string(),
-            retryable_error: true,
-        })
-        .collect();
     let merged_search_response = LeafListTermsResponse {
         num_hits: terms.len() as u64,
         terms,

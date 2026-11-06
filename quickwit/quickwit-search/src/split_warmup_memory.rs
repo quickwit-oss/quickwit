@@ -68,8 +68,7 @@ impl SplitWarmupMemory {
         self.lock_state().reservation.num_bytes()
     }
 
-    /// Whether the reservation failed to grow.
-    #[cfg(test)]
+    /// Whether the reservation failed to grow, because of the warmup memory limit.
     pub fn has_run_out_of_memory(&self) -> bool {
         self.lock_state().out_of_memory
     }
