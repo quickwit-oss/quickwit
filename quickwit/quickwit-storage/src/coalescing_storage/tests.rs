@@ -57,11 +57,19 @@ async fn test_collects_by_object_and_collector() {
         (1, "file", 0..4),
         (1, "file", 60..64),
     ];
-    let buffers = futures::future::try_join_all(requests.iter().map(|(collector, path, range)| {
-        collectors[*collector].get_slice(Path::new(path), range.clone())
-    }))
-    .await
+    let (buffers, batch) = tokio::try_join!(
+        futures::future::try_join_all(requests.iter().map(|(collector, path, range)| {
+            collectors[*collector].get_slice(Path::new(path), range.clone())
+        })),
+        collectors[0].get_slices(Path::new("file"), vec![8..10, 4..4, 0..4, 8..10]),
+    )
     .unwrap();
+    assert_eq!(
+        batch.iter().map(OwnedBytes::as_slice).collect::<Vec<_>>(),
+        vec![&[8, 9][..], &[], &[0, 1, 2, 3], &[8, 9]]
+    );
+    assert_eq!(batch[0].as_ptr(), batch[3].as_ptr());
+    assert_eq!(batch[2].as_ptr(), buffers[0].as_ptr());
     assert_eq!(buffers[0].as_ptr(), buffers[2].as_ptr());
     assert_ne!(buffers[0].as_ptr(), buffers[7].as_ptr());
     for ((_, path, range), buffer) in requests.into_iter().zip(buffers) {
@@ -89,17 +97,16 @@ async fn test_singleton_waits_and_preserves_allocation() {
         });
     let storage = CoalescingStorage::new(Arc::new(storage));
     let read_start = tokio::time::Instant::now();
-    assert!(
-        storage
-            .get_slice(Path::new("file"), 2..2)
-            .await
-            .unwrap()
-            .is_empty()
-    );
+    for ranges in [Vec::new(), vec![2..2, usize::MAX..usize::MAX]] {
+        let expected_len = ranges.len();
+        let buffers = storage.get_slices(Path::new("file"), ranges).await.unwrap();
+        assert_eq!(buffers.len(), expected_len);
+        assert!(buffers.iter().all(|bytes| bytes.is_empty()));
+    }
     assert_eq!(read_start.elapsed(), Duration::ZERO);
     let reversed_range = Range { start: 3, end: 2 };
     let error = storage
-        .get_slice(Path::new("file"), reversed_range)
+        .get_slices(Path::new("file"), vec![0..1, reversed_range])
         .await
         .unwrap_err();
     assert_eq!(io::Error::from(error).kind(), io::ErrorKind::InvalidInput);
@@ -169,7 +176,7 @@ async fn test_collection_deadline_and_cancelling_all_callers_during_download() {
             Ok(Box::new(reader))
         });
     let storage = CoalescingStorage::new(Arc::new(storage));
-    let mut first_read = Box::pin(storage.get_slice(Path::new("file"), 0..1));
+    let mut first_read = Box::pin(storage.get_slices(Path::new("file"), vec![0..1, 1..2]));
     assert!(poll!(first_read.as_mut()).is_pending());
     tokio::time::advance(COLLECTION_DURATION / 2).await;
     let mut second_read = Box::pin(storage.get_slice(Path::new("file"), 3..4));
@@ -219,7 +226,7 @@ async fn test_cancellation_during_collection_releases_batch() {
             Ok(Box::new(std::io::Cursor::new(vec![4, 5, 6, 7, 8, 9])))
         });
     let storage = CoalescingStorage::new(Arc::new(storage));
-    let mut read_to_cancel = Box::pin(storage.get_slice(Path::new("file"), 0..100));
+    let mut read_to_cancel = Box::pin(storage.get_slices(Path::new("file"), vec![0..1, 99..100]));
     assert!(poll!(read_to_cancel.as_mut()).is_pending());
     drop(read_to_cancel);
     assert!(
@@ -227,7 +234,7 @@ async fn test_cancellation_during_collection_releases_batch() {
             .upgrade()
             .is_none()
     );
-    let mut read_to_cancel = Box::pin(storage.get_slice(Path::new("file"), 4..6));
+    let mut read_to_cancel = Box::pin(storage.get_slices(Path::new("file"), vec![4..5, 5..6]));
     let mut remaining_read = Box::pin(storage.get_slice(Path::new("file"), 8..10));
     assert!(poll!(read_to_cancel.as_mut()).is_pending());
     assert!(poll!(remaining_read.as_mut()).is_pending());

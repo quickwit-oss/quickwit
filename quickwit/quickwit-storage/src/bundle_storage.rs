@@ -528,6 +528,21 @@ impl Storage for BundleStorage {
         self.storage.get_slice(&self.bundle_filepath, range).await
     }
 
+    async fn get_slices(
+        &self,
+        path: &Path,
+        mut ranges: Vec<Range<usize>>,
+    ) -> StorageResult<Vec<OwnedBytes>> {
+        crate::storage::validate_byte_ranges(&ranges)?;
+        // Validate every nonempty range before forwarding the batch. Empty ranges need no I/O.
+        for range in &mut ranges {
+            if range.start != range.end {
+                *range = self.bundle_range(path, range.clone())?;
+            }
+        }
+        self.storage.get_slices(&self.bundle_filepath, ranges).await
+    }
+
     async fn get_slice_stream(
         &self,
         path: &Path,
@@ -638,12 +653,23 @@ mod tests {
                 ]),
             },
         };
+        let error = storage
+            .get_slices(Path::new("first"), vec![1..3, 9..11])
+            .await
+            .unwrap_err();
+        assert_eq!(io::Error::from(error).kind(), io::ErrorKind::InvalidInput);
         let (first, second) = tokio::try_join!(
-            storage.get_slice(Path::new("first"), 1..3),
+            storage.get_slices(
+                Path::new("first"),
+                vec![8..10, 1..3, 8..10, usize::MAX..usize::MAX]
+            ),
             storage.get_slice(Path::new("second"), 1..3),
         )
         .unwrap();
-        assert_eq!(first.as_slice(), &[101, 102]);
+        assert_eq!(
+            first.iter().map(OwnedBytes::as_slice).collect::<Vec<_>>(),
+            vec![&[108, 109][..], &[101, 102], &[108, 109], &[]]
+        );
         assert_eq!(second.as_slice(), &[121, 122]);
     }
 
@@ -812,6 +838,14 @@ mod tests {
             assert_eq!(
                 bundle_storage
                     .get_slice(path, range.clone())
+                    .await
+                    .unwrap_err()
+                    .kind(),
+                kind
+            );
+            assert_eq!(
+                bundle_storage
+                    .get_slices(path, vec![0..1, range.clone()])
                     .await
                     .unwrap_err()
                     .kind(),

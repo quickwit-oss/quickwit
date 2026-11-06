@@ -41,8 +41,7 @@ struct CollectedBatch {
 }
 
 impl CollectedBatch {
-    #[allow(clippy::single_range_in_vec_init)] // The first caller contributes one byte range.
-    fn new(underlying: Arc<dyn Storage>, path: PathBuf, range: Range<usize>) -> Arc<Self> {
+    fn new(underlying: Arc<dyn Storage>, path: PathBuf, ranges: Vec<Range<usize>>) -> Arc<Self> {
         Arc::new_cyclic(|weak_batch: &Weak<Self>| {
             let weak_batch = weak_batch.clone();
             let read_future = async move {
@@ -64,16 +63,17 @@ impl CollectedBatch {
             .boxed()
             .shared();
             Self {
-                ranges_to_read: Mutex::new(Some(vec![range])),
+                ranges_to_read: Mutex::new(Some(ranges)),
                 read_future,
             }
         })
     }
 }
 
-/// Collects concurrent `get_slice` calls for the same immutable object for 1 ms, including
-/// singletons. Merges overlaps and gaps up to 2 MiB and runs at most five downloads per collected
-/// batch. Streams merged downloads, retaining requested slices and discarding gaps.
+/// Collects concurrent `get_slice` and `get_slices` calls for the same immutable object for 1 ms,
+/// including singletons. Batches submit all descriptors together, with one shared read future
+/// per caller. Merges overlaps and gaps up to 2 MiB and runs at most five downloads per collected
+/// group. Streams merged downloads, retaining requested slices and discarding gaps.
 ///
 /// Place this below exact-range caches and above timeout/retry storage. Caches then see original
 /// ranges, and only their misses wait for collection. Object paths are relative to `underlying`.
@@ -93,19 +93,24 @@ impl CoalescingStorage {
         }
     }
 
-    fn collect_range(&self, path: &Path, range: Range<usize>) -> (Arc<CollectedBatch>, usize) {
+    fn collect_ranges(
+        &self,
+        path: &Path,
+        ranges: Vec<Range<usize>>,
+    ) -> (Arc<CollectedBatch>, Range<usize>) {
         let mut batches_by_object = self.batches_by_object.lock().unwrap();
         if let Some(batch) = batches_by_object.get(path).and_then(Weak::upgrade) {
             let mut ranges_to_read = batch.ranges_to_read.lock().unwrap();
             if let Some(ranges_to_read) = ranges_to_read.as_mut() {
-                let num_collected_ranges = ranges_to_read.len();
-                ranges_to_read.push(range);
-                return (batch.clone(), num_collected_ranges);
+                let buffer_indices = ranges_to_read.len()..ranges_to_read.len() + ranges.len();
+                ranges_to_read.extend(ranges);
+                return (batch.clone(), buffer_indices);
             }
         }
-        let batch = CollectedBatch::new(self.underlying.clone(), path.to_owned(), range);
+        let buffer_indices = 0..ranges.len();
+        let batch = CollectedBatch::new(self.underlying.clone(), path.to_owned(), ranges);
         batches_by_object.insert(path.to_owned(), Arc::downgrade(&batch));
-        (batch, 0)
+        (batch, buffer_indices)
     }
 }
 
@@ -132,20 +137,27 @@ impl Storage for CoalescingStorage {
         self.underlying.copy_to(path, output).await
     }
 
+    #[allow(clippy::single_range_in_vec_init)] // A scalar read submits one descriptor.
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
-        if range.start > range.end {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "byte range starts after its end",
-            )
-            .into());
+        Ok(self
+            .get_slices(path, vec![range])
+            .await?
+            .pop()
+            .expect("one buffer per requested range"))
+    }
+
+    async fn get_slices(
+        &self,
+        path: &Path,
+        ranges: Vec<Range<usize>>,
+    ) -> StorageResult<Vec<OwnedBytes>> {
+        crate::storage::validate_byte_ranges(&ranges)?;
+        if ranges.iter().all(Range::is_empty) {
+            return Ok(vec![OwnedBytes::empty(); ranges.len()]);
         }
-        if range.is_empty() {
-            return Ok(OwnedBytes::empty());
-        }
-        let (batch, buffer_index) = self.collect_range(path, range);
+        let (batch, buffer_indices) = self.collect_ranges(path, ranges);
         let buffers = batch.read_future.clone().await?;
-        Ok(buffers[buffer_index].clone())
+        Ok(buffers[buffer_indices].to_vec())
     }
 
     async fn get_slice_stream(

@@ -127,13 +127,13 @@ impl AsyncRead for GeneratedReader {
 }
 
 #[tokio::test]
-async fn test_collected_batch_limits_streams_and_drops_them_on_cancellation() {
+async fn test_collected_batch_limits_streams_refills_and_cancels() {
     let writers = Arc::new(Mutex::new(Vec::new()));
     let writers_for_storage = writers.clone();
     let mut storage = MockStorage::default();
     storage
         .expect_get_slice_stream()
-        .times(5)
+        .times(6)
         .returning(move |_, _| {
             let (reader, writer) = tokio::io::duplex(1);
             writers_for_storage.lock().unwrap().push(writer);
@@ -146,7 +146,9 @@ async fn test_collected_batch_limits_streams_and_drops_them_on_cancellation() {
                 [start..start + 1, start + 2..start + 3]
             })
             .collect();
-        read_collected_ranges(&storage, Path::new("file"), ranges).await
+        CoalescingStorage::new(Arc::new(storage))
+            .get_slices(Path::new("file"), ranges)
+            .await
     });
     tokio::time::timeout(Duration::from_secs(5), async {
         while writers.lock().unwrap().len() < 5 {
@@ -155,6 +157,19 @@ async fn test_collected_batch_limits_streams_and_drops_them_on_cancellation() {
     })
     .await
     .unwrap();
+    assert_eq!(writers.lock().unwrap().len(), 5);
+    // Completing the fifth download admits the sixth while earlier downloads remain blocked.
+    let mut completed_writer = writers.lock().unwrap().pop().unwrap();
+    completed_writer.write_all(&[0, 1, 2]).await.unwrap();
+    completed_writer.shutdown().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while writers.lock().unwrap().len() < 5 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(!batch.is_finished());
     batch.abort();
     assert!(batch.await.unwrap_err().is_cancelled());
     let writers = std::mem::take(&mut *writers.lock().unwrap());
@@ -207,13 +222,16 @@ async fn test_one_download_failure_fails_all_callers_and_cancels_peers() {
         Arc::new(cache),
         Arc::new(CoalescingStorage::new(Arc::new(storage))),
     );
-    let ranges = (0..3).flat_map(|index| {
-        let start = index * 5 * MIB;
-        [start..start + 1, start + 2..start + 3]
-    });
-    let mut reads = Box::pin(futures::future::join_all(
-        ranges.map(|range| storage.get_slice(Path::new("file"), range)),
-    ));
+    let first_ranges = (0..3)
+        .map(|index| index * 5 * MIB..index * 5 * MIB + 1)
+        .collect();
+    let second_ranges = (0..3)
+        .map(|index| index * 5 * MIB + 2..index * 5 * MIB + 3)
+        .collect();
+    let mut reads = Box::pin(futures::future::join_all([
+        storage.get_slices(Path::new("file"), first_ranges),
+        storage.get_slices(Path::new("file"), second_ranges),
+    ]));
     tokio::time::timeout(Duration::from_secs(5), async {
         while opened_downloads.load(Ordering::Relaxed) < 3 {
             assert!(futures::poll!(reads.as_mut()).is_pending());

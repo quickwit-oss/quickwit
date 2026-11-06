@@ -71,15 +71,23 @@ impl FileHandle for StorageDirectoryFileHandle {
         Ok(object_bytes)
     }
 
-    // Use FileHandle's ordered, five-at-a-time batch fallback. Each original range
-    // reaches the storage caches before misses are coalesced below them.
+    async fn read_bytes_batch_async(
+        &self,
+        ranges: Vec<Range<usize>>,
+    ) -> io::Result<Vec<OwnedBytes>> {
+        self.storage_directory
+            .storage
+            .get_slices(&self.path, ranges)
+            .await
+            .map_err(io::Error::from)
+    }
 }
 
 /// Directory backed by Quickwit's `Storage` abstraction.
 ///
-/// Batch reads forward each original range, with at most five reads in progress per caller.
+/// Batch reads forward the full range list through storage caches and bundle translation.
 /// Results preserve input order, duplicates, and empty ranges. Storage caches see the original
-/// ranges before a lower `CoalescingStorage` combines cache misses into downloads.
+/// ranges before a lower `CoalescingStorage` combines all misses and limits backend downloads.
 ///
 /// This directory supports asynchronous reads. Synchronous reads return errors. Writes panic.
 #[derive(Clone)]
@@ -166,7 +174,7 @@ mod tests {
     use crate::CachingDirectory;
 
     #[tokio::test(start_paused = true)]
-    async fn test_batch_preserves_order_and_cache_lookups_across_windows() {
+    async fn test_batch_preserves_order_and_cache_lookups() {
         const DISTANT_RANGE_START: usize = 10 * 1024 * 1024;
         let ranges = vec![
             DISTANT_RANGE_START..DISTANT_RANGE_START + 2,
@@ -194,7 +202,7 @@ mod tests {
         });
         cache
             .expect_put()
-            .times(6)
+            .times(7)
             .returning(move |_, range, bytes| {
                 cached_ranges.lock().unwrap().insert(range, bytes);
             });
@@ -203,7 +211,7 @@ mod tests {
         let mut storage = MockStorage::default();
         storage
             .expect_get_slice_stream()
-            .times(3)
+            .times(2)
             .returning(move |_, range| {
                 downloads_for_storage.lock().unwrap().push(range.clone());
                 Ok(Box::new(std::io::Cursor::new(
@@ -274,7 +282,7 @@ mod tests {
         downloads.sort_unstable_by_key(|range| range.start);
         assert_eq!(
             downloads,
-            vec![0..3, 6..10, DISTANT_RANGE_START..DISTANT_RANGE_START + 2]
+            vec![0..10, DISTANT_RANGE_START..DISTANT_RANGE_START + 2]
         );
     }
 
@@ -359,7 +367,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_batch_exposes_five_ranges_and_cancels_download() {
+    async fn test_batch_exposes_all_ranges_and_cancels_download() {
         let download_writer = Arc::new(Mutex::new(None));
         let writer_for_storage = download_writer.clone();
         let mut storage = MockStorage::default();
@@ -367,8 +375,8 @@ mod tests {
             .expect_get_slice_stream()
             .times(1)
             .return_once(move |_, range| {
-                // Only the first five ranges reach storage while their download is pending.
-                assert_eq!(range, 0..13);
+                // All six descriptors reach the coalescer before the download starts.
+                assert_eq!(range, 0..16);
                 let (reader, writer) = tokio::io::duplex(1);
                 *writer_for_storage.lock().unwrap() = Some(writer);
                 Ok(Box::new(reader))
