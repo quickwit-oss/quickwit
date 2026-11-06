@@ -855,6 +855,22 @@ Specifies the path to the [quickwit config](../configuration/node-config.md). Co
 
 `export QW_CONFIG=config/quickwit.yaml`
 
+### QW_DISABLE_TELEMETRY
+
+Disables [telemetry](../telemetry.md) when set to any value, even an empty value or `false`.
+
+*Example*
+
+`QW_DISABLE_TELEMETRY=1 quickwit --help`
+
+### TELEMETRY_INGEST_API
+
+Sends [telemetry](../telemetry.md) to this URL instead of `https://telemetry.quickwit.io/`. The URL is used as is, so the data is not encrypted with an `http://` URL. It does not turn telemetry off, but a value that is not an `http://` or `https://` URL does, with a warning.
+
+*Example*
+
+`TELEMETRY_INGEST_API=http://127.0.0.1:8080/ quickwit run`
+
 ### QW_POSTGRES_SKIP_MIGRATIONS
 
 Don't run database migrations (but verify that migrations were run successfully before, and no that unknown migration was run).

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Azure Blob Storage: support custom endpoints via `endpoint` and `endpoint_suffix` configuration options for sovereign clouds (#6624)
+- Restore anonymous usage telemetry, removed in 0.9.0. It is on by default: set `QW_DISABLE_TELEMETRY=1` to turn it off. `docs/telemetry.md` lists what is sent and where it goes (#6927)
 
 ### Fixed
 - (Jaeger) Query resource attributes when Jaeger request carries tags

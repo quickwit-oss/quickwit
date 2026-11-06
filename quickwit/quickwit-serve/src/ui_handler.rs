@@ -14,6 +14,7 @@
 
 use std::sync::LazyLock;
 
+use quickwit_telemetry::ApiKind;
 use regex::Regex;
 use rust_embed::RustEmbed;
 use warp::hyper::header::HeaderValue;
@@ -47,14 +48,20 @@ async fn serve_file(path: Tail) -> Result<impl warp::Reply, Rejection> {
 
 async fn serve_impl(path: &str) -> Result<impl warp::Reply + use<>, Rejection> {
     static PATH_PTN: LazyLock<Regex> = LazyLock::new(|| Regex::new(PATH_PATTERN).unwrap());
-    let path_to_file = if PATH_PTN.is_match(path) {
-        path
-    } else {
-        // Quickwit UI is a single page application.
-        // Any path request that is not an asset should serve the `index.html` file.
+    // Quickwit UI is a single page application.
+    // Any path request that is not an asset should serve the `index.html` file.
+    let is_index_page = !PATH_PTN.is_match(path);
+    let path_to_file = if is_index_page {
         UI_INDEX_FILE_NAME
+    } else {
+        path
     };
     let asset = Asset::get(path_to_file).ok_or_else(warp::reject::not_found)?;
+    if is_index_page {
+        // The client (browser) usually request `index.html` once unless the user refreshes the
+        // page.
+        quickwit_telemetry::record_api_request(ApiKind::UiIndexPageLoad);
+    }
     let mime = mime_guess::from_path(path_to_file).first_or_octet_stream();
 
     let mut res = Response::new(asset.data.into_owned().into());

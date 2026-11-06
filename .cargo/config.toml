@@ -2,6 +2,10 @@
 rustflags = ["--cfg", "tokio_unstable"]
 rustdocflags = ["--cfg", "tokio_unstable"]
 
+# Keeps tests and `cargo run` from sending telemetry. A value already set in the environment wins.
+[env]
+QW_DISABLE_TELEMETRY = "1"
+
 [target.x86_64-unknown-linux-gnu]
 # x86-64-v3 requires AVX2, BMI1/BMI2, FMA — available on Intel Haswell (2013)+
 # and AMD Zen 1 (2017)+. Covers all current-gen AWS and GCP instance families.
