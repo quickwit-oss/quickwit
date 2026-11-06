@@ -47,7 +47,7 @@ use crate::merge_policy::MergePolicy;
 use crate::metrics::{ACTOR_NAME, BACKPRESSURE_MICROS, INDEXING_PIPELINES};
 use crate::models::{IndexingStatistics, SharedPublishToken};
 use crate::source::{
-    AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_sources,
+    AssignShards, Assignment, Drain, SourceActor, SourceRuntime, quickwit_supported_sources,
 };
 use crate::split_store::IndexingSplitStore;
 
@@ -83,10 +83,76 @@ pub(crate) struct Spawn {
     pub(crate) retry_count: usize,
 }
 
+/// Asks a pipeline to drain and shut itself down: the source stops emitting,
+/// and once the in-flight batches are flushed, published, and settled
+/// (acknowledged), the source exits on its own. Past `drain_timeout`, the
+/// pipeline gives up, kills its actors, and still exits: delivery degrades to
+/// at-least-once. A draining pipeline is never respawned.
+///
+/// Only sources opting in through
+/// [`crate::source::Source::should_be_drained`] actually drain: for the
+/// others the pipeline kills its actors and exits immediately.
+#[derive(Debug)]
+pub struct DrainPipeline {
+    pub drain_timeout: Duration,
+}
+
+/// Drain progress of a pipeline supervisor (see [`DrainPipeline`]).
+#[derive(Default)]
+pub(crate) struct DrainState {
+    deadline_opt: Option<Instant>,
+}
+
+pub(crate) enum DrainAction {
+    /// The drain is now (or was already) in progress: keep supervising.
+    KeepRunning,
+    /// Nothing left to settle: exit successfully.
+    Exit,
+    /// The source cannot drain: kill the actors, then exit.
+    TerminateAndExit,
+}
+
+impl DrainState {
+    /// Whether a drain was initiated. A draining pipeline must never respawn.
+    pub(crate) fn is_draining(&self) -> bool {
+        self.deadline_opt.is_some()
+    }
+
+    pub(crate) async fn on_drain_request(
+        &mut self,
+        running_source_opt: Option<(&Mailbox<SourceActor>, bool)>,
+        drain_timeout: Duration,
+    ) -> DrainAction {
+        if self.is_draining() {
+            return DrainAction::KeepRunning;
+        }
+        let Some((source_mailbox, source_should_be_drained)) = running_source_opt else {
+            return DrainAction::Exit;
+        };
+        if !source_should_be_drained {
+            // The source settles nothing on a drain: tearing the pipeline down
+            // right away.
+            return DrainAction::TerminateAndExit;
+        }
+        self.deadline_opt = Some(Instant::now() + drain_timeout);
+        let _ = source_mailbox.send_message(Drain).await;
+        DrainAction::KeepRunning
+    }
+
+    /// Whether the draining pipeline ran out of time to settle: the caller
+    /// kills whatever is left and exits.
+    pub(crate) fn is_deadline_exceeded(&self) -> bool {
+        self.deadline_opt
+            .map(|deadline| Instant::now() >= deadline)
+            .unwrap_or(false)
+    }
+}
+
 /// Handles for standard Tantivy-based indexing pipeline.
 struct IndexingPipelineHandles {
     source_mailbox: Mailbox<SourceActor>,
     source_handle: ActorHandle<SourceActor>,
+    source_should_be_drained: bool,
     doc_processor: ActorHandle<DocProcessor>,
     indexer: ActorHandle<Indexer>,
     index_serializer: ActorHandle<IndexSerializer>,
@@ -115,6 +181,7 @@ pub struct IndexingPipeline {
     handles_opt: Option<IndexingPipelineHandles>,
     // Killswitch used for the actors in the pipeline. This is not the supervisor killswitch.
     kill_switch: KillSwitch,
+    drain_state: DrainState,
 
     // The set of shard is something that can change dynamically without necessarily
     // requiring a respawn of the pipeline.
@@ -168,6 +235,7 @@ impl IndexingPipeline {
             previous_generations_statistics: Default::default(),
             handles_opt: None,
             kill_switch: KillSwitch::default(),
+            drain_state: DrainState::default(),
             statistics: IndexingStatistics {
                 params_fingerprint,
                 ..Default::default()
@@ -295,6 +363,15 @@ impl IndexingPipeline {
             Health::Healthy => {}
             Health::FailureOrUnhealthy => {
                 self.terminate().await;
+                if self.drain_state.is_draining() {
+                    // A draining pipeline is never respawned: whatever could
+                    // not be settled is redelivered (see `DrainPipeline`).
+                    warn!(
+                        pipeline_id=?self.params.pipeline_id,
+                        "draining indexing pipeline failed; exiting"
+                    );
+                    return Err(ActorExitStatus::Success);
+                }
                 let first_retry_delay = wait_duration_before_retry(0);
                 ctx.schedule_self_msg(first_retry_delay, Spawn { retry_count: 0 });
             }
@@ -442,6 +519,7 @@ impl IndexingPipeline {
         let source = ctx
             .protect_future(quickwit_supported_sources().load_source(source_runtime))
             .await?;
+        let source_should_be_drained = source.should_be_drained();
         let actor_source = SourceActor::new(source, doc_processor_mailbox);
         let (source_mailbox, source_handle) = ctx
             .spawn_actor()
@@ -460,6 +538,7 @@ impl IndexingPipeline {
         self.handles_opt = Some(IndexingPipelineHandles {
             source_mailbox,
             source_handle,
+            source_should_be_drained,
             doc_processor: doc_processor_handle,
             indexer: indexer_handle,
             index_serializer: index_serializer_handle,
@@ -496,6 +575,14 @@ impl Handler<SuperviseLoop> for IndexingPipeline {
     ) -> Result<(), ActorExitStatus> {
         self.perform_observe(ctx);
         self.perform_health_check(ctx).await?;
+        if self.drain_state.is_deadline_exceeded() {
+            warn!(
+                pipeline_id=?self.params.pipeline_id,
+                "indexing pipeline could not be drained before the deadline"
+            );
+            self.terminate().await;
+            return Err(ActorExitStatus::Success);
+        }
         ctx.schedule_self_msg(SUPERVISE_INTERVAL, supervise_loop_token);
         Ok(())
     }
@@ -510,6 +597,10 @@ impl Handler<Spawn> for IndexingPipeline {
         spawn: Spawn,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        if self.drain_state.is_draining() {
+            // A draining pipeline is shutting down: never respawn it.
+            return Ok(());
+        }
         if self.handles_opt.is_some() {
             return Ok(());
         }
@@ -531,6 +622,34 @@ impl Handler<Spawn> for IndexingPipeline {
             );
         }
         Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<DrainPipeline> for IndexingPipeline {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        drain: DrainPipeline,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        let running_source_opt = self
+            .handles_opt
+            .as_ref()
+            .map(|handles| (&handles.source_mailbox, handles.source_should_be_drained));
+        match self
+            .drain_state
+            .on_drain_request(running_source_opt, drain.drain_timeout)
+            .await
+        {
+            DrainAction::KeepRunning => Ok(()),
+            DrainAction::Exit => Err(ActorExitStatus::Success),
+            DrainAction::TerminateAndExit => {
+                self.terminate().await;
+                Err(ActorExitStatus::Success)
+            }
+        }
     }
 }
 
