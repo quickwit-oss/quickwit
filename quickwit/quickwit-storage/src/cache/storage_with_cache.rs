@@ -25,7 +25,8 @@ use crate::cache::StorageCache;
 use crate::storage::SendableAsync;
 use crate::{BulkDeleteError, ListObjectsStream, OwnedBytes, Storage, StorageResult};
 
-/// Use with care, StorageWithCache is read-only.
+/// Read-only storage cache. Buffered reads populate the cache; streamed reads serve cache hits
+/// and forward misses without retaining or inserting the response.
 pub struct StorageWithCache {
     pub storage: Arc<dyn Storage>,
     pub cache: Arc<dyn StorageCache>,
@@ -70,12 +71,13 @@ impl Storage for StorageWithCache {
     async fn get_slice_stream(
         &self,
         path: &Path,
-        _range: Range<usize>,
+        range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        unimplemented!(
-            "StorageWithCache does not support streamed read yet. Failed to get {:?}",
-            path
-        )
+        if let Some(bytes) = self.cache.get(path, range.clone()).await {
+            return Ok(Box::new(std::io::Cursor::new(bytes)));
+        }
+        // Streamed misses bypass insertion to avoid retaining the entire response.
+        self.storage.get_slice_stream(path, range).await
     }
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
@@ -121,6 +123,42 @@ mod tests {
 
     use super::*;
     use crate::{MockStorage, MockStorageCache, OwnedBytes};
+
+    #[tokio::test]
+    async fn test_stream_reads_cache_hits_and_does_not_insert_misses() {
+        use tokio::io::AsyncReadExt;
+
+        let mut cache = MockStorageCache::default();
+        let mut attempts = 0;
+        cache.expect_get().times(2).returning(move |path, range| {
+            assert_eq!(path, Path::new("file"));
+            assert_eq!(range, 1..3);
+            attempts += 1;
+            (attempts == 1).then(|| OwnedBytes::new(vec![1, 2]))
+        });
+        let mut storage = MockStorage::default();
+        storage
+            .expect_get_slice_stream()
+            .times(1)
+            .returning(|path, range| {
+                assert_eq!(path, Path::new("file"));
+                assert_eq!(range, 1..3);
+                Ok(Box::new(std::io::Cursor::new(vec![1, 2])))
+            });
+        let storage = StorageWithCache {
+            storage: Arc::new(storage),
+            cache: Arc::new(cache),
+        };
+        for _ in 0..2 {
+            let mut stream = storage
+                .get_slice_stream(Path::new("file"), 1..3)
+                .await
+                .unwrap();
+            let mut bytes = Vec::new();
+            stream.read_to_end(&mut bytes).await.unwrap();
+            assert_eq!(bytes, [1, 2]);
+        }
+    }
 
     #[tokio::test]
     async fn put_in_cache_test() {

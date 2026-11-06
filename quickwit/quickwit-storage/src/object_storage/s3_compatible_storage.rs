@@ -52,7 +52,7 @@ use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
 use quickwit_config::S3StorageConfig;
-use quickwit_metrics::{HistogramTimer, counter, label_values};
+use quickwit_metrics::{GaugeGuard, HistogramTimer, counter, label_values};
 use regex::Regex;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::sync::Semaphore;
@@ -75,11 +75,16 @@ static REQUEST_SEMAPHORE: LazyLock<Semaphore> = LazyLock::new(|| {
     Semaphore::new(num_permits)
 });
 
+const DOWNLOAD_BYTES_REPORT_THRESHOLD: u64 = 8 * 1024 * 1024;
+
 /// Wrap the async read handle together with a permit to keep the permit alive
 /// until the handle is dropped
 struct S3AsyncRead<T: AsyncRead + Send + Unpin> {
     pub read: T,
     pub _permit: Result<tokio::sync::SemaphorePermit<'static>, tokio::sync::AcquireError>,
+    _in_flight_bytes: GaugeGuard,
+    _in_flight_requests: GaugeGuard,
+    unreported_bytes: u64,
 }
 
 impl<T: AsyncRead + Send + Unpin> AsyncRead for S3AsyncRead<T> {
@@ -89,7 +94,23 @@ impl<T: AsyncRead + Send + Unpin> AsyncRead for S3AsyncRead<T> {
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         let self_unpin = self.get_mut();
-        Pin::new(&mut self_unpin.read).poll_read(cx, buf)
+        let before = buf.filled().len();
+        let result = Pin::new(&mut self_unpin.read).poll_read(cx, buf);
+        self_unpin.unreported_bytes += (buf.filled().len() - before) as u64;
+        if self_unpin.unreported_bytes >= DOWNLOAD_BYTES_REPORT_THRESHOLD {
+            crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES
+                .inc_by(std::mem::take(&mut self_unpin.unreported_bytes));
+        }
+        result
+    }
+}
+
+impl<T: AsyncRead + Send + Unpin> Drop for S3AsyncRead<T> {
+    fn drop(&mut self) {
+        // Flush the remainder, including partial downloads on error or cancellation.
+        if self.unreported_bytes > 0 {
+            crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(self.unreported_bytes);
+        }
     }
 }
 
@@ -1110,9 +1131,14 @@ impl Storage for S3CompatibleObjectStorage {
             self.get_object(path, Some(range.clone()))
         })
         .await?;
+        let (in_flight_bytes, in_flight_requests) =
+            object_storage_get_slice_in_flight_guards(range.len());
         Ok(Box::new(S3AsyncRead {
             read: get_object_output.body.into_async_read(),
             _permit: permit,
+            _in_flight_bytes: in_flight_bytes,
+            _in_flight_requests: in_flight_requests,
+            unreported_bytes: 0,
         }))
     }
 
@@ -1260,6 +1286,39 @@ mod tests {
 
     use super::*;
     use crate::{DebouncedStorage, MultiPartPolicy, S3CompatibleObjectStorage};
+
+    #[tokio::test]
+    async fn test_stream_reports_bytes_in_batches_and_releases_guards() {
+        let threshold = DOWNLOAD_BYTES_REPORT_THRESHOLD as usize;
+        let total_len = threshold + 3;
+        for read_len in [3, threshold, total_len] {
+            let bytes = quickwit_metrics::Gauge::local();
+            let requests = quickwit_metrics::Gauge::local();
+            let mut reader = S3AsyncRead {
+                read: tokio::io::repeat(0).take(total_len as u64),
+                _permit: REQUEST_SEMAPHORE.acquire().await,
+                _in_flight_bytes: GaugeGuard::new(&bytes, total_len as f64),
+                _in_flight_requests: GaugeGuard::new(&requests, 1.0),
+                unreported_bytes: 0,
+            };
+            let mut consumed = 0;
+            let mut chunk = [0; 4096];
+            while consumed < read_len {
+                let len = chunk.len().min(read_len - consumed);
+                reader.read_exact(&mut chunk[..len]).await.unwrap();
+                consumed += len;
+                assert_eq!(reader.unreported_bytes, (consumed % threshold) as u64);
+            }
+            if read_len == total_len {
+                assert_eq!(reader.read(&mut [0]).await.unwrap(), 0);
+            }
+            assert_eq!(bytes.get(), total_len as f64);
+            assert_eq!(requests.get(), 1.0);
+            drop(reader); // Both EOF and cancellation release the guards.
+            assert_eq!(bytes.get(), 0.0);
+            assert_eq!(requests.get(), 0.0);
+        }
+    }
 
     #[tokio::test]
     async fn test_md5_calc() -> std::io::Result<()> {

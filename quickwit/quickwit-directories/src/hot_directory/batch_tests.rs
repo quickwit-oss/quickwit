@@ -48,17 +48,30 @@ async fn test_batch_through_directory_caches_and_bundle() {
     let reads = Arc::new(Mutex::new(Vec::new()));
     let recorded_reads = reads.clone();
     let mut storage = MockStorage::default();
-    storage.expect_get_slice().returning(move |path, range| {
-        assert_eq!(path, Path::new("split.split"));
-        recorded_reads.lock().unwrap().push(range.clone());
-        Ok(bytes.slice(range))
-    });
+    let streamed_bytes = bytes.clone();
+    storage
+        .expect_get_slice_stream()
+        .times(1)
+        .returning(move |path, range| {
+            assert_eq!(path, Path::new("split.split"));
+            recorded_reads.lock().unwrap().push(range.clone());
+            Ok(Box::new(std::io::Cursor::new(streamed_bytes.slice(range))))
+        });
+    let recorded_reads = reads.clone();
+    storage
+        .expect_get_slice()
+        .times(1)
+        .returning(move |path, range| {
+            assert_eq!(path, Path::new("split.split"));
+            recorded_reads.lock().unwrap().push(range.clone());
+            Ok(bytes.slice(range))
+        });
     let (bundle, _) =
         BundleStorage::open_from_split_bytes(Arc::new(storage), "split.split".into(), footer)
             .unwrap();
     let mut cache = MockStorageCache::default();
     cache.expect_get().times(2).return_const(None);
-    cache.expect_put().times(2).return_const(());
+    cache.expect_put().times(1).return_const(());
     let storage = wrap_storage_with_cache(Arc::new(cache), Arc::new(bundle));
     let storage_directory = StorageDirectory::new(storage);
     let caching_directory = CachingDirectory::new_unbounded(Arc::new(storage_directory.clone()));
@@ -67,8 +80,8 @@ async fn test_batch_through_directory_caches_and_bundle() {
     let handle = hot_directory.get_file_handle(path).unwrap();
 
     // Populate the dynamic cache separately from the static hotcache.
-    let initial = handle.read_bytes_batch_async(vec![2..4]).await.unwrap();
-    assert_eq!(initial[0].as_slice(), b"23");
+    let initial = handle.read_bytes_async(2..4).await.unwrap();
+    assert_eq!(initial.as_slice(), b"23");
     assert_eq!(*reads.lock().unwrap(), vec![5..7]); // Bundled file starts after "pad".
     reads.lock().unwrap().clear();
 
