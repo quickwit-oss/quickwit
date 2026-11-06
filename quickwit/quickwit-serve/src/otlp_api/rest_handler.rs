@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use bytesize::ByteSize;
 use quickwit_common::rate_limited_error;
 use quickwit_opentelemetry::otlp::{OtelSignal, OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsService;
@@ -45,12 +46,31 @@ pub struct OtlpApi;
 pub(crate) fn otlp_ingest_api_handlers(
     otlp_logs_service: Option<OtlpGrpcLogsService>,
     otlp_traces_service: Option<OtlpGrpcTracesService>,
+    max_body_size: ByteSize,
+    max_decompressed_body_size: ByteSize,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    otlp_default_logs_handler(otlp_logs_service.clone())
-        .or(otlp_default_traces_handler(otlp_traces_service.clone()).recover(recover_fn))
-        .or(otlp_logs_handler(otlp_logs_service).recover(recover_fn))
-        .or(otlp_ingest_traces_handler(otlp_traces_service).recover(recover_fn))
-        .boxed()
+    otlp_default_logs_handler(
+        otlp_logs_service.clone(),
+        max_body_size,
+        max_decompressed_body_size,
+    )
+    .or(otlp_default_traces_handler(
+        otlp_traces_service.clone(),
+        max_body_size,
+        max_decompressed_body_size,
+    )
+    .recover(recover_fn))
+    .or(
+        otlp_logs_handler(otlp_logs_service, max_body_size, max_decompressed_body_size)
+            .recover(recover_fn),
+    )
+    .or(otlp_ingest_traces_handler(
+        otlp_traces_service,
+        max_body_size,
+        max_decompressed_body_size,
+    )
+    .recover(recover_fn))
+    .boxed()
 }
 
 /// Open Telemetry REST/Protobuf logs ingest endpoint.
@@ -65,6 +85,8 @@ pub(crate) fn otlp_ingest_api_handlers(
 )]
 pub(crate) fn otlp_default_logs_handler(
     otlp_logs_service: Option<OtlpGrpcLogsService>,
+    max_body_size: ByteSize,
+    max_decompressed_body_size: ByteSize,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     require(otlp_logs_service)
         .and(warp::path!("otlp" / "v1" / "logs"))
@@ -76,7 +98,11 @@ pub(crate) fn otlp_default_logs_handler(
             OtelSignal::Logs.header_name(),
         ))
         .and(warp::post())
-        .and(get_body_bytes())
+        .and(get_body_bytes(
+            max_body_size,
+            max_decompressed_body_size,
+            "otlp_logs",
+        ))
         .then(
             |otlp_logs_service, index_id: Option<String>, body| async move {
                 let index_id =
@@ -100,6 +126,8 @@ pub(crate) fn otlp_default_logs_handler(
 )]
 pub(crate) fn otlp_logs_handler(
     otlp_log_service: Option<OtlpGrpcLogsService>,
+    max_body_size: ByteSize,
+    max_decompressed_body_size: ByteSize,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     require(otlp_log_service)
         .and(warp::path!(String / "otlp" / "v1" / "logs"))
@@ -108,7 +136,11 @@ pub(crate) fn otlp_logs_handler(
             "application/x-protobuf",
         ))
         .and(warp::post())
-        .and(get_body_bytes())
+        .and(get_body_bytes(
+            max_body_size,
+            max_decompressed_body_size,
+            "otlp_logs",
+        ))
         .then(otlp_ingest_logs)
         .and(with_arg(BodyFormat::default()))
         .map(into_rest_api_response)
@@ -127,6 +159,8 @@ pub(crate) fn otlp_logs_handler(
 )]
 pub(crate) fn otlp_default_traces_handler(
     otlp_traces_service: Option<OtlpGrpcTracesService>,
+    max_body_size: ByteSize,
+    max_decompressed_body_size: ByteSize,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     require(otlp_traces_service)
         .and(warp::path!("otlp" / "v1" / "traces"))
@@ -138,7 +172,11 @@ pub(crate) fn otlp_default_traces_handler(
             OtelSignal::Traces.header_name(),
         ))
         .and(warp::post())
-        .and(get_body_bytes())
+        .and(get_body_bytes(
+            max_body_size,
+            max_decompressed_body_size,
+            "otlp_traces",
+        ))
         .then(
             |otlp_traces_service, index_id: Option<String>, body| async move {
                 let index_id =
@@ -162,6 +200,8 @@ pub(crate) fn otlp_default_traces_handler(
 )]
 pub(crate) fn otlp_ingest_traces_handler(
     otlp_traces_service: Option<OtlpGrpcTracesService>,
+    max_body_size: ByteSize,
+    max_decompressed_body_size: ByteSize,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     require(otlp_traces_service)
         .and(warp::path!(String / "otlp" / "v1" / "traces"))
@@ -170,7 +210,11 @@ pub(crate) fn otlp_ingest_traces_handler(
             "application/x-protobuf",
         ))
         .and(warp::post())
-        .and(get_body_bytes())
+        .and(get_body_bytes(
+            max_body_size,
+            max_decompressed_body_size,
+            "otlp_traces",
+        ))
         .then(otlp_ingest_traces)
         .and(with_arg(BodyFormat::default()))
         .map(into_rest_api_response)
@@ -245,6 +289,7 @@ async fn otlp_ingest_traces(
 mod tests {
     use std::io::Write;
 
+    use bytesize::ByteSize;
     use flate2::Compression;
     use flate2::write::GzEncoder;
     use prost::Message;
@@ -352,8 +397,13 @@ mod tests {
             }],
         };
         let body = export_logs_request.encode_to_vec();
-        let otlp_traces_api_handler =
-            otlp_ingest_api_handlers(Some(logs_service), Some(traces_service)).recover(recover_fn);
+        let otlp_traces_api_handler = otlp_ingest_api_handlers(
+            Some(logs_service),
+            Some(traces_service),
+            ByteSize::mib(10),
+            ByteSize::mib(256),
+        )
+        .recover(recover_fn);
         {
             // Test default otlp endpoint
             let resp = warp::test::request()
@@ -498,8 +548,13 @@ mod tests {
             resource_spans: make_resource_spans_for_test(),
         };
         let body = export_trace_request.encode_to_vec();
-        let otlp_traces_api_handler =
-            otlp_ingest_api_handlers(Some(logs_service), Some(traces_service)).recover(recover_fn);
+        let otlp_traces_api_handler = otlp_ingest_api_handlers(
+            Some(logs_service),
+            Some(traces_service),
+            ByteSize::mib(10),
+            ByteSize::mib(256),
+        )
+        .recover(recover_fn);
         {
             // Test default otlp endpoint
             let resp = warp::test::request()

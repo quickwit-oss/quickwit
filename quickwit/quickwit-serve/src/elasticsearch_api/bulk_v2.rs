@@ -429,9 +429,9 @@ mod tests {
 
     fn es_compat_bulk_handler_v2(
         ingest_router: IngestRouterServiceClient,
-        content_length_limit: ByteSize,
+        max_body_size: ByteSize,
     ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-        elastic_bulk_filter(content_length_limit)
+        elastic_bulk_filter(max_body_size, ByteSize::mib(256))
             .and(with_arg(ingest_router))
             .then(|body, bulk_options, ingest_router| {
                 elastic_bulk_ingest_v2(None, body, bulk_options, ingest_router)

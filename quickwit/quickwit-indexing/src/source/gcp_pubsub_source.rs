@@ -19,7 +19,6 @@ use anyhow::Context;
 use async_trait::async_trait;
 use bytes::Bytes;
 use google_cloud_auth::credentials::CredentialsFile;
-use google_cloud_gax::retry::RetrySetting;
 use google_cloud_pubsub::client::{Client, ClientConfig};
 use google_cloud_pubsub::subscription::Subscription;
 use quickwit_actors::{ActorExitStatus, Mailbox};
@@ -133,7 +132,8 @@ impl GcpPubSubSource {
             max_messages_per_pull=%max_messages_per_pull,
             "starting GCP PubSub source"
         );
-        if !subscription.exists(Some(RetrySetting::default())).await? {
+        // `None` makes the client use its default retry setting.
+        if !subscription.exists(None).await? {
             anyhow::bail!("GCP PubSub subscription `{subscription_name}` does not exist");
         }
         Ok(Self {
