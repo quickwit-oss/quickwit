@@ -40,37 +40,8 @@ Quickwit exposes metrics for several cache components, including `fastfields`, `
 | `quickwit_indexing` | `available_concurrent_upload_permits`| Number of available concurrent upload permits by component in [`merger`, `indexer`] | [`component`] | `gauge` |
 | `quickwit_indexing` | `ongoing_merge_operations`| Number of available concurrent upload permits by component in [`merger`, `indexer`]. | [`index`, `source`] | `gauge` |
 
-### Published split metrics
-
-These metrics are recorded once per split after successful publication, for both
-newly indexed splits and merge outputs. They share the labels `index`, `source`,
-`merge_ops`, and `doc_target_reached` so byte, document, and split-count ratios
-can describe the same population.
-
-| Namespace | Metric Name | Description | Type |
-| --------- | ----------- | ----------- | ---- |
-| `quickwit_indexing` | `published_split_bytes_total` | Compressed split-file bytes published | `counter` |
-| `quickwit_indexing` | `published_split_docs_total` | Documents in published splits | `counter` |
-| `quickwit_indexing` | `published_splits_total` | Number of published splits | `counter` |
-| `quickwit_indexing` | `published_split_uncompressed_bytes_total` | Uncompressed document bytes in published splits | `counter` |
-| `quickwit_indexing` | `published_split_size_bytes` | Compressed split-file size distribution | `histogram` |
-
-`doc_target_reached` is `true` when `split.num_docs >= split_num_docs_target`,
-using the index settings of the publishing pipeline, and `false` otherwise.
-It is independent of age, merge count, and merge policy maturity. For example,
-a split below the document target remains `false` even if it is mature because
-of its age, its merge count, or a no-merge policy.
-
-Filtering `published_split_size_bytes` by `doc_target_reached="true"` gives the
-size distribution of newly published splits that reached the document target.
-It is not an inventory of all retained splits. Size is the compressed split-file
-length (`footer_offsets.end`), not uncompressed document volume or search memory
-usage. A later configuration change does not relabel previously emitted data.
-
-The boolean label can split each existing label combination into up to two
-series. Queries aggregating over it still include both populations. Explicit
-metric tag allowlists must include `doc_target_reached` to filter or group by it;
-older versions do not emit the label and are excluded by such filters.
+Split-publication metrics (`quickwit_indexing_published_split_*` and `quickwit_indexing_published_splits_total`) include `doc_target_reached="true|false"`: whether the split's document count meets the publishing pipeline's configured `split_num_docs_target`, independently of age or merge count.
+This describes newly published splits, not retained split inventory. Explicit metric tag allowlists must include the label; older versions do not emit it.
 
 ## Ingest Metrics
 
