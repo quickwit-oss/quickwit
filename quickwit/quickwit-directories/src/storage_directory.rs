@@ -30,6 +30,11 @@ use tantivy::{Directory, HasLen};
 use tokio::io::AsyncReadExt;
 use tracing::{error, instrument};
 
+mod batch_collector;
+
+use batch_collector::BatchCollector;
+
+#[derive(Clone)]
 struct StorageDirectoryFileHandle {
     storage_directory: StorageDirectory,
     path: PathBuf,
@@ -73,11 +78,23 @@ impl FileHandle for StorageDirectoryFileHandle {
         &self,
         byte_ranges: Vec<Range<usize>>,
     ) -> io::Result<Vec<OwnedBytes>> {
-        if byte_ranges.is_empty() {
-            return Ok(Vec::new());
+        if byte_ranges.iter().all(|range| range.start == range.end) {
+            return Ok(vec![OwnedBytes::empty(); byte_ranges.len()]);
         }
+        self.storage_directory
+            .batch_collector
+            .read_batch(self.clone(), byte_ranges)
+            .await
+    }
+}
+
+impl StorageDirectoryFileHandle {
+    async fn read_collected_ranges(
+        &self,
+        byte_ranges: Vec<Range<usize>>,
+    ) -> io::Result<Vec<OwnedBytes>> {
         let mut buffers = vec![OwnedBytes::empty(); byte_ranges.len()];
-        // Plan the complete batch as descriptors, then create at most five download futures.
+        // Coalesce the collected ranges, then run at most five downloads concurrently.
         let (requests, download_ranges) = run_cpu_intensive(move || {
             let mut requests: Vec<_> = byte_ranges
                 .into_iter()
@@ -106,9 +123,7 @@ impl FileHandle for StorageDirectoryFileHandle {
         }
         Ok(buffers)
     }
-}
 
-impl StorageDirectoryFileHandle {
     // Requests are sorted, nonempty, and contained in the coalesced download range.
     async fn read_batch_range(
         &self,
@@ -186,8 +201,9 @@ impl StorageDirectoryFileHandle {
 
 /// Directory backed a quickwit `Storage` abstraction.
 ///
-/// Explicit batches are coalesced here and fetched with at most five concurrent storage reads.
-/// Separate read calls are not merged. Results preserve input order and duplicate ranges.
+/// Batches for the same file are collected for 1 ms, coalesced, and fetched with at most five
+/// concurrent storage reads per collected batch. Single reads bypass collection.
+/// Results preserve each caller's input order, duplicates, and empty ranges.
 /// Downloads merging multiple requests stream through storage wrappers, retaining only requested
 /// bytes and discarding gaps as they arrive. Unmerged reads keep using the buffered storage API.
 ///
@@ -201,6 +217,7 @@ impl StorageDirectoryFileHandle {
 #[derive(Clone)]
 pub struct StorageDirectory {
     storage: Arc<dyn Storage>,
+    batch_collector: Arc<BatchCollector>,
 }
 
 impl Debug for StorageDirectory {
@@ -212,7 +229,10 @@ impl Debug for StorageDirectory {
 impl StorageDirectory {
     /// Creates a new StorageDirectory, backed by the given `storage`.
     pub fn new(storage: Arc<dyn Storage>) -> StorageDirectory {
-        StorageDirectory { storage }
+        StorageDirectory {
+            storage,
+            batch_collector: Arc::default(),
+        }
     }
 
     /// Fetches a slice of byte from a file asynchronously.
@@ -386,6 +406,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::single_range_in_vec_init)] // Each caller requests one byte range.
     async fn test_failed_batch_is_not_cached() {
         // Missing file, short gap/data, oversized body, and I/O failures in gaps/data.
         for (end, fail_at, kind) in [
@@ -422,14 +443,12 @@ mod tests {
             let directory =
                 CachingDirectory::new_unbounded(Arc::new(StorageDirectory::new(Arc::new(storage))));
             let handle = directory.get_file_handle(Path::new("file")).unwrap();
-            assert_eq!(
-                handle
-                    .read_bytes_batch_async(vec![0..5, 16..20])
-                    .await
-                    .unwrap_err()
-                    .kind(),
-                kind
+            let (first_result, second_result) = tokio::join!(
+                handle.read_bytes_batch_async(vec![0..5]),
+                handle.read_bytes_batch_async(vec![16..20]),
             );
+            assert_eq!(first_result.unwrap_err().kind(), kind);
+            assert_eq!(second_result.unwrap_err().kind(), kind);
             for _ in 0..2 {
                 let bytes = handle
                     .read_bytes_batch_async(vec![0..5, 16..20])
