@@ -36,7 +36,7 @@ use tracing::{error, info, instrument, warn};
 use super::models::IngesterShard;
 use super::state::{IngesterState, WeakIngesterState};
 use crate::ingest_v2::metrics::{
-    RECONCILE_SHARDS_OPERATIONS_TOTAL, RECONCILE_SHARDS_UNSAFE_DELETES_TOTAL, STATUS,
+    RESET_SHARDS_OPERATIONS_TOTAL, RESET_SHARDS_UNSAFE_DELETES_TOTAL, STATUS,
 };
 
 const RECONCILE_SHARDS_INTERVAL_SECS: i64 = 30;
@@ -170,7 +170,7 @@ impl ReconcileShardsTask {
             }
         }
         counter!(
-            parent: RECONCILE_SHARDS_OPERATIONS_TOTAL,
+            parent: RESET_SHARDS_OPERATIONS_TOTAL,
             labels: [label_values!(STATUS => status)],
         )
         .inc();
@@ -197,7 +197,7 @@ fn handle_unsafe_requested_delete(queue_id: &QueueId, shard: &mut IngesterShard)
          open and not empty: closing it instead"
     );
     shard.close();
-    RECONCILE_SHARDS_UNSAFE_DELETES_TOTAL.inc();
+    RESET_SHARDS_UNSAFE_DELETES_TOTAL.inc();
 }
 
 async fn apply_reset_shards_response(
