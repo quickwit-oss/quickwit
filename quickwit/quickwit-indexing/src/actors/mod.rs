@@ -24,6 +24,7 @@ mod merge_planner;
 mod merge_scheduler_service;
 mod merge_split_downloader;
 mod packager;
+mod pipeline_schedule;
 mod publisher;
 mod sequencer;
 mod uploader;
