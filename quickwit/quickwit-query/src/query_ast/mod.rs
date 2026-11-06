@@ -24,6 +24,7 @@ use crate::tokenizers::TokenizerManager;
 mod bool_query;
 mod cache_node;
 mod calc_field_query;
+mod disjunction_max_query;
 mod field_presence;
 mod full_text_query;
 mod phrase_prefix_query;
@@ -42,6 +43,7 @@ mod wildcard_query;
 pub use bool_query::BoolQuery;
 pub use cache_node::{CacheNode, HitSet, PredicateCache, PredicateCacheInjector};
 pub use calc_field_query::CalcFieldQuery;
+pub use disjunction_max_query::DisjunctionMaxQuery;
 pub use field_presence::FieldPresenceQuery;
 pub use full_text_query::{FullTextMode, FullTextParams, FullTextQuery};
 pub use phrase_prefix_query::PhrasePrefixQuery;
@@ -62,6 +64,7 @@ use crate::{BooleanOperand, InvalidQuery, NotNaNf32};
 #[serde(rename_all = "snake_case")]
 pub enum QueryAst {
     Bool(BoolQuery),
+    DisjunctionMax(DisjunctionMaxQuery),
     Term(TermQuery),
     TermSet(TermSetQuery),
     FieldPresence(FieldPresenceQuery),
@@ -106,6 +109,10 @@ impl QueryAst {
                     minimum_should_match,
                 }
                 .into())
+            }
+            QueryAst::DisjunctionMax(DisjunctionMaxQuery { disjuncts }) => {
+                let disjuncts = parse_user_query_in_asts(disjuncts, default_search_fields)?;
+                Ok(DisjunctionMaxQuery { disjuncts }.into())
             }
             ast @ QueryAst::Term(_)
             | ast @ QueryAst::TermSet(_)
@@ -244,6 +251,9 @@ impl BuildTantivyAst for QueryAst {
     ) -> Result<TantivyQueryAst, InvalidQuery> {
         match self {
             QueryAst::Bool(bool_query) => bool_query.build_tantivy_ast_call(context),
+            QueryAst::DisjunctionMax(disjunction_max_query) => {
+                disjunction_max_query.build_tantivy_ast_call(context)
+            }
             QueryAst::Term(term_query) => term_query.build_tantivy_ast_call(context),
             QueryAst::Range(range_query) => range_query.build_tantivy_ast_call(context),
             QueryAst::MatchAll => Ok(TantivyQueryAst::match_all()),

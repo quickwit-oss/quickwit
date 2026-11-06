@@ -25,12 +25,16 @@ use crate::elastic_query_dsl::phrase_prefix_query::{
     MatchPhrasePrefixQuery, MatchPhrasePrefixQueryParams,
 };
 use crate::elastic_query_dsl::{ConvertibleToQueryAst, ElasticQueryDslInner};
+use crate::query_ast::{DisjunctionMaxQuery, QueryAst};
 
 /// Multi match queries are a bit odd. They end up being expanded into another type of query.
 /// In Quickwit, we operate this expansion in generic way at the time of deserialization.
 #[derive(Deserialize, Debug, Eq, PartialEq, Clone)]
 #[serde(try_from = "MultiMatchQueryForDeserialization")]
-pub struct MultiMatchQuery(Box<ElasticQueryDslInner>);
+pub struct MultiMatchQuery {
+    match_type: MatchType,
+    children: Vec<ElasticQueryDslInner>,
+}
 
 #[serde_as]
 #[derive(Deserialize, Debug, Eq, PartialEq, Clone)]
@@ -130,10 +134,10 @@ impl TryFrom<MultiMatchQueryForDeserialization> for MultiMatchQuery {
             )?;
             children.push(child);
         }
-        let bool_query = BoolQuery::union(children);
-        Ok(MultiMatchQuery(Box::new(ElasticQueryDslInner::Bool(
-            bool_query,
-        ))))
+        Ok(MultiMatchQuery {
+            match_type: multi_match_query.match_type,
+            children,
+        })
     }
 }
 
@@ -142,7 +146,7 @@ impl TryFrom<MultiMatchQueryForDeserialization> for MultiMatchQuery {
 pub enum MatchType {
     #[default]
     MostFields,
-    BestFields,  // Not implemented will be converted to MostFields
+    BestFields,
     CrossFields, // Not implemented will be converted to MostFields
     Phrase,
     PhrasePrefix,
@@ -150,22 +154,54 @@ pub enum MatchType {
 }
 
 impl ConvertibleToQueryAst for MultiMatchQuery {
-    fn convert_to_query_ast(self) -> anyhow::Result<crate::query_ast::QueryAst> {
-        self.0.convert_to_query_ast()
+    fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
+        match self.match_type {
+            MatchType::BestFields | MatchType::Phrase | MatchType::PhrasePrefix => {
+                let children = self
+                    .children
+                    .into_iter()
+                    .map(ElasticQueryDslInner::convert_to_query_ast)
+                    .collect::<anyhow::Result<Vec<_>>>()?;
+                Ok(DisjunctionMaxQuery {
+                    disjuncts: children,
+                }
+                .into())
+            }
+            MatchType::MostFields | MatchType::CrossFields | MatchType::BoolPrefix => {
+                BoolQuery::union(self.children).convert_to_query_ast()
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use tantivy::collector::TopDocs;
+    use tantivy::schema::{Schema, TEXT};
+    use tantivy::{Index, TantivyDocument, doc};
+
     use super::*;
-    use crate::elastic_query_dsl::default_max_expansions;
+    use crate::elastic_query_dsl::{ElasticQueryDsl, default_max_expansions};
+    use crate::query_ast::BuildTantivyAstContext;
 
     #[track_caller]
     fn test_multimatch_query_ok_aux<T: Into<ElasticQueryDslInner>>(json: &str, expected: T) {
-        let expected: ElasticQueryDslInner = expected.into();
         let multi_match_query: MultiMatchQuery = serde_json::from_str(json).unwrap();
-        let es_query = &*multi_match_query.0;
-        assert_eq!(es_query, &expected);
+        let expected = expected.into().convert_to_query_ast().unwrap();
+        let expected = match multi_match_query.match_type {
+            MatchType::BestFields | MatchType::Phrase | MatchType::PhrasePrefix => {
+                let QueryAst::Bool(bool_query) = expected else {
+                    panic!("the expected query should be a boolean union")
+                };
+                DisjunctionMaxQuery {
+                    disjuncts: bool_query.should,
+                }
+                .into()
+            }
+            MatchType::MostFields | MatchType::CrossFields | MatchType::BoolPrefix => expected,
+        };
+        let query_ast = multi_match_query.convert_to_query_ast().unwrap();
+        assert_eq!(query_ast, expected);
     }
 
     #[track_caller]
@@ -379,5 +415,53 @@ mod tests {
             }"#,
             "Quickwit does not support field boosting",
         );
+    }
+
+    #[test]
+    fn test_multimatch_field_score_combination() {
+        let mut schema_builder = Schema::builder();
+        let title = schema_builder.add_text_field("title", TEXT);
+        let body = schema_builder.add_text_field("body", TEXT);
+        let index = Index::create_in_ram(schema_builder.build());
+        let mut writer = index
+            .writer_with_num_threads::<TantivyDocument>(1, 50_000_000)
+            .unwrap();
+        writer
+            .add_document(doc!(title => "alpha", body => "beta"))
+            .unwrap();
+        writer
+            .add_document(doc!(title => "alpha", body => "alpha"))
+            .unwrap();
+        writer
+            .add_document(doc!(title => "beta", body => "alpha"))
+            .unwrap();
+        writer.commit().unwrap();
+
+        let schema = index.schema();
+        let context = BuildTantivyAstContext::for_test(&schema);
+        let searcher = index.reader().unwrap().searcher();
+        let scores_for_type = |match_type: &str| {
+            let json = format!(
+                r#"{{"multi_match": {{"query": "alpha", "type": "{match_type}", "fields": ["title", "body"]}}}}"#
+            );
+            let query_dsl: ElasticQueryDsl = serde_json::from_str(&json).unwrap();
+            let query_ast = QueryAst::try_from(query_dsl).unwrap();
+            let query = query_ast.build_tantivy_query(&context).unwrap();
+            searcher
+                .search(&*query, &TopDocs::with_limit(3).order_by_score())
+                .unwrap()
+        };
+
+        let best_fields_scores = scores_for_type("best_fields");
+        assert_eq!(best_fields_scores.len(), 3);
+        assert_eq!(best_fields_scores[0].0, best_fields_scores[2].0);
+
+        let most_fields_scores = scores_for_type("most_fields");
+        assert_eq!(most_fields_scores.len(), 3);
+        assert!(most_fields_scores[0].0 > most_fields_scores[1].0);
+
+        let bool_prefix_scores = scores_for_type("bool_prefix");
+        assert_eq!(bool_prefix_scores.len(), 3);
+        assert!(bool_prefix_scores[0].0 > bool_prefix_scores[1].0);
     }
 }

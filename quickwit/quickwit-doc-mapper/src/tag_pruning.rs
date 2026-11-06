@@ -56,6 +56,19 @@ fn extract_unsimplified_tags_filter_ast(query_ast: QueryAst) -> UnsimplifiedTagF
             }
             collect_tag_filters_for_clause(clause_with_resolved_occur)
         }
+        QueryAst::DisjunctionMax(disjunction_max_query) => {
+            let clause = disjunction_max_query
+                .disjuncts
+                .into_iter()
+                .map(|disjunct| {
+                    (
+                        Occur::Should,
+                        extract_unsimplified_tags_filter_ast(disjunct),
+                    )
+                })
+                .collect();
+            collect_tag_filters_for_clause(clause)
+        }
         QueryAst::Term(term_query) => UnsimplifiedTagFilterAst::Tag {
             is_present: true,
             field: term_query.field,
@@ -388,7 +401,7 @@ pub fn no_tag(tag: impl ToString) -> TagFilterAst {
 #[cfg(test)]
 mod test {
     use quickwit_query::BooleanOperand;
-    use quickwit_query::query_ast::{QueryAst, UserInputQuery};
+    use quickwit_query::query_ast::{DisjunctionMaxQuery, QueryAst, TermQuery, UserInputQuery};
 
     use super::extract_tags_from_query;
     use crate::tag_pruning::TagFilterAst;
@@ -463,6 +476,29 @@ mod test {
             &extract_tags_from_query_helper("(user:bart OR lang:fr)")
                 .unwrap()
                 .to_string(),
+            "((¬user! ∨ user:bart) ∨ (¬lang! ∨ lang:fr))"
+        );
+    }
+
+    #[test]
+    fn test_disjunction_max_of_tags() {
+        let query_ast: QueryAst = DisjunctionMaxQuery {
+            disjuncts: vec![
+                TermQuery {
+                    field: "user".to_string(),
+                    value: "bart".to_string(),
+                }
+                .into(),
+                TermQuery {
+                    field: "lang".to_string(),
+                    value: "fr".to_string(),
+                }
+                .into(),
+            ],
+        }
+        .into();
+        assert_eq!(
+            extract_tags_from_query(query_ast).unwrap().to_string(),
             "((¬user! ∨ user:bart) ∨ (¬lang! ∨ lang:fr))"
         );
     }
