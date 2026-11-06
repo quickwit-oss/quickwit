@@ -566,6 +566,10 @@ quickwit_search_leaf_search_split_duration_secs:
   module: quickwit_search::metrics
   kind: histogram
   description: Number of seconds required to run a leaf search over a single split. The timer starts after the semaphore is obtained.
+quickwit_search_leaf_search_split_warmup_out_of_memory_total:
+  module: quickwit_search::metrics
+  kind: counter
+  description: Number of split searches that failed because their warmup would have gone over the warmup memory limit.
 quickwit_search_leaf_search_targeted_splits:
   module: quickwit_search::metrics
   kind: histogram
@@ -573,7 +577,7 @@ quickwit_search_leaf_search_targeted_splits:
 quickwit_search_leaf_search_warmup_ongoing_num_bytes:
   module: quickwit_search::metrics
   kind: gauge
-  description: Warmup memory currently reserved by split searches, including the initial allocation of granted permits.
+  description: Warmup memory currently reserved by split searches, including the initial allocation of granted permits. It never goes over `searcher.warmup_memory_budget`.
 quickwit_search_root_search_request_duration_seconds:
   module: quickwit_search::metrics
   kind: histogram
