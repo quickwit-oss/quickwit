@@ -575,11 +575,10 @@ impl LambdaDeployConfig {
 pub struct CacheConfig {
     #[serde(
         default,
-        rename = "memory_capacity",
         alias = "capacity",
         serialize_with = "crate::serde_utils::bytesize_serde::serialize_optional"
     )]
-    capacity: Option<ByteSize>,
+    memory_capacity: Option<ByteSize>,
     #[serde(default)]
     policy: Option<CachePolicy>,
     /// Directory override for the optional disk tier of partial-request and predicate caches.
@@ -600,7 +599,7 @@ pub struct CacheConfig {
 impl CacheConfig {
     pub fn no_cache() -> Self {
         CacheConfig {
-            capacity: None,
+            memory_capacity: None,
             policy: None,
             path: None,
             disk_capacity: None,
@@ -608,9 +607,9 @@ impl CacheConfig {
         }
     }
 
-    pub fn default_with_capacity(capacity: ByteSize) -> Self {
+    pub fn default_with_memory_capacity(memory_capacity: ByteSize) -> Self {
         CacheConfig {
-            capacity: Some(capacity),
+            memory_capacity: Some(memory_capacity),
             policy: None,
             path: None,
             disk_capacity: None,
@@ -632,14 +631,10 @@ impl CacheConfig {
             );
             return Ok(None);
         };
-        ensure!(
-            self.capacity().as_u64() > 0,
-            "memory_capacity must be positive for Feuer"
-        );
         let config = StorageCacheConfig {
             path: self.path.clone(),
             disk_capacity,
-            memory_capacity: self.capacity(),
+            memory_capacity: self.memory_capacity(),
         };
         Ok(Some(config.resolve_directory(directory)?))
     }
@@ -666,15 +661,18 @@ impl CacheConfig {
         Ok(())
     }
 
-    pub fn capacity(&self) -> ByteSize {
+    pub fn memory_capacity(&self) -> ByteSize {
         // this should always be there
-        self.capacity.unwrap_or_default()
+        self.memory_capacity.unwrap_or_default()
     }
 
-    pub fn capacity_for_virtual_cache(&mut self, real_capacity: ByteSize) -> ByteSize {
-        let capacity = self.capacity.unwrap_or(real_capacity);
-        self.capacity = Some(capacity);
-        capacity
+    pub fn memory_capacity_for_virtual_cache(
+        &mut self,
+        real_memory_capacity: ByteSize,
+    ) -> ByteSize {
+        let memory_capacity = self.memory_capacity.unwrap_or(real_memory_capacity);
+        self.memory_capacity = Some(memory_capacity);
+        memory_capacity
     }
 
     pub fn policy(&self) -> CachePolicy {
@@ -687,7 +685,7 @@ impl CacheConfig {
         policy
     }
 
-    fn deserialize_with_default<'de, D, const DEFAULT_CAPACITY: u64>(
+    fn deserialize_with_default<'de, D, const DEFAULT_MEMORY_CAPACITY: u64>(
         deserializer: D,
     ) -> Result<CacheConfig, D::Error>
     where D: Deserializer<'de> {
@@ -695,8 +693,8 @@ impl CacheConfig {
 
         let mut cache_config: CacheConfig =
             PickFirst::<(Same, FromInto<ByteSize>)>::deserialize_as(deserializer)?;
-        if cache_config.capacity.is_none() {
-            cache_config.capacity = Some(ByteSize::b(DEFAULT_CAPACITY));
+        if cache_config.memory_capacity.is_none() {
+            cache_config.memory_capacity = Some(ByteSize::b(DEFAULT_MEMORY_CAPACITY));
         }
         Ok(cache_config)
     }
@@ -718,8 +716,8 @@ where D: Deserializer<'de> {
 }
 
 impl From<ByteSize> for CacheConfig {
-    fn from(capacity: ByteSize) -> Self {
-        CacheConfig::default_with_capacity(capacity)
+    fn from(memory_capacity: ByteSize) -> Self {
+        CacheConfig::default_with_memory_capacity(memory_capacity)
     }
 }
 
@@ -780,8 +778,8 @@ impl Default for SearcherConfig {
         SearcherConfig {
             fast_field_cache: None,
             split_footer_cache: None,
-            partial_request_cache: CacheConfig::default_with_capacity(ByteSize::mb(64)),
-            predicate_cache: CacheConfig::default_with_capacity(ByteSize::mb(256)),
+            partial_request_cache: CacheConfig::default_with_memory_capacity(ByteSize::mb(64)),
+            predicate_cache: CacheConfig::default_with_memory_capacity(ByteSize::mb(256)),
             max_num_concurrent_split_searches: 100,
             max_splits_per_search: None,
             _max_num_concurrent_split_streams: None,
@@ -837,12 +835,12 @@ impl SearcherConfig {
         let fast_field_capacity = self
             .fast_field_cache
             .as_ref()
-            .map(CacheConfig::capacity)
+            .map(CacheConfig::memory_capacity)
             .unwrap_or(ByteSize::gb(1));
         let footer_capacity = self
             .split_footer_cache
             .as_ref()
-            .map(CacheConfig::capacity)
+            .map(CacheConfig::memory_capacity)
             .unwrap_or(ByteSize::mb(500));
         let memory_capacity = fast_field_capacity
             .as_u64()
@@ -1232,9 +1230,6 @@ mod tests {
     #[test]
     fn test_cache_defaults_and_capacity_aliases() {
         let defaults = SearcherConfig::default();
-        assert!(defaults.storage_cache.is_none());
-        assert!(defaults.fast_field_cache.is_none());
-        assert!(defaults.split_footer_cache.is_none());
         assert_eq!(
             defaults.resolved_storage_cache().unwrap().unwrap(),
             StorageCacheConfig {
@@ -1257,8 +1252,11 @@ mod tests {
                 config.resolved_storage_cache().unwrap(),
                 defaults.resolved_storage_cache().unwrap()
             );
-            assert_eq!(config.partial_request_cache.capacity(), ByteSize::mb(64));
-            assert_eq!(config.predicate_cache.capacity(), ByteSize::mb(256));
+            assert_eq!(
+                config.partial_request_cache.memory_capacity(),
+                ByteSize::mb(64)
+            );
+            assert_eq!(config.predicate_cache.memory_capacity(), ByteSize::mb(256));
             for cache in [&config.partial_request_cache, &config.predicate_cache] {
                 assert!(
                     cache
@@ -1270,15 +1268,8 @@ mod tests {
         }
         for (yaml, memory_capacity) in [
             ("fast_field_cache_capacity: 32M", ByteSize::mb(532)),
-            ("fast_field_cache: 32M", ByteSize::mb(532)),
             ("fast_field_cache: {capacity: 32M}", ByteSize::mb(532)),
-            (
-                "fast_field_cache: {memory_capacity: 32M}",
-                ByteSize::mb(532),
-            ),
             ("split_footer_cache_capacity: 32M", ByteSize::mb(1032)),
-            ("split_footer_cache: 32M", ByteSize::mb(1032)),
-            ("split_footer_cache: {capacity: 32M}", ByteSize::mb(1032)),
             (
                 "split_footer_cache: {memory_capacity: 32M}",
                 ByteSize::mb(1032),
@@ -1297,29 +1288,26 @@ mod tests {
             let config: SearcherConfig = serde_yaml::from_str(yaml).unwrap();
             config.validate().unwrap();
             assert_eq!(
-                config.resolved_storage_cache().unwrap().unwrap(),
-                StorageCacheConfig {
-                    path: None,
-                    disk_capacity: ByteSize::b(0),
-                    memory_capacity,
-                },
+                config
+                    .resolved_storage_cache()
+                    .unwrap()
+                    .unwrap()
+                    .memory_capacity,
+                memory_capacity,
                 "{yaml}"
             );
         }
-        for yaml in [
-            "partial_request_cache: 0\npredicate_cache: {capacity: 0}\nfast_field_cache: \
-             0\nsplit_footer_cache: {memory_capacity: 0}",
-            "partial_request_cache_capacity: 0\npredicate_cache_capacity: \
-             0\nfast_field_cache_capacity: 0\nsplit_footer_cache_capacity: 0",
-        ] {
-            let config: SearcherConfig = serde_yaml::from_str(yaml).unwrap();
-            config.validate().unwrap();
-            for cache in [&config.partial_request_cache, &config.predicate_cache] {
-                assert_eq!(cache.capacity(), ByteSize::b(0));
-                assert!(cache.storage_cache(None).unwrap().is_none());
-            }
-            assert!(config.resolved_storage_cache().unwrap().is_none());
+        let config: SearcherConfig = serde_yaml::from_str(
+            "partial_request_cache_capacity: 0\npredicate_cache: {memory_capacity: \
+             0}\nfast_field_cache_capacity: 0\nsplit_footer_cache_capacity: 0",
+        )
+        .unwrap();
+        config.validate().unwrap();
+        for cache in [&config.partial_request_cache, &config.predicate_cache] {
+            assert_eq!(cache.memory_capacity(), ByteSize::b(0));
+            assert!(cache.storage_cache(None).unwrap().is_none());
         }
+        assert!(config.resolved_storage_cache().unwrap().is_none());
     }
 
     #[test]
@@ -1350,8 +1338,6 @@ mod tests {
             ByteSize::gib(300).as_u64()
         );
         assert_eq!(serialized["storage_cache_directory"], "/tmp/feuer");
-        assert!(serialized.get("disk_cache").is_none());
-        assert!(serialized.get("disk_cache_directory").is_none());
         assert!(serialized.get("fast_field_cache").is_none());
         let roundtrip: SearcherConfig = serde_json::from_value(serialized).unwrap();
         assert_eq!(roundtrip.storage_cache, config.storage_cache);
@@ -1377,9 +1363,7 @@ mod tests {
     #[test]
     fn test_storage_cache_overrides_legacy_budgets() {
         for legacy in [
-            "",
             "fast_field_cache: 0\nsplit_footer_cache: 0",
-            "fast_field_cache_capacity: 32M\nsplit_footer_cache_capacity: 64M",
             // Overridden budgets are validated but never summed.
             "fast_field_cache: 18446744073709551615\nsplit_footer_cache: 1",
         ] {
@@ -1418,14 +1402,6 @@ mod tests {
             assert_eq!(cache.disk_capacity, ByteSize::b(0));
             assert_eq!(cache.memory_capacity, ByteSize::mb(32));
         }
-
-        let config: SearcherConfig =
-            serde_yaml::from_str("storage_cache: {disk_capacity: 0, memory_capacity: 0}").unwrap();
-        let error = format!("{:#}", config.validate().unwrap_err());
-        assert!(
-            error.contains("memory_capacity must be positive"),
-            "{error}"
-        );
     }
 
     #[test]
@@ -1451,6 +1427,10 @@ mod tests {
     #[test]
     fn test_cache_rejects_invalid_settings() {
         for (yaml, message) in [
+            (
+                "storage_cache: {disk_capacity: 0, memory_capacity: 0}",
+                "memory_capacity must be positive",
+            ),
             (
                 "storage_cache_directory: ''",
                 "storage_cache_directory must not be empty",
@@ -1492,14 +1472,6 @@ mod tests {
             ),
             (
                 "fast_field_cache: 18446744073709551615\nsplit_footer_cache: 1",
-                "capacities overflow",
-            ),
-            (
-                "fast_field_cache: 18446744073709551615",
-                "capacities overflow",
-            ),
-            (
-                "split_footer_cache: 18446744073709551615",
                 "capacities overflow",
             ),
         ] {

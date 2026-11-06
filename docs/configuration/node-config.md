@@ -310,18 +310,16 @@ This section contains the configuration options for a Searcher.
 | --- | --- | --- |
 | `aggregation_memory_limit` | Controls the maximum amount of memory that can be used for aggregations before aborting. This limit is per searcher node. A node may run concurrent queries, which share the limit. The first query that will hit the limit will be aborted and frees its memory. It is used to prevent excessive memory usage during the aggregation phase, which can lead to performance degradation or crashes. | `500M`|
 | `aggregation_bucket_limit` | Determines the maximum number of buckets returned to the client. | `65000` |
-| `fast_field_cache_capacity` | Legacy memory budget added to `split_footer_cache_capacity` when `storage_cache` is omitted or `null`. Accepts a scalar capacity or a mapping with `memory_capacity` (alias `capacity`). Also accepts `fast_field_cache`. An explicit `storage_cache` overrides this budget. | `1G` |
-| `split_footer_cache_capacity` | Legacy memory budget added to `fast_field_cache_capacity` when `storage_cache` is omitted or `null`. Accepts the same forms. Also accepts `split_footer_cache`. An explicit `storage_cache` overrides this budget. | `500M` |
-| `partial_request_cache_capacity` | Cache for per-split partial responses to speed up subsequent requests. Accepts a memory capacity or a mapping with `memory_capacity` (alias `capacity`) and optional disk settings described below. Without disk settings, caches in memory and needs no directory. Disable with `0`. Also accepts `partial_request_cache`. | `64M` |
-| `predicate_cache` | Cache for predicate hit sets and known-absent terms. Accepts a memory capacity or a mapping with `memory_capacity` (alias `capacity`) and optional disk settings described below. Without disk settings, caches in memory and needs no directory. Disable with `0`. Also accepts `predicate_cache_capacity`. | `256M` |
+| `fast_field_cache_capacity` | Memory budget combined with `split_footer_cache_capacity` when `storage_cache` is omitted or `null`. | `1G` |
+| `split_footer_cache_capacity` | Memory budget combined with `fast_field_cache_capacity` when `storage_cache` is omitted or `null`. | `500M` |
+| `partial_request_cache_capacity` | Cache for per-split partial responses to speed up subsequent requests. Accepts a memory capacity or the memory/disk settings below. Disable with `0`. Also accepts `partial_request_cache`. | `64M` |
+| `predicate_cache` | Cache for predicate hit sets and known-absent terms. Accepts a memory capacity or the memory/disk settings below. Disable with `0`. Also accepts `predicate_cache_capacity`. | `256M` |
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
 | `split_cache` | Searcher split cache configuration options defined in the section below. Cache disabled if unspecified. | |
 | `storage_cache` | Range cache for split footers, hotcache, fast fields, and other body ranges, with an optional disk tier. Explicit settings override the legacy memory budgets. Configuration options are defined below. | Memory-only, `1500M` |
 | `storage_cache_directory` | Shared directory for cache files. Per-cache `path` overrides it. Setting this directory alone does not enable disk caching. | |
 | `request_timeout_secs` | The time before a search request is cancelled. This should match the timeout of the stack calling into quickwit if there is one set.  | `30` |
 | `use_metastore_read_replica` | If true, routes read-only metastore requests from searchers to nodes running the `metastore_read_replica` service. Searchers require at least one `metastore_read_replica` node at startup and do not fall back to the primary metastore. | `false` |
-
-Split footers, hotcache bytes, and fast fields share the `storage_cache` with other split body ranges. The legacy fast-field and footer settings contribute memory budgets to this single cache. When the range cache is disabled, opening a split fetches its footer from storage each time.
 
 ### Searcher split cache configuration
 
@@ -333,39 +331,23 @@ This section contains the configuration options for the on-disk searcher split c
 | `max_num_splits` | Maximum number of splits allowed in the split cache.   | `10000` |
 | `num_concurrent_downloads` | Maximum number of concurrent download of splits. | `1` |
 
-### Searcher storage cache configuration
+### Searcher cache configuration
 
-This section configures the memory and disk cache of split byte ranges. Cache hits require the same object and exact byte range.
+The following fields configure `storage_cache` and the optional disk tiers of the partial-request and predicate caches. Caches have separate budgets and can share a directory within a searcher process.
 
-When `storage_cache` is omitted or set to `null`, Quickwit sums the `fast_field_cache_capacity` and `split_footer_cache_capacity` memory budgets. Omitted settings independently default to `1G` and `500M`, respectively. A zero sum disables the cache, so set both legacy capacities to `0` to disable it. An explicit `storage_cache` mapping replaces these budgets, while invalid legacy options still fail validation. For memory-only operation, set `disk_capacity: 0` and a positive `memory_capacity`. No directory is required.
-
-| Property | Description | Default value |
-| --- | --- | --- |
-| `path` | Optional directory override for this cache. Defaults to `searcher.storage_cache_directory`. One of them must be set when `disk_capacity` is positive. Created if missing and must sit on a usable filesystem. Memory-only split-range caching requires no directory. Explicitly empty paths are rejected. | |
-| `disk_capacity` | Disk capacity budget, including metadata and alignment. Set to `0` to disable the disk tier and cache only in memory. Alignment is handled internally. The configured value need not be rounded. | |
-| `memory_capacity` | Positive memory eviction target, required even when `disk_capacity` is `0`. Downloads and bytes retained by callers may exceed it. | |
-
-For `partial_request_cache_capacity` and `predicate_cache`, scalar capacities and mappings without disk settings use memory only, with no directory required, even when a shared directory is configured. `memory_capacity` sets the memory budget (default `64M` and `256M`, respectively), with `capacity` accepted as an alias. A scalar `0` or a zero memory capacity without disk settings disables the cache. To add a disk tier, set `disk_capacity` and either `searcher.storage_cache_directory` or a per-cache `path` override. A per-cache `path` requires `disk_capacity`.
-
-The list-fields metadata cache uses memory only. It has the same memory capacity as `partial_request_cache_capacity` and is disabled when that capacity is zero.
-
-Capacities accept integer byte counts or human-readable values such as `64MiB`. Setting both `capacity` and `memory_capacity` in the same mapping is an error.
-
-For result caches with explicit `disk_capacity`, `memory_capacity` must be positive. A positive disk capacity also requires a nonempty resolved directory. `disk_capacity: 0` disables the disk tier and requires no directory. Explicitly empty directory settings are rejected. Result caches and the legacy `fast_field_cache_capacity` and `split_footer_cache_capacity` settings reject explicit `policy` and nonempty `virtual_caches` because eviction is managed internally. Both legacy mappings accept a memory capacity only. Their `path` and `disk_capacity` settings are unsupported, even when an explicit `storage_cache` overrides their budgets. Use `storage_cache` to add a disk tier for split ranges, including fast-field reads.
-
-Each cache has independent memory and disk budgets. Caches can share a directory because their backing filenames are distinct:
-
-| Cache setting | Backing filename |
+| Property | Description |
 | --- | --- |
-| `storage_cache` | `split_cache` |
-| `predicate_cache` | `predicate_cache` |
-| `partial_request_cache_capacity` | `partial_response_cache` |
+| `memory_capacity` | Memory eviction target. Required for `storage_cache`; result caches use the defaults above. Must be positive for `storage_cache` or when `disk_capacity` is specified. Downloads and bytes retained by callers may exceed it. |
+| `disk_capacity` | Disk budget, including metadata and alignment. Required for `storage_cache`; optional for result caches. Set to `0` for memory-only caching. Positive values require Linux and a directory. |
+| `path` | Override for `searcher.storage_cache_directory`. Created if missing. A per-cache `path` requires `disk_capacity`. Explicitly empty paths are rejected. |
 
-Lock files are named `.feuer.<filename>.lock`. Opening the same backing file twice fails. Initialization failures abort startup. A disk capacity of `0` enables memory-only operation on every supported platform without disk I/O or a directory. Positive disk capacities require Linux and a directory. Explicitly empty paths are rejected even in memory-only mode.
+Memory-only caching works on every supported platform and requires no directory. Initialization failures abort startup. Capacities accept integer byte counts or values such as `64MiB`. Result-cache mappings also accept `capacity` instead of `memory_capacity`.
 
-See [cache metrics](../reference/metrics.md#feuer-cache-metrics) to monitor cache usage.
+An explicit `storage_cache` replaces the fast-field and footer budgets. To disable range caching, omit `storage_cache` and set both legacy capacities to `0`. The legacy settings also accept the names `fast_field_cache` and `split_footer_cache`, and memory-only mappings with `memory_capacity` (alias `capacity`). Explicit `policy` and nonempty `virtual_caches` settings are unsupported.
 
-Set `QW_FEUER_ACCESS_TRACE_URI` to an output prefix to export Feuer access traces using the node's storage configuration and credentials. Leave it unset to disable tracing. An invalid or unwritable destination fails startup. Slow trace uploads can delay cache lookups. See [Feuer access traces](../internals/feuer-access-trace.md) for the format, delivery timing, and shutdown limitations.
+The list-fields metadata cache uses memory only, with the same capacity as `partial_request_cache_capacity`. Setting that capacity to zero disables both caches.
+
+For diagnostics, see [cache metrics](../reference/metrics.md#feuer-cache-metrics) and [access traces](../internals/feuer-access-trace.md).
 
 Example:
 

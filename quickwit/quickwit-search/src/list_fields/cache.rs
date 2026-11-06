@@ -25,25 +25,24 @@ pub struct ListFieldsCache {
 impl ListFieldsCache {
     pub fn new(config: &CacheConfig) -> ListFieldsCache {
         Self {
-            cache: FeuerCache::memory(config.capacity().as_u64(), "list_fields")
+            cache: FeuerCache::memory(config.memory_capacity().as_u64(), "list_fields")
                 .expect("invalid Feuer memory cache configuration"),
-            metrics: (config.capacity().as_u64() > 0).then_some(&PARTIAL_REQUEST_CACHE),
+            metrics: (config.memory_capacity().as_u64() > 0).then_some(&PARTIAL_REQUEST_CACHE),
         }
     }
 
-    pub fn get(&self, split_id: &str) -> Option<OwnedBytes> {
-        let bytes = futures::executor::block_on(self.cache.get(split_key(split_id)));
+    pub async fn get(&self, split_id: &str) -> Option<OwnedBytes> {
+        let bytes = self.cache.get(split_key(split_id)).await;
         if let Some(metrics) = self.metrics {
             metrics.record_get(bytes.as_ref().map(|bytes| bytes.len()));
         }
         bytes
     }
 
-    pub fn put(&self, split_id: String, serialized_split_fields: OwnedBytes) {
-        futures::executor::block_on(
-            self.cache
-                .put(split_key(&split_id), serialized_split_fields),
-        );
+    pub async fn put(&self, split_id: String, serialized_split_fields: OwnedBytes) {
+        self.cache
+            .put(split_key(&split_id), serialized_split_fields)
+            .await;
     }
 }
 
@@ -67,23 +66,27 @@ mod tests {
         assert_ne!(split_key("split\""), split_key("split\\\""));
     }
 
-    #[test]
-    fn list_fields_cache_get_miss_returns_none() {
-        let cache = ListFieldsCache::new(&CacheConfig::default_with_capacity(ByteSize::mb(1)));
-        assert!(cache.get("test-split-id").is_none());
+    #[tokio::test]
+    async fn list_fields_cache_get_miss_returns_none() {
+        let cache =
+            ListFieldsCache::new(&CacheConfig::default_with_memory_capacity(ByteSize::mb(1)));
+        assert!(cache.get("test-split-id").await.is_none());
     }
 
-    #[test]
-    fn list_fields_cache_put_then_get_roundtrips() {
-        let cache = ListFieldsCache::new(&CacheConfig::default_with_capacity(ByteSize::mb(1)));
+    #[tokio::test]
+    async fn list_fields_cache_put_then_get_roundtrips() {
+        let cache =
+            ListFieldsCache::new(&CacheConfig::default_with_memory_capacity(ByteSize::mb(1)));
         let payload = OwnedBytes::new(b"hello".to_vec());
-        cache.put("test-split-id".to_string(), payload.clone());
-        assert_eq!(cache.get("test-split-id"), Some(payload));
-        assert!(cache.get("other-split-id").is_none());
+        cache
+            .put("test-split-id".to_string(), payload.clone())
+            .await;
+        assert_eq!(cache.get("test-split-id").await, Some(payload));
+        assert!(cache.get("other-split-id").await.is_none());
     }
 
-    #[test]
-    fn list_fields_cache_uses_memory_capacity_with_disk_configured() {
+    #[tokio::test]
+    async fn list_fields_cache_uses_memory_capacity_with_disk_configured() {
         // List-fields shares the partial-request memory capacity, while remaining memory-only.
         let config: CacheConfig = serde_json::from_value(serde_json::json!({
             "memory_capacity": "1MiB",
@@ -91,22 +94,30 @@ mod tests {
         }))
         .unwrap();
         let cache = ListFieldsCache::new(&config);
-        cache.put("split".to_string(), OwnedBytes::new(&b"fields"[..]));
-        assert_eq!(cache.get("split").unwrap().as_slice(), b"fields");
+        cache
+            .put("split".to_string(), OwnedBytes::new(&b"fields"[..]))
+            .await;
+        assert_eq!(cache.get("split").await.unwrap().as_slice(), b"fields");
     }
 
-    #[test]
-    fn list_fields_cache_zero_capacity_disables_caching() {
+    #[tokio::test]
+    async fn list_fields_cache_zero_capacity_disables_caching() {
         let cache = ListFieldsCache::new(&CacheConfig::no_cache());
-        cache.put("split".to_string(), OwnedBytes::new(&b"fields"[..]));
-        assert!(cache.get("split").is_none());
+        cache
+            .put("split".to_string(), OwnedBytes::new(&b"fields"[..]))
+            .await;
+        assert!(cache.get("split").await.is_none());
     }
 
-    #[test]
-    fn list_fields_cache_retains_first_value_above_capacity() {
+    #[tokio::test]
+    async fn list_fields_cache_retains_first_value_above_capacity() {
         let cache = ListFieldsCache::new(&ByteSize::b(1).into());
-        cache.put("split".to_string(), OwnedBytes::new(&b"fields"[..]));
-        cache.put("split".to_string(), OwnedBytes::new(&b"replacement"[..]));
-        assert_eq!(cache.get("split").unwrap().as_slice(), b"fields");
+        cache
+            .put("split".to_string(), OwnedBytes::new(&b"fields"[..]))
+            .await;
+        cache
+            .put("split".to_string(), OwnedBytes::new(&b"replacement"[..]))
+            .await;
+        assert_eq!(cache.get("split").await.unwrap().as_slice(), b"fields");
     }
 }

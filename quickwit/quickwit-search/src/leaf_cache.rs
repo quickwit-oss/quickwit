@@ -242,7 +242,7 @@ impl PredicateCacheImpl {
                 "predicate",
                 &quickwit_storage::metrics::PREDICATE_CACHE,
             ),
-            enabled: config.capacity().as_u64() > 0,
+            enabled: config.memory_capacity().as_u64() > 0,
         }
     }
 

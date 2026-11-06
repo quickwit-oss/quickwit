@@ -21,13 +21,43 @@ Quickwit exposes metrics for several cache components, including `fastfields`, `
 
 ### Feuer cache metrics
 
-The `feuer_*` metrics use a `cache` label to identify the instance: `split_range`, `partial_request`, `predicate`, or `list_fields`. The labels below are additional to `cache`:
+The `feuer_*` metrics use a `cache` label to identify the instance: `split_range`, `partial_request`, `predicate`, or `list_fields`. The table lists all metric families. Labels shown are additional to `cache`; disk metrics depend on the platform and enabled tiers.
 
-- Lookups: `feuer_lookup_total{outcome}`, `feuer_lookup_bytes_total{source}`, and `feuer_lookup_duration_seconds{outcome}`. Counters distinguish memory hits, disk hits, callbacks, callback errors, and lookup-only misses. Durations record successful disk hits and callbacks, including callback work. Result-cache lookups use the lookup-only API and report misses separately from callback errors.
-- Memory: `feuer_memory_operations_total{operation}`, `feuer_memory_used_bytes`, `feuer_memory_capacity_bytes`, and `feuer_memory_entries`.
-- Disk: lookup counters and hit-only `feuer_disk_lookup_duration_seconds` (only `cache`), `feuer_disk_chunks{state}`, `feuer_disk_payload_bytes`, `feuer_disk_entries`, eviction and batch-byte counters, and `feuer_disk_io_*` metrics. I/O durations record successful operations only.
+| Metric | Type | Additional labels and values | Description |
+| --- | --- | --- | --- |
+| `feuer_lookup_total` | counter | `outcome`: `memory_hit`, `disk_hit`, `callback`, `callback_error`, `miss` | Completed lookups. Lookup-only misses use `miss`. |
+| `feuer_lookup_bytes_total` | counter | `source`: `memory`, `disk`, `callback` | Payload bytes returned by successful lookups. |
+| `feuer_lookup_duration_seconds` | histogram | `outcome`: `disk_hit`, `callback` | Successful lookup duration after a memory miss, including callback work. |
+| `feuer_memory_operations_total` | counter | `operation`: `insert`, `redundant`, `remove` | Internal memory-tier operations. |
+| `feuer_memory_eviction_triggering_insertions_total` | counter | — | Insertion attempts that evicted at least one entry under capacity pressure. |
+| `feuer_memory_used_bytes` | gauge | — | Cached allocation charges plus idle allocation capacity. |
+| `feuer_memory_capacity_bytes` | gauge | — | Configured memory capacity. |
+| `feuer_memory_entries` | gauge | — | Cached objects in memory. |
+| `feuer_io_buffer_pool_bytes` | gauge | `bucket`: `32 KiB`, `256 KiB`, `512 KiB`, `1 MiB`, `2 MiB`, `4 MiB`, `8 MiB`, `16 MiB`, `32 MiB`, `64 MiB`, `>64 MiB`; `status`: `idle`, `used` | Allocation bytes by size and status. |
+| `feuer_disk_lookup_total` | counter | `outcome`: `hit`, `absent`, `io_error`, `checksum_failed`, `fallthrough` | Disk-tier lookups, including buffered entries. Errors become misses. |
+| `feuer_disk_lookup_duration_seconds` | histogram | — | Successful disk-tier hit duration, including buffered copies or verified reads. |
+| `feuer_disk_chunks` | gauge | `state`: `free`, `allocated` | 1-MiB chunks. Allocated chunks include payloads, metadata, and unfinished writes. |
+| `feuer_disk_payload_bytes` | gauge | — | Indexed payload bytes, excluding metadata and padding. |
+| `feuer_disk_entries` | gauge | — | Indexed disk entries. |
+| `feuer_disk_recovered_chunks` | gauge | — | Allocated chunks restored by recovery and still reserved. |
+| `feuer_disk_eviction_triggering_insertions_total` | counter | — | Insertion attempts that evicted at least one entry under capacity pressure. |
+| `feuer_disk_batch_bytes_total` | counter | `kind`: `payload`, `chunk` | Payload and payload-chunk bytes in successfully written regions before publication. |
+| `feuer_disk_io_total` | counter | `operation`: `read`, `write`; `outcome`: `success`, `error` | Completed data-file operations. |
+| `feuer_disk_io_bytes_total` | counter | `operation`: `read`, `write` | Bytes completed by data-file operations. |
+| `feuer_disk_io_duration_seconds` | histogram | `operation`: `read`, `write`; `outcome`: `success` | Successful data-file operation duration. |
+| `feuer_disk_read_size_bytes` | histogram | — | Requested bytes per successful data-file read, excluding alignment padding. |
+| `feuer_disk_read_queue_waiters` | gauge | — | Read-piece requests waiting for I/O channel capacity. |
+| `feuer_disk_read_queue_wait_duration_seconds` | histogram | — | Channel-capacity waits ending in admission, cancellation, or queue closure. |
+| `feuer_disk_write_queue_total` | counter | `outcome`: `queued`, `queue_full`, `queue_closed`, `canceled`, `already_covered`, `redundant` | Write-queue admissions, rejections, and pre-write discards. |
+| `feuer_disk_write_queued_entries` | gauge | — | Entries waiting to start disk writes. |
+| `feuer_disk_write_pending_bytes` | gauge | — | Logical payload bytes queued, prepared, or being written. |
+| `feuer_disk_write_queue_duration_seconds` | histogram | — | Time from queue admission to dequeue. |
+| `feuer_disk_write_entries_total` | counter | `outcome`: `published`, `already_covered`, `no_capacity`, `failed`, `canceled` | Terminal outcomes of entries handled by the disk writer. |
+| `feuer_disk_written_entries_total` | counter | — | Entries in successfully written payload regions, whether published or discarded. |
 
-See [Feuer's metric inventory](https://github.com/PSeitz/feuer/blob/b5af89073def5948ff6e4b2963e7b61a832808e4/metrics.md) for all names and label values. Concurrent lookups for the same exact key can share one fetch, so `feuer_lookup_total{outcome="callback"}` is not a remote GET count. Object-storage GET counters measure actual remote requests.
+Concurrent lookups for the same exact key can share one fetch, so `feuer_lookup_total{outcome="callback"}` counts completed callers. Use object-storage GET counters to measure remote requests. The eviction counters count insertion attempts that trigger eviction, rather than the number of evicted entries.
+
+See [Feuer's metric inventory](https://github.com/PSeitz/feuer/blob/b5af89073def5948ff6e4b2963e7b61a832808e4/metrics.md) for further interpretation and query examples.
 
 ## CLI Metrics
 

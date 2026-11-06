@@ -32,10 +32,10 @@ impl ResultCache {
         metrics: &'static CacheMetrics,
     ) -> Self {
         Self {
-            cache: FeuerCache::memory(config.capacity().as_u64(), cache_name)
+            cache: FeuerCache::memory(config.memory_capacity().as_u64(), cache_name)
                 .expect("invalid Feuer memory cache configuration"),
             runtime: None,
-            metrics: (config.capacity().as_u64() > 0).then_some(metrics),
+            metrics: (config.memory_capacity().as_u64() > 0).then_some(metrics),
         }
     }
 

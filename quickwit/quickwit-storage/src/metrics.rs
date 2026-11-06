@@ -236,7 +236,7 @@ impl CacheMetrics {
         let labels = label_values!(
             COMPONENT_CAPACITY_POLICY =>
             self.component_name.clone(),
-            config.capacity().as_u64().to_string(),
+            config.memory_capacity().as_u64().to_string(),
             config.policy().to_string(),
         );
         let new_virtual_cache_metrics = SingleCacheMetrics {
