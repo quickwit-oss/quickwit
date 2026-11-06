@@ -56,7 +56,9 @@ pub fn load_source_config_from_user_config(
     let versioned_source_config: VersionedSourceConfig = config_format.parse(config_content)?;
     let source_config_for_serialization: SourceConfigForSerialization =
         versioned_source_config.into();
-    source_config_for_serialization.validate_and_build()
+    let source_config = source_config_for_serialization.validate_and_build()?;
+    source_config.validate_transform()?;
+    Ok(source_config)
 }
 
 /// Parses and validates a [`SourceConfig`] update.
@@ -73,6 +75,7 @@ pub fn load_source_config_update(
     let source_config_for_serialization: SourceConfigForSerialization =
         versioned_source_config.into();
     let new_source_config = source_config_for_serialization.validate_and_build()?;
+    new_source_config.validate_transform()?;
 
     ensure!(
         current_source_config.source_id == new_source_config.source_id,
@@ -136,17 +139,16 @@ impl SourceConfigForSerialization {
             }
         }
 
-        if let Some(transform_config) = &self.transform {
-            if matches!(
+        if self.transform.is_some()
+            && matches!(
                 self.input_format,
                 SourceInputFormat::OtlpLogsJson
                     | SourceInputFormat::OtlpLogsProtobuf
                     | SourceInputFormat::OtlpTracesJson
                     | SourceInputFormat::OtlpTracesProtobuf
-            ) {
-                bail!("VRL transforms are not supported for OTLP input formats");
-            }
-            transform_config.validate_vrl_script()?;
+            )
+        {
+            bail!("VRL transforms are not supported for OTLP input formats");
         }
 
         Ok(SourceConfig {

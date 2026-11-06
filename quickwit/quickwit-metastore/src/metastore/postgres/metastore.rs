@@ -2037,7 +2037,9 @@ mod tests {
     use std::collections::HashSet;
 
     use async_trait::async_trait;
+    use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Protocol;
+    use quickwit_config::{IndexConfig, SourceConfig, SourceParams, TransformConfig};
     use quickwit_doc_mapper::tag_pruning::TagFilterAst;
     use quickwit_proto::ingest::Shard;
     use quickwit_proto::metastore::MetastoreService;
@@ -2130,6 +2132,63 @@ mod tests {
         let metastore = PostgresqlMetastore::default_for_test().await;
         metastore.check_connectivity().await.unwrap();
         assert_eq!(metastore.endpoints()[0].protocol(), Protocol::PostgreSQL);
+    }
+
+    #[tokio::test]
+    async fn test_metastore_index_with_uncompilable_vrl_transform() {
+        let metastore = PostgresqlMetastore::default_for_test().await;
+
+        let index_id = append_random_suffix("test-uncompilable-vrl-transform");
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+        let index_uid = metastore
+            .create_index(create_index_request)
+            .await
+            .unwrap()
+            .index_uid()
+            .clone();
+
+        // `add_source` rejects this transform, so we store it directly.
+        let mut source_config = SourceConfig::for_test("test-source", SourceParams::void());
+        source_config.transform_config = Some(TransformConfig::for_test("foo"));
+        let mut index_metadata = metastore
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.clone()))
+            .await
+            .unwrap()
+            .deserialize_index_metadata()
+            .unwrap();
+        index_metadata.add_source(source_config.clone()).unwrap();
+        sqlx::query("UPDATE indexes SET index_metadata_json = $1 WHERE index_id = $2")
+            .bind(serde_utils::to_json_str(&index_metadata).unwrap())
+            .bind(&index_id)
+            .execute(&metastore.connection_pool)
+            .await
+            .unwrap();
+
+        metastore
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
+            .await
+            .unwrap()
+            .deserialize_indexes_metadata()
+            .await
+            .unwrap();
+
+        source_config.transform_config = Some(TransformConfig::for_test(".message = \"fixed\""));
+        let update_source_request =
+            UpdateSourceRequest::try_from_source_config(index_uid.clone(), &source_config).unwrap();
+        metastore
+            .update_source(update_source_request)
+            .await
+            .unwrap();
+
+        metastore
+            .delete_index(DeleteIndexRequest {
+                index_uid: Some(index_uid),
+            })
+            .await
+            .unwrap();
     }
 
     #[test]

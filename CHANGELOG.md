@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - (Jaeger) Query resource attributes when Jaeger request carries tags
+- A source whose VRL transform no longer compiles, for example after a VRL upgrade, no longer makes its index metadata unreadable, which failed index listing and control plane startup. Transforms are compiled when a source is created or updated and when its indexing pipeline starts
 
 ### Changed
 - Ingest V2 flushes every WAL write to the OS before acknowledging it, instead of keeping the tail of the last write buffered in the process, so acknowledged documents survive an indexer process crash
