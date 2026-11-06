@@ -135,6 +135,7 @@ pub fn channel<T>(queue_capacity: QueueCapacity) -> (Sender<T>, Receiver<T>) {
         high_priority_rx,
         _high_priority_tx: high_priority_tx.clone(),
         pending_low_priority_message: LockedOption::none(),
+        send_to_receive_measurement: None,
         _clone_is_forbidden: CloneIsForbidden,
     };
     let sender = Sender {
@@ -180,6 +181,7 @@ pub struct Receiver<T> {
     high_priority_rx: flume::Receiver<T>,
     _high_priority_tx: flume::Sender<T>,
     pending_low_priority_message: LockedOption<T>,
+    send_to_receive_measurement: Option<fn(&mut T)>,
     _clone_is_forbidden: CloneIsForbidden,
 }
 
@@ -196,6 +198,33 @@ impl<T> Drop for Receiver<T> {
 }
 
 impl<T> Receiver<T> {
+    /// Set the send-to-receive measurement function, called before priority rechecks or parking.
+    /// Returning a parked message must not measure its send-to-receive duration again.
+    pub(crate) fn set_send_to_receive_measurement(&mut self, measure_send_to_receive: fn(&mut T)) {
+        self.send_to_receive_measurement = Some(measure_send_to_receive);
+    }
+
+    fn measure_send_to_receive(&self, mut message: T) -> T {
+        if let Some(measure_send_to_receive) = self.send_to_receive_measurement {
+            measure_send_to_receive(&mut message);
+        }
+        message
+    }
+
+    fn try_recv_from(&self, receiver: &flume::Receiver<T>) -> Result<T, TryRecvError> {
+        receiver
+            .try_recv()
+            .map(|message| self.measure_send_to_receive(message))
+    }
+
+    async fn recv_from(&self, receiver: &flume::Receiver<T>) -> Result<T, flume::RecvError> {
+        // Measure send-to-receive duration before select! drops the other receive future.
+        receiver
+            .recv_async()
+            .await
+            .map(|message| self.measure_send_to_receive(message))
+    }
+
     pub fn is_empty(&self) -> bool {
         self.low_priority_rx.is_empty()
             && self.pending_low_priority_message.is_none()
@@ -203,7 +232,7 @@ impl<T> Receiver<T> {
     }
 
     pub fn try_recv_high_priority_message(&self) -> Result<T, RecvError> {
-        match self.high_priority_rx.try_recv() {
+        match self.try_recv_from(&self.high_priority_rx) {
             Ok(msg) => Ok(msg),
             Err(TryRecvError::Disconnected) => {
                 unreachable!(
@@ -214,7 +243,7 @@ impl<T> Receiver<T> {
                 if self.low_priority_rx.is_disconnected() {
                     // We check that no new high priority message were sent
                     // in between.
-                    if let Ok(msg) = self.high_priority_rx.try_recv() {
+                    if let Ok(msg) = self.try_recv_from(&self.high_priority_rx) {
                         Ok(msg)
                     } else {
                         Err(RecvError::Disconnected)
@@ -227,15 +256,15 @@ impl<T> Receiver<T> {
     }
 
     pub fn try_recv(&self) -> Result<T, RecvError> {
-        if let Ok(msg) = self.high_priority_rx.try_recv() {
+        if let Ok(msg) = self.try_recv_from(&self.high_priority_rx) {
             return Ok(msg);
         }
         if let Some(pending_msg) = self.pending_low_priority_message.take() {
             return Ok(pending_msg);
         }
-        match self.low_priority_rx.try_recv() {
+        match self.try_recv_from(&self.low_priority_rx) {
             Ok(low_msg) => {
-                if let Ok(high_msg) = self.high_priority_rx.try_recv() {
+                if let Ok(high_msg) = self.try_recv_from(&self.high_priority_rx) {
                     self.pending_low_priority_message.place(low_msg);
                     Ok(high_msg)
                 } else {
@@ -243,7 +272,7 @@ impl<T> Receiver<T> {
                 }
             }
             Err(TryRecvError::Disconnected) => {
-                if let Ok(high_msg) = self.high_priority_rx.try_recv() {
+                if let Ok(high_msg) = self.try_recv_from(&self.high_priority_rx) {
                     Ok(high_msg)
                 } else {
                     Err(RecvError::Disconnected)
@@ -254,8 +283,7 @@ impl<T> Receiver<T> {
     }
 
     pub async fn recv_high_priority(&self) -> T {
-        self.high_priority_rx
-            .recv_async()
+        self.recv_from(&self.high_priority_rx)
             .await
             .expect("The Receiver owns the high priority Sender to avoid any disconnection.")
     }
@@ -271,7 +299,7 @@ impl<T> Receiver<T> {
             // We don't really care about fairness here.
             // We will double check if there is a command or not anyway.
             biased;
-            high_priority_msg_res = self.high_priority_rx.recv_async() => {
+            high_priority_msg_res = self.recv_from(&self.high_priority_rx) => {
                 match high_priority_msg_res {
                     Ok(high_priority_msg) => {
                         Ok(high_priority_msg)
@@ -281,7 +309,7 @@ impl<T> Receiver<T> {
                     },
                 }
             }
-            low_priority_msg_res = self.low_priority_rx.recv_async() => {
+            low_priority_msg_res = self.recv_from(&self.low_priority_rx) => {
                 match low_priority_msg_res {
                     Ok(low_priority_msg) => {
                         if let Ok(high_priority_msg) = self.try_recv_high_priority_message() {

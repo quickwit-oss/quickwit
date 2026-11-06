@@ -20,6 +20,7 @@ serde_json = { workspace = true }
 sync_wrapper = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-metrics = { workspace = true }
 tracing = { workspace = true }
 
 quickwit-common = { workspace = true }

@@ -49,6 +49,8 @@ impl IndexSerializer {
 
 #[async_trait]
 impl Actor for IndexSerializer {
+    const RECORD_DURATION_METRICS: bool = true;
+
     type ObservableState = ();
 
     fn observable_state(&self) -> Self::ObservableState {}

@@ -534,6 +534,8 @@ struct VrlProgram {}
 
 #[async_trait]
 impl Actor for DocProcessor {
+    const RECORD_DURATION_METRICS: bool = true;
+
     type ObservableState = Arc<DocProcessorCounters>;
 
     fn observable_state(&self) -> Self::ObservableState {

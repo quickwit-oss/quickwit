@@ -53,6 +53,7 @@ use ulid::Ulid;
 use super::IndexSerializer;
 use super::cooperative_indexing::{CooperativeIndexingCycle, CooperativeIndexingPeriod};
 use crate::docs_clustering::{DocIdClusterer, Fingerprinter};
+use crate::duration_metrics::{IndexingOperation, measure_future_duration};
 use crate::metrics::SPLIT_BUILDERS;
 use crate::models::{
     CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, NewPublishLock,
@@ -204,8 +205,12 @@ impl IndexerState {
         let cooperative_indexing_period =
             if let Some(cooperative_indexing) = &self.cooperative_indexing_opt {
                 Some(
-                    ctx.protect_future(cooperative_indexing.cooperative_indexing_period())
-                        .await,
+                    measure_future_duration(
+                        ctx.actor_name(),
+                        IndexingOperation::IndexingPermitWait,
+                        ctx.protect_future(cooperative_indexing.cooperative_indexing_period()),
+                    )
+                    .await,
                 )
             } else {
                 None
@@ -380,6 +385,8 @@ pub struct Indexer {
 
 #[async_trait]
 impl Actor for Indexer {
+    const RECORD_DURATION_METRICS: bool = true;
+
     type ObservableState = IndexerCounters;
 
     fn observable_state(&self) -> Self::ObservableState {

@@ -28,6 +28,7 @@ use tracing::debug;
 #[cfg(any(test, feature = "testsuite"))]
 use crate::Universe;
 use crate::actor_state::AtomicState;
+use crate::duration_metrics::{ActorOperation, measure_future_duration};
 use crate::registry::ActorRegistry;
 use crate::spawn_builder::{SpawnBuilder, SpawnContext};
 use crate::{
@@ -126,6 +127,11 @@ impl<A: Actor> ActorContext<A> {
 
     pub(crate) fn registry(&self) -> &ActorRegistry {
         &self.spawn_ctx.registry
+    }
+
+    /// The actor name captured when its mailbox was created, without an instance identifier.
+    pub fn actor_name(&self) -> &str {
+        self.mailbox().actor_name()
     }
 
     pub fn actor_instance_id(&self) -> &str {
@@ -252,12 +258,15 @@ impl<A: Actor> ActorContext<A> {
     {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg);
-        mailbox
-            .send_message_with_backpressure_counter(
-                msg,
-                self.backpressure_micros_counter_opt.as_ref(),
-            )
-            .await
+        let send = mailbox.send_message_with_backpressure_counter(
+            msg,
+            self.backpressure_micros_counter_opt.as_ref(),
+        );
+        if A::RECORD_DURATION_METRICS {
+            measure_future_duration(self.actor_name(), ActorOperation::Send, send).await
+        } else {
+            send.await
+        }
     }
 
     pub async fn ask<DestActor, M, T>(

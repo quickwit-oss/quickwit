@@ -346,10 +346,13 @@ pub struct AssignShards(pub Assignment);
 
 #[async_trait]
 impl Actor for SourceActor {
+    const RECORD_DURATION_METRICS: bool = true;
+
     type ObservableState = JsonValue;
 
     fn name(&self) -> String {
-        self.source.name()
+        // Source::name() may include source IDs; actor names are also used as metric labels.
+        "SourceActor".to_string()
     }
 
     fn observable_state(&self) -> Self::ObservableState {

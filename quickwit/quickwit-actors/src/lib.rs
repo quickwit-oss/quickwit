@@ -34,6 +34,7 @@ mod actor_state;
 #[doc(hidden)]
 pub mod channel_with_priority;
 mod command;
+mod duration_metrics;
 mod envelope;
 mod mailbox;
 mod observation;
@@ -41,6 +42,7 @@ mod registry;
 pub(crate) mod scheduler;
 mod spawn_builder;
 mod supervisor;
+mod task_metrics;
 
 pub use scheduler::{SchedulerClient, start_scheduler};
 

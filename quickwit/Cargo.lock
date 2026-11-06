@@ -7419,6 +7419,7 @@ dependencies = [
  "sync_wrapper",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-metrics",
  "tracing",
 ]
 

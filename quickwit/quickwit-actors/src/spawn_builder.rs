@@ -16,16 +16,19 @@ use std::fmt;
 use std::time::Duration;
 
 use anyhow::Context;
+use futures::future::Either;
 use quickwit_metrics::Counter;
 use sync_wrapper::SyncWrapper;
 use tokio::sync::watch;
 use tracing::{debug, error};
 
+use crate::duration_metrics::{ActorOperation, duration_histogram, measure_future_duration};
 use crate::envelope::Envelope;
 use crate::mailbox::{Inbox, create_mailbox};
 use crate::registry::{ActorJoinHandle, ActorRegistry};
 use crate::scheduler::{NoAdvanceTimeGuard, SchedulerClient};
 use crate::supervisor::Supervisor;
+use crate::task_metrics::measure_wake_to_poll;
 use crate::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, KillSwitch, Mailbox, QueueCapacity,
 };
@@ -174,6 +177,12 @@ impl<A: Actor> SpawnBuilder<A> {
         let ctx_clone = ctx.clone();
         let loop_async_actor_future =
             async move { actor_loop(actor, inbox, no_advance_time_guard, ctx).await };
+        let loop_async_actor_future = if A::RECORD_DURATION_METRICS {
+            let histogram = duration_histogram(ctx_clone.actor_name(), ActorOperation::WakeToPoll);
+            Either::Left(measure_wake_to_poll(loop_async_actor_future, histogram))
+        } else {
+            Either::Right(loop_async_actor_future)
+        };
         let join_handle = ActorJoinHandle::new(quickwit_common::spawn_named_task_on(
             loop_async_actor_future,
             std::any::type_name::<A>(),
@@ -327,11 +336,13 @@ impl<A: Actor> ActorExecutionEnv<A> {
                     break;
                 }
             }
-            self.actor
-                .get_mut()
-                .on_drained_messages(&self.ctx)
-                .await
-                .map_err(|exit_status| (exit_status, ActorExitPhase::OnDrainedMessaged))?;
+            let drain = self.actor.get_mut().on_drained_messages(&self.ctx);
+            let result = if A::RECORD_DURATION_METRICS {
+                measure_future_duration(self.ctx.actor_name(), ActorOperation::Work, drain).await
+            } else {
+                drain.await
+            };
+            result.map_err(|exit_status| (exit_status, ActorExitPhase::OnDrainedMessaged))?;
         }
         if self.ctx.mailbox().is_last_mailbox() {
             // We double check here that the mailbox does not contain any messages,

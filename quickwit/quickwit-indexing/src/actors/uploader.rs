@@ -42,6 +42,7 @@ use tracing::{Instrument, Span, debug, error, info, instrument, warn};
 
 use crate::actors::Publisher;
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
+use crate::duration_metrics::{IndexingOperation, measure_future_duration};
 use crate::merge_policy::{MergePolicy, MergeTask};
 use crate::metrics::{AVAILABLE_CONCURRENT_UPLOAD_PERMITS, COMPONENT};
 use crate::models::{
@@ -221,10 +222,13 @@ impl Uploader {
         let concurrent_upload_permits = concurrent_upload_permits_once_cell
             .get_or_init(|| Semaphore::const_new(self.max_concurrent_split_uploads));
         concurrent_upload_permits_gauge.set(concurrent_upload_permits.available_permits() as f64);
-        concurrent_upload_permits
-            .acquire()
-            .await
-            .context("the uploader semaphore is closed. (this should never happen)")
+        measure_future_duration(
+            ctx.actor_name(),
+            IndexingOperation::UploadPermitWait,
+            concurrent_upload_permits.acquire(),
+        )
+        .await
+        .context("the uploader semaphore is closed. (this should never happen)")
     }
 }
 
@@ -236,6 +240,8 @@ pub struct UploaderCounters {
 
 #[async_trait]
 impl Actor for Uploader {
+    const RECORD_DURATION_METRICS: bool = true;
+
     type ObservableState = UploaderCounters;
 
     #[allow(clippy::unused_unit)]
@@ -302,117 +308,130 @@ impl Handler<PackagedSplitBatch> for Uploader {
         debug!(split_ids=?split_ids, "start-stage-and-store-splits");
         let event_broker = self.event_broker.clone();
         spawn_named_task(
+            // This task outlives the uploader handler and can run concurrently with other uploads.
             async move {
-                fail_point!("uploader:intask:before");
+                measure_future_duration(
+                    ctx_clone.actor_name(),
+                    IndexingOperation::UploadTask,
+                    async {
+                        fail_point!("uploader:intask:before");
 
-                let mut split_metadata_list = Vec::with_capacity(batch.splits.len());
-                let mut split_payloads = Vec::with_capacity(batch.splits.len());
-                let mut report_splits: Vec<ReportSplit> = Vec::with_capacity(batch.splits.len());
+                        let mut split_metadata_list = Vec::with_capacity(batch.splits.len());
+                        let mut split_payloads = Vec::with_capacity(batch.splits.len());
+                        let mut report_splits: Vec<ReportSplit> =
+                            Vec::with_capacity(batch.splits.len());
 
-                for packaged_split in batch.splits.iter() {
-                    if batch.publish_lock.is_dead() {
-                        // TODO: Remove the junk right away?
-                        info!("splits' publish lock is dead");
+                        for packaged_split in batch.splits.iter() {
+                            if batch.publish_lock.is_dead() {
+                                // TODO: Remove the junk right away?
+                                info!("splits' publish lock is dead");
 
-                        if let Err(error) = split_update_sender.discard() {
-                            error!(?error, "failed to discard split");
+                                if let Err(error) = split_update_sender.discard() {
+                                    error!(?error, "failed to discard split");
+                                }
+                                return;
+                            }
+
+                            let (split_metadata, split_payload) = match prepare_split_for_upload(
+                                packaged_split,
+                                &merge_policy,
+                                retention_policy.as_ref(),
+                            ) {
+                                Ok(prepared_split) => prepared_split,
+                                Err(error) => {
+                                    error!(
+                                        ?error,
+                                        split_id = packaged_split.split_id(),
+                                        "failed to prepare split for upload"
+                                    );
+                                    return;
+                                }
+                            };
+
+                            report_splits.push(ReportSplit {
+                                storage_uri: split_store.remote_uri().to_string(),
+                                split_id: packaged_split.split_id().to_string(),
+                            });
+
+                            split_metadata_list.push(split_metadata);
+                            split_payloads.push(split_payload);
                         }
-                        return;
-                    }
 
-                    let (split_metadata, split_payload) = match prepare_split_for_upload(
-                        packaged_split,
-                        &merge_policy,
-                        retention_policy.as_ref(),
-                    ) {
-                        Ok(prepared_split) => prepared_split,
-                        Err(error) => {
-                            error!(
-                                ?error,
-                                split_id = packaged_split.split_id(),
-                                "failed to prepare split for upload"
-                            );
+                        let stage_splits_request =
+                            match StageSplitsRequest::try_from_splits_metadata(
+                                index_uid.clone(),
+                                split_metadata_list.clone(),
+                            ) {
+                                Ok(stage_splits_request) => stage_splits_request,
+                                Err(error) => {
+                                    error!(?error, "failed to create stage splits request");
+                                    return;
+                                }
+                            };
+                        if let Err(error) = metastore.stage_splits(stage_splits_request).await {
+                            error!(?error, "failed to stage splits");
+                            return;
+                        };
+
+                        counters
+                            .num_staged_splits
+                            .fetch_add(split_metadata_list.len() as u64, Ordering::Relaxed);
+
+                        let mut packaged_splits_and_metadata =
+                            Vec::with_capacity(batch.splits.len());
+
+                        event_broker.publish(ReportSplitsRequest { report_splits });
+
+                        for ((packaged_split, metadata), split_payload) in batch
+                            .splits
+                            .into_iter()
+                            .zip(split_metadata_list)
+                            .zip(split_payloads)
+                        {
+                            let upload_result = upload_split(
+                                &packaged_split,
+                                &metadata,
+                                split_payload,
+                                &split_store,
+                                counters.clone(),
+                            )
+                            .await;
+
+                            if let Err(error) = upload_result {
+                                kill_switch.kill_with_fault(error.context(format!(
+                                    "failed to upload split `{}`",
+                                    packaged_split.split_id()
+                                )));
+                                return;
+                            }
+                            packaged_splits_and_metadata.push((packaged_split, metadata));
+                        }
+
+                        let splits_update = make_publish_operation(
+                            index_uid,
+                            packaged_splits_and_metadata,
+                            batch.checkpoint_delta_opt,
+                            batch.publish_lock,
+                            batch.merge_task_opt,
+                            batch.batch_parent_span,
+                        );
+
+                        let target = match &split_update_sender {
+                            SplitsUpdateSender::Sequencer(_) => "sequencer",
+                            SplitsUpdateSender::Publisher(_) => "publisher",
+                        };
+                        if let Err(error) =
+                            split_update_sender.send(splits_update, &ctx_clone).await
+                        {
+                            error!(?error, "failed to send splits update to {target}");
                             return;
                         }
-                    };
-
-                    report_splits.push(ReportSplit {
-                        storage_uri: split_store.remote_uri().to_string(),
-                        split_id: packaged_split.split_id().to_string(),
-                    });
-
-                    split_metadata_list.push(split_metadata);
-                    split_payloads.push(split_payload);
-                }
-
-                let stage_splits_request = match StageSplitsRequest::try_from_splits_metadata(
-                    index_uid.clone(),
-                    split_metadata_list.clone(),
-                ) {
-                    Ok(stage_splits_request) => stage_splits_request,
-                    Err(error) => {
-                        error!(?error, "failed to create stage splits request");
-                        return;
-                    }
-                };
-                if let Err(error) = metastore.stage_splits(stage_splits_request).await {
-                    error!(?error, "failed to stage splits");
-                    return;
-                };
-
-                counters
-                    .num_staged_splits
-                    .fetch_add(split_metadata_list.len() as u64, Ordering::Relaxed);
-
-                let mut packaged_splits_and_metadata = Vec::with_capacity(batch.splits.len());
-
-                event_broker.publish(ReportSplitsRequest { report_splits });
-
-                for ((packaged_split, metadata), split_payload) in batch
-                    .splits
-                    .into_iter()
-                    .zip(split_metadata_list)
-                    .zip(split_payloads)
-                {
-                    let upload_result = upload_split(
-                        &packaged_split,
-                        &metadata,
-                        split_payload,
-                        &split_store,
-                        counters.clone(),
-                    )
-                    .await;
-
-                    if let Err(error) = upload_result {
-                        kill_switch.kill_with_fault(error.context(format!(
-                            "failed to upload split `{}`",
-                            packaged_split.split_id()
-                        )));
-                        return;
-                    }
-                    packaged_splits_and_metadata.push((packaged_split, metadata));
-                }
-
-                let splits_update = make_publish_operation(
-                    index_uid,
-                    packaged_splits_and_metadata,
-                    batch.checkpoint_delta_opt,
-                    batch.publish_lock,
-                    batch.merge_task_opt,
-                    batch.batch_parent_span,
-                );
-
-                let target = match &split_update_sender {
-                    SplitsUpdateSender::Sequencer(_) => "sequencer",
-                    SplitsUpdateSender::Publisher(_) => "publisher",
-                };
-                if let Err(error) = split_update_sender.send(splits_update, &ctx_clone).await {
-                    error!(?error, "failed to send splits update to {target}");
-                    return;
-                }
-                // We explicitly drop it in order to force move the permit guard into the async
-                // task.
-                mem::drop(permit_guard);
+                        // We explicitly drop it in order to force move the permit guard into the
+                        // async task.
+                        mem::drop(permit_guard);
+                    },
+                )
+                .await;
             }
             .instrument(Span::current()),
             "upload_single_task",

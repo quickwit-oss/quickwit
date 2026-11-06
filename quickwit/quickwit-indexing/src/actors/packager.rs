@@ -92,6 +92,8 @@ impl Packager {
 
 #[async_trait]
 impl Actor for Packager {
+    const RECORD_DURATION_METRICS: bool = true;
+
     type ObservableState = ();
 
     #[allow(clippy::unused_unit)]

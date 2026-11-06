@@ -185,6 +185,8 @@ where
 
 #[async_trait]
 impl Actor for Publisher {
+    const RECORD_DURATION_METRICS: bool = true;
+
     type ObservableState = PublisherCounters;
 
     fn observable_state(&self) -> Self::ObservableState {
