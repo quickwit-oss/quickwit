@@ -266,7 +266,8 @@ indexer:
 | --- | --- | --- |
 | `max_queue_memory_usage` | Maximum size in bytes of the in-memory Ingest queue. | `2GiB` |
 | `max_queue_disk_usage` | Maximum disk-space in bytes taken by the Ingest queue. The minimum size is at least `256M` and be at least `max_queue_memory_usage`. | `4GiB` |
-| `content_length_limit` | Maximum payload size uncompressed. Increasing this is discouraged, use a [file source](../ingest-data/sqs-files.md) instead. | `10MiB` |
+| `max_body_size` | Maximum size of a request body *before* decompression. Larger requests are rejected with HTTP 413. Prefer a [file source](../ingest-data/sqs-files.md) over raising it. Formerly `content_length_limit` (still accepted). | `10MiB` |
+| `max_decompressed_body_size` | Maximum size of a request body *after* decompression. Larger requests are rejected with HTTP 413. Must be between `max_body_size` and `4GiB`. | `256MiB` |
 | `grpc_compression_algorithm` | Compression algorithm (`gzip` or `zstd`) to use for gRPC traffic between nodes for the ingest service | `None` |
 | `decommission_timeout` | Maximum amount of time to wait for the ingester to finish decommissioning gracefully on shutdown before giving up. Can be overridden with the `QW_INGEST_DECOMMISSION_TIMEOUT` environment variable. | `300s` |
 
@@ -276,7 +277,8 @@ Example:
 ingest_api:
   max_queue_memory_usage: 2GiB
   max_queue_disk_usage: 4GiB
-  content_length_limit: 10MiB
+  max_body_size: 10MiB
+  max_decompressed_body_size: 256MiB
   grpc_compression_algorithm: zstd
   decommission_timeout: 300s
 ```
