@@ -445,7 +445,7 @@ impl IngestController {
         ingester_id: &NodeId,
         model: &ControlPlaneModel,
     ) -> WaitHandle {
-        info!(ingester = %ingester_id, "request_reconcile_with_ingester");
+        info!(ingester = %ingester_id, "requesting shard reconciliation");
         let (wait_drop_guard, wait_handle) = WaitHandle::new();
         let Some(ingester) = self.ingester_pool.get(ingester_id) else {
             // TODO: (Maybe) We should mark the ingester as unavailable, and stop advertise its
@@ -457,7 +457,7 @@ impl IngestController {
             // V2 advises the ingester to call AdviseResetShards, which will reconcile the shard
             // state with the control plane.
             // The legacy RetainShards logic is kept, for any ingesters running an older version.
-            version: RETAIN_SHARDS_V2,
+            api_version: RETAIN_SHARDS_V2,
             ..Default::default()
         };
         for (source_uid, shard_ids) in &*model.list_shards_for_node(ingester_id) {
@@ -671,7 +671,8 @@ impl IngestController {
     }
 
     /// Opens new shards on ingesters. The shards can't receive data until `advertise_shards` is
-    /// called as well.
+    /// called as well. (Or, if the shard was successfully scheduled for indexing, and `fetch` is
+    /// called on it.)
     async fn init_shards(
         &self,
         init_shard_subrequests: Vec<InitShardSubrequest>,
@@ -1138,24 +1139,28 @@ impl IngestController {
         request: AdviseResetShardsRequest,
         model: &ControlPlaneModel,
     ) -> AdviseResetShardsResponse {
-        let is_reconcile = request.version == ADVISE_RESET_SHARDS_V2;
-
-        if is_reconcile {
-            info!(
-                "received reconcile shards request from `{}`",
-                request.ingester_id
-            );
+        if request.api_version == ADVISE_RESET_SHARDS_V2 {
+            self.reconcile_shards(request, model)
         } else {
-            info!(
-                "received advise reset shards request from `{}`",
-                request.ingester_id
-            );
+            self.advise_reset_shards_v1(request, model)
         }
+    }
+
+    /// There's duplication between advise_reset_shards_v1 and reconcile_shards, to note that they
+    /// are essentially separate APIs that share a protobuf for compatibility reasons. An indexer
+    /// will only ever send one type of request, depending on the image it's running.
+    fn advise_reset_shards_v1(
+        &self,
+        request: AdviseResetShardsRequest,
+        model: &ControlPlaneModel,
+    ) -> AdviseResetShardsResponse {
+        info!(
+            "received advise reset shards request from `{}`",
+            request.ingester_id
+        );
         debug!(shard_ids=?summarize_shard_ids(&request.shard_ids), "advise reset shards");
 
         let mut shards_to_delete: Vec<ShardIds> = Vec::new();
-        let mut shards_to_force_delete: Vec<ShardIds> = Vec::new();
-        let mut shards_to_keep: Vec<ShardIds> = Vec::new();
         let mut shards_to_truncate: Vec<ShardIdPositions> = Vec::new();
 
         for shard_ids in request.shard_ids {
@@ -1168,24 +1173,16 @@ impl IngestController {
             };
             let Some(shard_entries) = model.get_shards_for_source(&source_uid) else {
                 // The source no longer exists: we can safely delete all the shards.
-                if is_reconcile {
-                    shards_to_force_delete.push(shard_ids);
-                } else {
-                    shards_to_delete.push(shard_ids);
-                }
+                shards_to_delete.push(shard_ids);
                 continue;
             };
             let mut shard_ids_to_delete = Vec::new();
-            let mut shard_ids_to_keep = Vec::new();
             let mut shard_positions_to_truncate = Vec::new();
 
             for shard_id in shard_ids.shard_ids {
                 if let Some(shard_entry) = shard_entries.get(&shard_id) {
                     let publish_position_inclusive = shard_entry.publish_position_inclusive();
 
-                    if is_reconcile {
-                        shard_ids_to_keep.push(shard_id.clone());
-                    }
                     shard_positions_to_truncate.push(ShardIdPosition {
                         shard_id: Some(shard_id),
                         publish_position_inclusive: Some(publish_position_inclusive),
@@ -1193,13 +1190,6 @@ impl IngestController {
                 } else {
                     shard_ids_to_delete.push(shard_id);
                 }
-            }
-            if !shard_ids_to_keep.is_empty() {
-                shards_to_keep.push(ShardIds {
-                    index_uid: Some(source_uid.index_uid.clone()),
-                    source_id: source_uid.source_id.clone(),
-                    shard_ids: shard_ids_to_keep,
-                });
             }
             if !shard_ids_to_delete.is_empty() {
                 shards_to_delete.push(ShardIds {
@@ -1231,18 +1221,93 @@ impl IngestController {
                         })
                 })
                 .collect();
-            debug!(
-                shard_ids_to_delete=?summarize_shard_ids(&shards_to_delete),
-                shard_ids_to_force_delete=?summarize_shard_ids(&shards_to_force_delete),
-                shard_ids_to_keep=?summarize_shard_ids(&shards_to_keep),
-                shards_to_truncate=?shards_to_truncate, "advise reset shards response");
+            debug!(shard_ids_to_delete=?summarize_shard_ids(&shards_to_delete), shards_to_truncate=?shards_to_truncate, "advise reset shards response");
         }
 
         AdviseResetShardsResponse {
             shards_to_delete,
             shards_to_truncate,
-            shards_to_force_delete,
-            shards_to_keep,
+            ..Default::default()
+        }
+    }
+
+    /// There's duplication between advise_reset_shards_v1 and reconcile_shards, to note that they
+    /// are essentially separate APIs that share a protobuf for compatibility reasons. An indexer
+    /// will only ever send one type of request, depending on the image it's running.
+    fn reconcile_shards(
+        &self,
+        request: AdviseResetShardsRequest,
+        model: &ControlPlaneModel,
+    ) -> AdviseResetShardsResponse {
+        info!(
+            "received reconcile shards request from `{}`",
+            request.ingester_id
+        );
+        debug!(shard_ids=?summarize_shard_ids(&request.shard_ids), "reconcile shards");
+
+        let mut shards_to_keep: Vec<ShardIds> = Vec::new();
+        let mut shards_to_delete: Vec<ShardIds> = Vec::new();
+        let mut shards_to_force_delete: Vec<ShardIds> = Vec::new();
+        let mut shards_to_truncate: Vec<ShardIdPositions> = Vec::new();
+
+        for shard_ids in request.shard_ids {
+            let source_uid = SourceUid {
+                index_uid: shard_ids.index_uid().clone(),
+                source_id: shard_ids.source_id.clone(),
+            };
+            let Some(shard_entries) = model.get_shards_for_source(&source_uid) else {
+                // The source no longer exists: we can safely delete all the shards.
+                shards_to_force_delete.push(shard_ids);
+                continue;
+            };
+            let mut shard_ids_to_keep = Vec::new();
+            let mut shard_ids_to_delete = Vec::new();
+            let mut shard_positions_to_truncate = Vec::new();
+
+            for shard_id in shard_ids.shard_ids {
+                let Some(shard_entry) = shard_entries.get(&shard_id) else {
+                    shard_ids_to_delete.push(shard_id);
+                    continue;
+                };
+                shard_positions_to_truncate.push(ShardIdPosition {
+                    shard_id: Some(shard_id.clone()),
+                    publish_position_inclusive: Some(shard_entry.publish_position_inclusive()),
+                });
+                shard_ids_to_keep.push(shard_id);
+            }
+            if !shard_ids_to_keep.is_empty() {
+                shards_to_keep.push(ShardIds {
+                    index_uid: Some(source_uid.index_uid.clone()),
+                    source_id: source_uid.source_id.clone(),
+                    shard_ids: shard_ids_to_keep,
+                });
+            }
+            if !shard_ids_to_delete.is_empty() {
+                shards_to_delete.push(ShardIds {
+                    index_uid: Some(source_uid.index_uid.clone()),
+                    source_id: source_uid.source_id.clone(),
+                    shard_ids: shard_ids_to_delete,
+                });
+            }
+            if !shard_positions_to_truncate.is_empty() {
+                shards_to_truncate.push(ShardIdPositions {
+                    index_uid: Some(source_uid.index_uid),
+                    source_id: source_uid.source_id,
+                    shard_positions: shard_positions_to_truncate,
+                });
+            }
+        }
+        debug!(
+            shard_ids_to_keep=?summarize_shard_ids(&shards_to_keep),
+            shard_ids_to_delete=?summarize_shard_ids(&shards_to_delete),
+            shard_ids_to_force_delete=?summarize_shard_ids(&shards_to_force_delete),
+            "reconcile shards response"
+        );
+        AdviseResetShardsResponse {
+            shards_to_delete,
+            shards_to_truncate,
+            reconcile_shards_to_force_delete: shards_to_force_delete,
+            reconcile_shards_to_keep: shards_to_keep,
         }
     }
 
@@ -3830,7 +3895,7 @@ mod tests {
                     shard_ids: vec![ShardId::from(3)],
                 },
             ],
-            version: 0,
+            api_version: 0,
         };
         let advise_reset_shards_response =
             controller.advise_reset_shards(advise_reset_shards_request, &model);
@@ -3907,13 +3972,16 @@ mod tests {
                     shard_ids: vec![ShardId::from(3)],
                 },
             ],
-            version: ADVISE_RESET_SHARDS_V2,
+            api_version: ADVISE_RESET_SHARDS_V2,
         };
         let advise_reset_shards_response =
             controller.advise_reset_shards(advise_reset_shards_request, &model);
 
-        assert_eq!(advise_reset_shards_response.shards_to_keep.len(), 1);
-        let shard_to_keep = &advise_reset_shards_response.shards_to_keep[0];
+        assert_eq!(
+            advise_reset_shards_response.reconcile_shards_to_keep.len(),
+            1
+        );
+        let shard_to_keep = &advise_reset_shards_response.reconcile_shards_to_keep[0];
         assert_eq!(shard_to_keep.source_id, source_id_00);
         assert_eq!(shard_to_keep.shard_ids, [ShardId::from(1)]);
 
@@ -3922,8 +3990,14 @@ mod tests {
         assert_eq!(shard_to_delete.source_id, source_id_00);
         assert_eq!(shard_to_delete.shard_ids, [ShardId::from(2)]);
 
-        assert_eq!(advise_reset_shards_response.shards_to_force_delete.len(), 1);
-        let shard_to_force_delete = &advise_reset_shards_response.shards_to_force_delete[0];
+        assert_eq!(
+            advise_reset_shards_response
+                .reconcile_shards_to_force_delete
+                .len(),
+            1
+        );
+        let shard_to_force_delete =
+            &advise_reset_shards_response.reconcile_shards_to_force_delete[0];
         assert_eq!(shard_to_force_delete.source_id, source_id_01);
         assert_eq!(shard_to_force_delete.shard_ids, [ShardId::from(3)]);
 

@@ -63,8 +63,13 @@ pub struct AdviseResetShardsRequest {
     pub shard_ids: ::prost::alloc::vec::Vec<super::ingest::ShardIds>,
     #[prost(string, tag = "2")]
     pub ingester_id: ::prost::alloc::string::String,
+    /// V1 of this API, for which the value of api_version is 0 (meaning its not set), was used by ingesters to ask the
+    /// control plane which shards to delete and which to truncate.
+    /// V2 of this API, for which the value of api_version is 2, is used by ingesters to reconcile all of its shards,
+    /// including which shards to keep, and which to force delete (deleted index or source). The fields used in these
+    /// requests start with `reconcile__`.
     #[prost(uint32, tag = "3")]
-    pub version: u32,
+    pub api_version: u32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -74,9 +79,11 @@ pub struct AdviseResetShardsResponse {
     #[prost(message, repeated, tag = "2")]
     pub shards_to_truncate: ::prost::alloc::vec::Vec<super::ingest::ShardIdPositions>,
     #[prost(message, repeated, tag = "3")]
-    pub shards_to_force_delete: ::prost::alloc::vec::Vec<super::ingest::ShardIds>,
+    pub reconcile_shards_to_force_delete: ::prost::alloc::vec::Vec<
+        super::ingest::ShardIds,
+    >,
     #[prost(message, repeated, tag = "4")]
-    pub shards_to_keep: ::prost::alloc::vec::Vec<super::ingest::ShardIds>,
+    pub reconcile_shards_to_keep: ::prost::alloc::vec::Vec<super::ingest::ShardIds>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]

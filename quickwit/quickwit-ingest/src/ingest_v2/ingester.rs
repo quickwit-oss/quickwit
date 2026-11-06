@@ -761,6 +761,53 @@ impl Ingester {
         Ok(response)
     }
 
+    /// retain_shards is a legacy API called by the control plane in older versions to reconcile
+    /// ingester state with the control plane's. It's kept for compatibility reasons. The newer API,
+    /// request_reconcile_shards, triggers ingester-initiated reconciliation, which replaces
+    /// retain_shards.
+    async fn retain_shards_v1(
+        &self,
+        request: RetainShardsRequest,
+    ) -> IngestV2Result<RetainShardsResponse> {
+        let retain_queue_ids: HashSet<QueueId> = request
+            .retain_shards_for_sources
+            .into_iter()
+            .flat_map(|retain_shards_for_source: RetainShardsForSource| {
+                let index_uid = retain_shards_for_source.index_uid().clone();
+                retain_shards_for_source
+                    .shard_ids
+                    .into_iter()
+                    .map(move |shard_id| {
+                        queue_id(&index_uid, &retain_shards_for_source.source_id, &shard_id)
+                    })
+            })
+            .collect();
+        let mut state_guard = self.state.lock_fully("retain_shards").await?;
+        let remove_queue_ids: HashSet<QueueId> = state_guard
+            .shards
+            .keys()
+            .filter(move |shard_id| !retain_queue_ids.contains(*shard_id))
+            .map(ToString::to_string)
+            .collect();
+        info!(queues=?remove_queue_ids, "removing queues");
+        for queue_id in remove_queue_ids {
+            state_guard
+                .delete_shard(&queue_id, "control-plane-retain-shards-rpc")
+                .await;
+        }
+        state_guard.check_decommissioning_status().await;
+        Ok(RetainShardsResponse {})
+    }
+
+    /// This is v2 of the retain_shards API, in which the control plane asks the ingester to make
+    /// an advise_reset_shards_v2 call, in order to reconcile control plane state with what's
+    /// physically on the ingester.
+    fn request_reconcile_shards(&self) -> IngestV2Result<RetainShardsResponse> {
+        info!("control plane requested reconcile shards");
+        self.reconcile_shards_notify.notify_one();
+        Ok(RetainShardsResponse {})
+    }
+
     pub async fn debug_info(&self) -> JsonValue {
         let state_guard = match self.state.lock_fully("debug_info").await {
             Ok(state_guard) => state_guard,
@@ -839,39 +886,11 @@ impl IngesterService for Ingester {
         &self,
         request: RetainShardsRequest,
     ) -> IngestV2Result<RetainShardsResponse> {
-        if request.version == RETAIN_SHARDS_V2 {
-            info!("control plane requested reconcile shards");
-            self.reconcile_shards_notify.notify_one();
-            return Ok(RetainShardsResponse {});
+        if request.api_version == RETAIN_SHARDS_V2 {
+            self.request_reconcile_shards()
+        } else {
+            self.retain_shards_v1(request).await
         }
-        let retain_queue_ids: HashSet<QueueId> = request
-            .retain_shards_for_sources
-            .into_iter()
-            .flat_map(|retain_shards_for_source: RetainShardsForSource| {
-                let index_uid = retain_shards_for_source.index_uid().clone();
-                retain_shards_for_source
-                    .shard_ids
-                    .into_iter()
-                    .map(move |shard_id| {
-                        queue_id(&index_uid, &retain_shards_for_source.source_id, &shard_id)
-                    })
-            })
-            .collect();
-        let mut state_guard = self.state.lock_fully("retain_shards").await?;
-        let remove_queue_ids: HashSet<QueueId> = state_guard
-            .shards
-            .keys()
-            .filter(move |shard_id| !retain_queue_ids.contains(*shard_id))
-            .map(ToString::to_string)
-            .collect();
-        info!(queues=?remove_queue_ids, "removing queues");
-        for queue_id in remove_queue_ids {
-            state_guard
-                .delete_shard(&queue_id, "control-plane-retain-shards-rpc")
-                .await;
-        }
-        state_guard.check_decommissioning_status().await;
-        Ok(RetainShardsResponse {})
     }
 
     async fn truncate_shards(
@@ -3271,8 +3290,8 @@ mod tests {
                             publish_position_inclusive: Some(Position::offset(1u64)),
                         }],
                     }],
-                    shards_to_force_delete: Vec::new(),
-                    shards_to_keep: Vec::new(),
+                    reconcile_shards_to_force_delete: Vec::new(),
+                    reconcile_shards_to_keep: Vec::new(),
                 };
                 Ok(response)
             });
@@ -3446,7 +3465,7 @@ mod tests {
                 source_id,
                 shard_ids: vec![ShardId::from(17u64)],
             }],
-            version: 0,
+            api_version: 0,
         };
         ingester.retain_shards(retain_shards_request).await.unwrap();
 
@@ -3486,7 +3505,7 @@ mod tests {
 
         let retain_shards_request = RetainShardsRequest {
             retain_shards_for_sources: Vec::new(),
-            version: RETAIN_SHARDS_V2,
+            api_version: RETAIN_SHARDS_V2,
         };
         ingester.retain_shards(retain_shards_request).await.unwrap();
 

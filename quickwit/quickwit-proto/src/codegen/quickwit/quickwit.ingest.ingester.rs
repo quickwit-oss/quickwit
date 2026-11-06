@@ -14,8 +14,10 @@ pub struct RetainShardsForSource {
 pub struct RetainShardsRequest {
     #[prost(message, repeated, tag = "1")]
     pub retain_shards_for_sources: ::prost::alloc::vec::Vec<RetainShardsForSource>,
+    /// When not set (value is 0), RetainShards v1 is called, which truncates and deletes shards.
+    /// When set to 2, it asks the ingester to call AdviseResetShards to fully reconcile state.
     #[prost(uint32, tag = "2")]
-    pub version: u32,
+    pub api_version: u32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -424,8 +426,9 @@ pub trait IngesterService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: InitShardsRequest,
     ) -> crate::ingest::IngestV2Result<InitShardsResponse>;
-    ///Only retain the shards that are listed in the request.
-    ///Other shards are deleted.
+    ///V1 of this API only retained the shards that are listed in the request and deleted others.
+    ///V2 asks the ingester to call AdviseResetShards, which will trigger a full reconciliation of the ingester's shards
+    ///with the control plane's state.
     async fn retain_shards(
         &self,
         request: RetainShardsRequest,
@@ -2260,8 +2263,9 @@ pub mod ingester_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Only retain the shards that are listed in the request.
-        /// Other shards are deleted.
+        /// V1 of this API only retained the shards that are listed in the request and deleted others.
+        /// V2 asks the ingester to call AdviseResetShards, which will trigger a full reconciliation of the ingester's shards
+        /// with the control plane's state.
         pub async fn retain_shards(
             &mut self,
             request: impl tonic::IntoRequest<super::RetainShardsRequest>,
@@ -2454,8 +2458,9 @@ pub mod ingester_service_grpc_server {
             tonic::Response<super::InitShardsResponse>,
             tonic::Status,
         >;
-        /// Only retain the shards that are listed in the request.
-        /// Other shards are deleted.
+        /// V1 of this API only retained the shards that are listed in the request and deleted others.
+        /// V2 asks the ingester to call AdviseResetShards, which will trigger a full reconciliation of the ingester's shards
+        /// with the control plane's state.
         async fn retain_shards(
             &self,
             request: tonic::Request<super::RetainShardsRequest>,

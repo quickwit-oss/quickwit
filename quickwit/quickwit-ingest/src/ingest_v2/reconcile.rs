@@ -47,7 +47,7 @@ const MIN_RECONCILE_SHARDS_INTERVAL: Duration = if cfg!(any(test, feature = "tes
     Duration::from_secs(5)
 };
 
-const RECONCILE_SHARDS_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
+const RECONCILE_SHARDS_REQUEST_TIMEOUT: Duration = Duration::from_secs(4);
 
 pub(super) struct ReconcileShardsTask {
     self_node_id: NodeId,
@@ -144,7 +144,7 @@ impl ReconcileShardsTask {
         let reconcile_shards_request = AdviseResetShardsRequest {
             ingester_id: self.self_node_id.to_string(),
             shard_ids,
-            version: ADVISE_RESET_SHARDS_V2,
+            api_version: ADVISE_RESET_SHARDS_V2,
         };
         let reconcile_shards_result = timeout(
             RECONCILE_SHARDS_REQUEST_TIMEOUT,
@@ -153,22 +153,20 @@ impl ReconcileShardsTask {
         )
         .await;
 
-        let status: &'static str;
-
-        match reconcile_shards_result {
+        let status = match reconcile_shards_result {
             Ok(Ok(reconcile_shards_response)) => {
                 apply_reset_shards_response(&state, reconcile_shards_response, now).await?;
-                status = "success";
+                "success"
             }
             Ok(Err(error)) => {
                 warn!("reconcile shards request failed: {error}");
-                status = "error";
+                "error"
             }
             Err(_) => {
                 warn!("reconcile shards request timed out");
-                status = "timeout";
+                "timeout"
             }
-        }
+        };
         counter!(
             parent: RESET_SHARDS_OPERATIONS_TOTAL,
             labels: [label_values!(STATUS => status)],
@@ -179,9 +177,9 @@ impl ReconcileShardsTask {
 }
 
 fn is_safe_to_delete(shard: &IngesterShard) -> bool {
-    let has_unpublished_data = shard.replication_position_inclusive.as_u64()
+    let has_unpublished_docs = shard.replication_position_inclusive.as_u64()
         > shard.truncation_position_inclusive.as_u64();
-    if has_unpublished_data {
+    if has_unpublished_docs {
         return false;
     }
     shard.is_closed() || shard.replication_position_inclusive.is_beginning()
@@ -206,7 +204,7 @@ async fn apply_reset_shards_response(
     now: Instant,
 ) -> anyhow::Result<()> {
     let queue_ids_to_keep: Vec<QueueId> = reconcile_shards_response
-        .shards_to_keep
+        .reconcile_shards_to_keep
         .iter()
         .flat_map(|shard_ids| shard_ids.queue_ids())
         .collect();
@@ -216,7 +214,7 @@ async fn apply_reset_shards_response(
         .flat_map(|shard_ids| shard_ids.queue_ids())
         .collect();
     let queue_ids_to_force_delete: Vec<QueueId> = reconcile_shards_response
-        .shards_to_force_delete
+        .reconcile_shards_to_force_delete
         .iter()
         .flat_map(|shard_ids| shard_ids.queue_ids())
         .collect();
@@ -400,9 +398,9 @@ mod tests {
             }]
         };
         let response = AdviseResetShardsResponse {
-            shards_to_keep: to_shard_ids(shard_ids_to_keep),
+            reconcile_shards_to_keep: to_shard_ids(shard_ids_to_keep),
             shards_to_delete: to_shard_ids(shard_ids_to_delete),
-            shards_to_force_delete: to_shard_ids(shard_ids_to_force_delete),
+            reconcile_shards_to_force_delete: to_shard_ids(shard_ids_to_force_delete),
             shards_to_truncate: Vec::new(),
         };
         let mut mock_control_plane = MockControlPlaneService::new();
@@ -410,7 +408,7 @@ mod tests {
             .expect_advise_reset_shards()
             .once()
             .returning(move |request| {
-                assert_eq!(request.version, ADVISE_RESET_SHARDS_V2);
+                assert_eq!(request.api_version, ADVISE_RESET_SHARDS_V2);
                 Ok(response.clone())
             });
         let task = ReconcileShardsTask {
