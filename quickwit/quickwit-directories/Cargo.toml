@@ -13,6 +13,7 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+futures = { workspace = true }
 postcard = { workspace = true }
 serde = { workspace = true }
 tantivy = { workspace = true }
@@ -24,5 +25,6 @@ quickwit-common = { workspace = true }
 quickwit-storage = { workspace = true }
 
 [dev-dependencies]
+quickwit-storage = { workspace = true, features = ["testsuite"] }
 rand = { workspace = true }
 tempfile = { workspace = true }
