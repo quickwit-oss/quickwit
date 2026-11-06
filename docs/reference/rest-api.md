@@ -119,6 +119,46 @@ GET api/v1/stackoverflow*/search
 }
 ```
 
+### Live tail
+
+Streams the documents matching a query as they are ingested, as [Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events): `api/v1/<index id>/tail`. Documents are streamed as soon as an ingester persists them (sub-second latency), well before they become searchable at the end of the `commit_timeout_secs` period.
+
+Live tail only covers the documents ingested through the ingest API, the Elasticsearch bulk API, and the OTLP endpoints (ingest V2). Documents read by the indexers from other sources (Kafka, Kinesis, Pulsar, SQS, etc.) are not streamed. Indexes whose `_ingest-source` source has a VRL transform are rejected: the ingesters persist the documents before the transform is applied.
+
+The index id supports the [multi-target syntax](#search-multiple-indices).
+
+```
+GET api/v1/<index id>/tail?query=severity_text:ERROR
+```
+
+```bash
+curl -N "http://localhost:7280/api/v1/otel-logs-v0_9/tail?query=severity_text:ERROR"
+```
+
+#### Parameters
+
+| Variable           | Type      | Description     | Default value   |
+|--------------------|-----------|-----------------|-----------------|
+| `query`            | `String`  | Query text, with the same syntax and semantics as the search API. See the [query language doc](query-language.md) | `*` |
+| `max_docs_per_sec` | `Integer` | Maximum number of documents sent per second by each ingester, across all the tailed indexes, capped by the `live_tail.max_docs_per_sec` setting of its node (default: 10,000). Extra documents are reported in `dropped` events. | `200` |
+
+Invalid requests (unknown index, invalid query, etc.) are rejected with an HTTP error status before the stream is opened.
+
+#### Events
+
+| Event     | Data |
+|-----------|------|
+| `hits`    | `{"index_id": "...", "docs": [...]}`: documents matching the query. Within a shard, documents are sent in the order they were persisted. There is no global ordering across shards. |
+| `dropped` | `{"reason": "rate_limited" \| "lagged" \| "too_large", "num_dropped": 12}`: documents that matched but were not sent. `rate_limited`: more documents matched than `max_docs_per_sec`. `lagged`: the client, the network, or the server did not keep up; `num_dropped` then counts batches of documents. `too_large`: the document does not fit in a gRPC message (see the `grpc.max_message_size` node setting); it does not count toward `max_docs_per_sec`. |
+| `error`   | `{"message": "..."}`: non-fatal error, for instance an ingester could not be reached. The stream keeps running and reconnects automatically. |
+
+:::note
+- Live tail never slows ingestion down: when a session cannot keep up, documents are dropped and reported in `dropped` events.
+- The documents persisted after the response is received are streamed, except in a shard opened afterwards on an ingester that hosted no open shard of the index: its documents can be missed for a few seconds, until the shard is discovered.
+- The number of concurrent live tail sessions per ingester is limited by the `live_tail.max_sessions` node setting (default: 4).
+- Long-lived connections may be closed by the server (see `max_connection_age`) or by proxies: clients should reconnect, which `EventSource` does automatically.
+:::
+
 ## Ingest API
 
 ### Ingest data into an index

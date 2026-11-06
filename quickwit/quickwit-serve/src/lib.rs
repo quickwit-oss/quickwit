@@ -27,6 +27,7 @@ mod index_api;
 mod indexing_api;
 mod ingest_api;
 mod jaeger_api;
+mod live_tail_api;
 mod load_shield;
 mod mcp_api;
 mod metastore;
@@ -95,6 +96,7 @@ use quickwit_ingest::{
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{JanitorService, start_janitor_service};
+use quickwit_live_tail::{LiveTailHub, LiveTailServiceImpl};
 use quickwit_metastore::{
     ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreResolver,
 };
@@ -108,6 +110,7 @@ use quickwit_proto::ingest::ingester::{
 };
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::ingest::{IngestV2Error, RateLimitingCause};
+use quickwit_proto::live_tail::LiveTailServiceClient;
 use quickwit_proto::metastore::{
     EntityKind, ListIndexesMetadataRequest, MetastoreError, MetastoreService,
     MetastoreServiceClient,
@@ -198,6 +201,8 @@ struct QuickwitServices {
     pub otlp_logs_service_opt: Option<OtlpGrpcLogsService>,
 
     pub otlp_traces_service_opt: Option<OtlpGrpcTracesService>,
+    /// Local live tail service, hosted by indexer nodes.
+    pub live_tail_service_opt: Option<LiveTailServiceClient>,
     /// We do have a search service even on nodes that are not running `search`.
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
@@ -636,6 +641,22 @@ pub async fn serve_quickwit(
 
     let indexing_split_cache = indexing_split_cache_for_config(&node_config).await?;
 
+    // Receives the documents persisted by the local ingester and fans them out to the live tail
+    // sessions.
+    let live_tail_hub = LiveTailHub::default();
+    let live_tail_service_opt = node_config
+        .is_service_enabled(QuickwitService::Indexer)
+        .then(|| {
+            let live_tail_config = &node_config.live_tail_config;
+            let live_tail_service = LiveTailServiceImpl::new(
+                live_tail_hub.clone(),
+                live_tail_config.max_sessions().get(),
+                live_tail_config.max_docs_per_sec().get(),
+                node_config.grpc_config.max_message_size.as_u64() as usize,
+            );
+            LiveTailServiceClient::new(live_tail_service)
+        });
+
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
         // if standalone compactors is enabled, indexing pipelines don't perform any merges.
         // if standalone compactors is disabled, indexing pipelines perform all merges as before.
@@ -680,6 +701,7 @@ pub async fn serve_quickwit(
         &event_broker,
         control_plane_client.clone(),
         ingester_pool,
+        live_tail_hub,
     )
     .await
     .context("failed to start ingest v2 service")?;
@@ -926,6 +948,7 @@ pub async fn serve_quickwit(
         jaeger_service_opt,
         otlp_logs_service_opt,
         otlp_traces_service_opt,
+        live_tail_service_opt,
         search_service,
         env_filter_reload_fn,
     });
@@ -1125,6 +1148,7 @@ async fn setup_ingest_v2(
     event_broker: &EventBroker,
     control_plane: ControlPlaneServiceClient,
     ingester_pool: IngesterPool,
+    live_tail_hub: LiveTailHub,
 ) -> anyhow::Result<(IngestRouter, IngestRouterServiceClient, Option<Ingester>)> {
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().to_owned();
@@ -1173,7 +1197,8 @@ async fn setup_ingest_v2(
             rate_limiter_settings,
             idle_shard_timeout,
         )
-        .await?;
+        .await?
+        .with_live_tail_hub(live_tail_hub);
         ingester.subscribe(event_broker);
         // We will now receive all new shard positions update events, from chitchat.
         // Unfortunately at this point, chitchat is already running.

@@ -100,3 +100,7 @@ enable_endpoint = true
 lookback_period_hours = 24
 max_trace_duration_secs = 600
 max_fetch_spans = 1_000
+
+[live_tail]
+max_sessions = 8
+max_docs_per_sec = 500
