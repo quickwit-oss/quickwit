@@ -125,7 +125,7 @@ pub trait CreateIndexRequestExt {
     fn deserialize_index_config(&self) -> MetastoreResult<IndexConfig>;
 
     /// Deserializes the `source_configs_json` field of a [`CreateIndexRequest`] into an
-    /// `Vec` of [`SourceConfig`].
+    /// `Vec` of [`SourceConfig`] and checks that their VRL transforms compile.
     fn deserialize_source_configs(&self) -> MetastoreResult<Vec<SourceConfig>>;
 }
 
@@ -163,7 +163,7 @@ impl CreateIndexRequestExt for CreateIndexRequest {
     fn deserialize_source_configs(&self) -> MetastoreResult<Vec<SourceConfig>> {
         self.source_configs_json
             .iter()
-            .map(|source_config_json| serde_utils::from_json_str(source_config_json))
+            .map(|source_config_json| deserialize_source_config_to_write(source_config_json))
             .collect()
     }
 }
@@ -402,6 +402,16 @@ impl ListIndexesMetadataResponseExt for ListIndexesMetadataResponse {
     }
 }
 
+fn deserialize_source_config_to_write(source_config_json: &str) -> MetastoreResult<SourceConfig> {
+    let source_config: SourceConfig = serde_utils::from_json_str(source_config_json)?;
+    source_config
+        .validate_transform()
+        .map_err(|error| MetastoreError::InvalidArgument {
+            message: format!("{error:#}"),
+        })?;
+    Ok(source_config)
+}
+
 /// Helper trait to build a [`AddSourceRequest`] and deserialize its payload.
 pub trait AddSourceRequestExt {
     /// Creates a new [`AddSourceRequest`] from a [`SourceConfig`].
@@ -411,7 +421,7 @@ pub trait AddSourceRequestExt {
     ) -> MetastoreResult<AddSourceRequest>;
 
     /// Deserializes the `source_config_json` field of a [`AddSourceRequest`] into a
-    /// [`SourceConfig`].
+    /// [`SourceConfig`] and checks that its VRL transform compiles.
     fn deserialize_source_config(&self) -> MetastoreResult<SourceConfig>;
 }
 
@@ -429,7 +439,7 @@ impl AddSourceRequestExt for AddSourceRequest {
     }
 
     fn deserialize_source_config(&self) -> MetastoreResult<SourceConfig> {
-        serde_utils::from_json_str(&self.source_config_json)
+        deserialize_source_config_to_write(&self.source_config_json)
     }
 }
 
@@ -442,7 +452,7 @@ pub trait UpdateSourceRequestExt {
     ) -> MetastoreResult<UpdateSourceRequest>;
 
     /// Deserializes the `source_config_json` field of a [`UpdateSourceRequest`] into a
-    /// [`SourceConfig`].
+    /// [`SourceConfig`] and checks that its VRL transform compiles.
     fn deserialize_source_config(&self) -> MetastoreResult<SourceConfig>;
 }
 
@@ -460,7 +470,7 @@ impl UpdateSourceRequestExt for UpdateSourceRequest {
     }
 
     fn deserialize_source_config(&self) -> MetastoreResult<SourceConfig> {
-        serde_utils::from_json_str(&self.source_config_json)
+        deserialize_source_config_to_write(&self.source_config_json)
     }
 }
 /// Helper trait to build a [`DeleteTask`] and deserialize its payload.
@@ -1122,7 +1132,26 @@ fn use_shard_api(params: &SourceParams) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use quickwit_config::TransformConfig;
+
     use super::*;
+
+    #[test]
+    fn test_add_source_request_rejects_uncompilable_vrl_transform() {
+        let mut source_config = SourceConfig::for_test("test-source", SourceParams::void());
+        source_config.transform_config = Some(TransformConfig::for_test("foo"));
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let request = AddSourceRequest::try_from_source_config(index_uid, &source_config).unwrap();
+        let result = request.deserialize_source_config();
+
+        // Transforms are only compiled when Quickwit is built with the `vrl` feature.
+        if source_config.validate_transform().is_ok() {
+            result.unwrap();
+            return;
+        }
+        let error = result.unwrap_err();
+        assert!(matches!(error, MetastoreError::InvalidArgument { .. }));
+    }
 
     #[test]
     fn test_filter_contains() {
