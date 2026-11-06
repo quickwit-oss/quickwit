@@ -32,7 +32,7 @@ impl ListFieldsCache {
     }
 
     pub async fn get(&self, split_id: &str) -> Option<OwnedBytes> {
-        let bytes = self.cache.get(split_key(split_id)).await;
+        let bytes = self.cache.get(split_id.to_owned()).await;
         if let Some(metrics) = self.metrics {
             metrics.record_get(bytes.as_ref().map(|bytes| bytes.len()));
         }
@@ -40,17 +40,8 @@ impl ListFieldsCache {
     }
 
     pub async fn put(&self, split_id: String, serialized_split_fields: OwnedBytes) {
-        self.cache
-            .put(split_key(&split_id), serialized_split_fields)
-            .await;
+        self.cache.put(split_id, serialized_split_fields).await;
     }
-}
-
-fn split_key(split_id: &str) -> String {
-    format!(
-        "v1:list-fields:{}",
-        serde_json::to_string(split_id).expect("split IDs are serializable")
-    )
 }
 
 #[cfg(test)]
@@ -58,13 +49,6 @@ mod tests {
     use bytesize::ByteSize;
 
     use super::*;
-
-    #[test]
-    fn list_fields_cache_keys_are_stable_and_distinguish_split_ids() {
-        assert_eq!(split_key("split"), "v1:list-fields:\"split\"");
-        assert_ne!(split_key("split"), split_key("other-split"));
-        assert_ne!(split_key("split\""), split_key("split\\\""));
-    }
 
     #[tokio::test]
     async fn list_fields_cache_get_miss_returns_none() {

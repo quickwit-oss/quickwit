@@ -21,11 +21,11 @@ mod storage;
 mod tests;
 
 use quickwit_config::StorageCacheConfig;
-pub use storage::{FeuerSplitRangeStorage, wrap_storage_with_split_range_cache};
+pub use storage::wrap_storage_with_split_range_cache;
 
 use crate::{FeuerIoQueues, StorageResolver};
 
-/// Open the split-range cache and optionally export native traces to `QW_FEUER_ACCESS_TRACE_URI`.
+/// Open `storage_cache` and optionally export native traces to `QW_FEUER_ACCESS_TRACE_URI`.
 pub async fn open_split_range_cache_with_access_trace(
     config: &StorageCacheConfig,
     resolver: &StorageResolver,
@@ -41,7 +41,7 @@ pub async fn open_split_range_cache_with_access_trace(
     Ok(access_trace::attach(cache, storage, run))
 }
 
-/// Open `split_cache` with shared disk I/O queues.
+/// Open `storage_cache` with shared disk I/O queues.
 /// Memory-only caches need no directory.
 /// Model each source request's fixed retrieval cost as 256,000 equivalent bytes.
 pub async fn open_split_range_cache(

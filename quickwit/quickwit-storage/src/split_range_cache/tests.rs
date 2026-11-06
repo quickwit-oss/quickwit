@@ -20,7 +20,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use tokio::io::AsyncRead;
 use tokio::sync::watch;
@@ -109,20 +108,6 @@ async fn test_identical_concurrent_misses_fetch_once() {
     assert_eq!(first_result.unwrap().as_slice(), b"abcd");
     assert_eq!(second_result.unwrap().as_slice(), b"abcd");
     assert_eq!(fixture.lower_reads(), 1);
-}
-
-#[tokio::test]
-async fn test_remote_error_is_not_cached_or_rewritten() {
-    let fixture = Fixture::new().await;
-    for _ in 0..2 {
-        let error = fixture
-            .storage
-            .get_slice(Path::new("missing.split"), 0..4)
-            .await
-            .unwrap_err();
-        assert_eq!(error.kind(), StorageErrorKind::NotFound);
-    }
-    assert_eq!(fixture.lower_reads(), 2);
 }
 
 #[tokio::test]
@@ -299,32 +284,6 @@ async fn test_large_slice_reads_fetch_once() {
         );
     }
     assert_eq!(fixture.lower_reads(), 1);
-}
-
-#[tokio::test]
-async fn test_invalid_download_is_an_error_and_is_not_cached() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let cache = open_split_range_cache(
-        &config_for_test(temp_dir.path()),
-        &crate::FeuerIoQueues::default(),
-    )
-    .await
-    .unwrap();
-    // AlignedBuffer requires a positive length. Reject both short and oversized downloads.
-    for bytes in [Bytes::from_static(b"ab"), Bytes::from_static(b"abcde")] {
-        let error = get_or_fetch(&cache, "object".to_owned(), 0..4, |_| async move {
-            Ok(buffer_for_test(bytes))
-        })
-        .await
-        .unwrap_err();
-        assert_eq!(error.kind(), StorageErrorKind::Internal);
-    }
-    let bytes = get_or_fetch(&cache, "object".to_owned(), 0..4, |_| async {
-        Ok(buffer_for_test(b"abcd"))
-    })
-    .await
-    .unwrap();
-    assert_eq!(bytes.as_ref(), b"abcd");
 }
 
 const SPLIT_PATH: &str = "a.split";

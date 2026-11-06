@@ -121,7 +121,7 @@ async fn test_open_split_bundle_caches_footer_and_body_ranges() {
         );
     }
 
-    // Another searcher context shares this range cache and reuses its cached footer.
+    // Another searcher context shares this `storage_cache` and reuses its cached footer.
     let fresh_context = context_with_range_cache(cache);
     let (hotcache, _bundle) = open_split_bundle(&fresh_context, counted, &split.footer_offsets)
         .await
@@ -163,7 +163,7 @@ async fn test_open_split_bundle_footer_skips_whole_split_cache() {
     assert_eq!(
         counters.snapshot().1,
         1,
-        "footer bypasses the whole-split cache and reads through the range cache"
+        "footer bypasses split_cache and reads through storage_cache"
     );
 
     bundle.get_slice(Path::new(BODY_FILE), 0..4).await.unwrap();

@@ -20,7 +20,6 @@ use std::{fmt, io};
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use fail::fail_point;
 use feuer::{AlignedBuffer, GetOrFetchError};
 use quickwit_common::uri::Uri;
 use tokio::io::AsyncRead;
@@ -63,8 +62,7 @@ where
 }
 
 /// Read-only storage decorator caching exact slices of immutable split objects.
-#[derive(Clone)]
-pub struct FeuerSplitRangeStorage {
+struct FeuerSplitRangeStorage {
     inner: Arc<dyn Storage>,
     cache: Arc<feuer::Cache>,
 }
@@ -112,9 +110,6 @@ impl Storage for FeuerSplitRangeStorage {
     async fn get_slice(&self, path: &Path, byte_range: Range<usize>) -> StorageResult<OwnedBytes> {
         if byte_range.is_empty() {
             return Ok(OwnedBytes::empty());
-        }
-        if should_bypass_cache() {
-            return self.inner.get_slice(path, byte_range).await;
         }
         let object_uri = self
             .inner
@@ -179,11 +174,6 @@ fn split_slice_key(object_uri: &str, byte_range: &Range<usize>) -> String {
         "split-slice-v1:{}:{}:{object_uri}",
         byte_range.start, byte_range.end
     )
-}
-
-fn should_bypass_cache() -> bool {
-    fail_point!("split-range-cache-before-get", |_| true);
-    false
 }
 
 #[cfg(test)]

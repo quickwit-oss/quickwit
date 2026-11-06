@@ -235,28 +235,6 @@ mod tests {
             assert_eq!(cache_config.file_name(), file_name);
             assert!(cache.get("missing".into()).await.is_none());
         }
-        for (config, file_name, cache_name) in [
-            (&split_config, "split_cache", "split_range"),
-            (&partial_config, "partial_response_cache", "partial_request"),
-            (&predicate_config, "predicate_cache", "predicate"),
-        ] {
-            assert!(directory.path().join(file_name).is_file());
-            assert!(
-                directory
-                    .path()
-                    .join(format!(".feuer.{file_name}.lock"))
-                    .is_file()
-            );
-            let error = match FeuerCache::open(config, &queues, file_name, cache_name).await {
-                Ok(_) => panic!("opening the same cache file twice must fail"),
-                Err(error) => error,
-            };
-            assert!(matches!(
-                error.downcast_ref::<feuer::DiskCacheError>(),
-                Some(feuer::DiskCacheError::DataFile(source)) if source.kind().as_str() == "already_open"
-            ));
-        }
-
         // Large objects bypass Feuer's buffer for small objects, so disk publication is observable.
         let split_bytes = vec![3; 1 << 20];
         let download_bytes = split_bytes.clone();

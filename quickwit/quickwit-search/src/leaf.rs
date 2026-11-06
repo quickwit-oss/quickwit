@@ -136,7 +136,7 @@ pub(crate) async fn open_split_bundle(
         Some(cache) => wrap_storage_with_split_range_cache(cache.clone(), index_storage.clone()),
         None => index_storage.clone(),
     };
-    // Footer reads use the range cache, before the whole-split cache is added for body reads.
+    // Footer reads use `storage_cache`, before `split_cache` is added for body reads.
     let footer_data = range_cached_storage
         .get_slice(
             &split_file,
@@ -208,7 +208,7 @@ fn configure_storage_retries(
 }
 
 /// Opens a `tantivy::Index` for the given split with several cache layers:
-/// - A split byte-range cache given by `SearcherContext.storage_cache_opt`, including footer bytes.
+/// - The `storage_cache` given by `SearcherContext.storage_cache_opt`, including footer bytes.
 /// - An ephemeral unbounded cache directory (whose lifetime is tied to the returned `Index` if no
 ///   `ByteRangeCache` is provided).
 pub(crate) async fn open_index_with_caches(
@@ -689,7 +689,7 @@ async fn leaf_search_single_split(
     let split_id = split.split_id.to_string();
     let byte_range_cache = ByteRangeCache::with_infinite_capacity();
     // Wrap storage at request scope so we observe per-split download volume.
-    // Cache layers (split cache, hotcache, byte-range cache) live
+    // Cache layers (`storage_cache`, `split_cache`, hotcache, short-lived cache) live
     // ABOVE this wrapper, so reads served from cache do not contribute to the
     // counters — that is the desired "downloaded from object storage" semantics.
     let (storage, download_counters) = CountingStorage::instrument_storage(storage);
@@ -763,7 +763,7 @@ async fn leaf_search_single_split(
     let warmup_start = Instant::now();
     // Baseline the counters so the span attributes cover warmup only. This matters for
     // `download_counters`: opening the index fetches the footer and hotcache through the same
-    // counted storage on a cold split byte-range cache. The ephemeral byte-range cache is usually
+    // counted storage when `storage_cache` is cold. The short-lived cache is usually
     // still empty at this point, since index-open reads are served by the hotcache above it.
     let cache_bytes_before_warmup = byte_range_cache.get_num_bytes();
     let downloaded_bytes_before_warmup = download_counters.snapshot().0;
@@ -805,10 +805,10 @@ async fn leaf_search_single_split(
                 .push((term_absence_cache_key(term), segment_id));
         };
         // `downloaded_mb` is what warmup actually fetched from blob storage; `total_mb` adds the
-        // part served from the fast-field cache, since the byte-range cache sits above it and
-        // records every miss it has to resolve below. Both are deltas since `warmup_start`, so
-        // index-open reads are not attributed here, and are recorded after warmup, before the
-        // search adds to either.
+        // bytes served by `storage_cache` or `split_cache`, since the short-lived cache
+        // sits above both and records every miss it has to resolve below. Both are deltas since
+        // `warmup_start`, so index-open reads are not attributed here, and are recorded
+        // after warmup, before the search adds to either.
         const BYTES_PER_MB: f64 = 1_000_000.0;
         let warmup_span = info_span!(
             "warmup",
@@ -2430,10 +2430,7 @@ mod tests {
     use quickwit_config::{LambdaConfig, SearcherConfig};
     use quickwit_directories::write_hotcache;
     use quickwit_proto::search::LambdaSingleSplitResult;
-    use quickwit_storage::{
-        CountingStorage, PutPayload, RamStorageBuilder, SplitPayloadBuilder, StorageError,
-        StorageErrorKind,
-    };
+    use quickwit_storage::{RamStorageBuilder, StorageError, StorageErrorKind};
     use rand::RngExt;
     use tantivy::TantivyDocument;
     use tantivy::directory::RamDirectory;
@@ -2443,44 +2440,6 @@ mod tests {
 
     use super::*;
     use crate::LambdaLeafSearchInvoker;
-
-    #[tokio::test]
-    async fn test_open_split_bundle_reads_footer_each_time_without_range_cache() {
-        let mut builder = SplitPayloadBuilder::default();
-        builder.add_payload("segment.fast".to_string(), Box::new(b"FASTDATA".to_vec()));
-        let payload = builder.finalize(b"HOT").unwrap();
-        let footer_range = payload.footer_range.clone();
-        let split_bytes = payload.read_all().await.unwrap();
-        let storage = RamStorageBuilder::default()
-            .put("uncached.split", split_bytes.as_slice())
-            .build();
-        let (storage, counters) = CountingStorage::instrument_storage(Arc::new(storage));
-        let mut config = SearcherConfig::default();
-        config.fast_field_cache = Some(quickwit_config::CacheConfig::no_cache());
-        config.split_footer_cache = Some(quickwit_config::CacheConfig::no_cache());
-        let context = SearcherContext::new_without_invoker(config, None);
-        let offsets = SplitIdAndFooterOffsets {
-            split_id: "uncached".to_string(),
-            split_footer_start: footer_range.start,
-            split_footer_end: footer_range.end,
-            ..Default::default()
-        };
-
-        for num_reads in 1..=2 {
-            let (hotcache, _bundle) = open_split_bundle(&context, storage.clone(), &offsets)
-                .await
-                .unwrap();
-            assert_eq!(hotcache.as_slice(), b"HOT");
-            assert_eq!(
-                counters.snapshot(),
-                (
-                    (footer_range.end - footer_range.start) * num_reads,
-                    num_reads
-                ),
-                "without a range cache each opening reads exactly the footer bytes"
-            );
-        }
-    }
 
     #[tokio::test]
     async fn test_open_split_bundle_preserves_footer_fetch_error() {

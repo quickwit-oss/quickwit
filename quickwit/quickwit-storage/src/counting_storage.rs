@@ -55,9 +55,9 @@ impl DownloadCounters {
 /// Storage proxy that counts the bytes and number of read requests it serves.
 ///
 /// Wrap a base `Storage` with this proxy at the entry point of a request to
-/// observe the per-request download volume. Cache hits (split cache, hotcache,
-/// byte-range cache) return before reaching this wrapper, so the counters measure
-/// downloads from object storage.
+/// observe the per-request download volume. Cache hits (`storage_cache`, `split_cache`,
+/// hotcache, short-lived cache) return before reaching this wrapper, so the counters
+/// measure downloads from object storage.
 ///
 /// Write methods (`put`, `delete`, `bulk_delete`) and metadata methods
 /// (`exists`, `file_num_bytes`, `check_connectivity`) are passed through

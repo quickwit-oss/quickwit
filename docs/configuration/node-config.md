@@ -316,7 +316,7 @@ This section contains the configuration options for a Searcher.
 | `predicate_cache` | Cache for predicate hit sets and known-absent terms. Accepts a memory capacity or the memory/disk settings below. Disable with `0`. Also accepts `predicate_cache_capacity`. | `256M` |
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
 | `split_cache` | Searcher split cache configuration options defined in the section below. Cache disabled if unspecified. | |
-| `storage_cache` | Range cache for split footers, hotcache, fast fields, and other body ranges, with an optional disk tier. Explicit settings override the legacy memory budgets. Configuration options are defined below. | Memory-only, `1500M` |
+| `storage_cache` | Caches split footers, hotcache, fast fields, and other body ranges in memory, with an optional disk tier. Explicit settings override the legacy memory budgets. Configuration options are defined below. | Memory-only, `1500M` |
 | `storage_cache_directory` | Shared directory for cache files. Per-cache `path` overrides it. Setting this directory alone does not enable disk caching. | |
 | `request_timeout_secs` | The time before a search request is cancelled. This should match the timeout of the stack calling into quickwit if there is one set.  | `30` |
 | `use_metastore_read_replica` | If true, routes read-only metastore requests from searchers to nodes running the `metastore_read_replica` service. Searchers require at least one `metastore_read_replica` node at startup and do not fall back to the primary metastore. | `false` |
@@ -343,7 +343,7 @@ The following fields configure `storage_cache` and the optional disk tiers of th
 
 Memory-only caching works on every supported platform and requires no directory. Initialization failures abort startup. Capacities accept integer byte counts or values such as `64MiB`. Result-cache mappings also accept `capacity` instead of `memory_capacity`.
 
-An explicit `storage_cache` replaces the fast-field and footer budgets. To disable range caching, omit `storage_cache` and set both legacy capacities to `0`. The legacy settings also accept the names `fast_field_cache` and `split_footer_cache`, and memory-only mappings with `memory_capacity` (alias `capacity`). Explicit `policy` and nonempty `virtual_caches` settings are unsupported.
+An explicit `storage_cache` replaces the fast-field and footer budgets. To disable `storage_cache`, omit it and set both legacy capacities to `0`. The legacy settings also accept the names `fast_field_cache` and `split_footer_cache`, and memory-only mappings with `memory_capacity` (alias `capacity`). Explicit `policy` and nonempty `virtual_caches` settings are unsupported.
 
 The list-fields metadata cache uses memory only, with the same capacity as `partial_request_cache_capacity`. Setting that capacity to zero disables both caches.
 

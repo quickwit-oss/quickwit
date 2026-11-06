@@ -441,15 +441,15 @@ pub struct SearcherConfig {
 
     /// Legacy fast-field memory budget, combined with the footer budget by
     /// [`Self::resolved_storage_cache`] when `storage_cache` is omitted.
-    #[serde(alias = "fast_field_cache_capacity")]
+    #[serde(rename = "fast_field_cache", alias = "fast_field_cache_capacity")]
     #[serde(default, deserialize_with = "deserialize_optional_fast_field_cache")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fast_field_cache: Option<CacheConfig>,
+    pub legacy_fast_field_cache: Option<CacheConfig>,
     /// Legacy footer memory budget, defaulting to 500 MB when omitted.
-    #[serde(alias = "split_footer_cache_capacity")]
+    #[serde(rename = "split_footer_cache", alias = "split_footer_cache_capacity")]
     #[serde(default, deserialize_with = "deserialize_optional_split_footer_cache")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub split_footer_cache: Option<CacheConfig>,
+    pub legacy_split_footer_cache: Option<CacheConfig>,
     #[serde(alias = "partial_request_cache_capacity")]
     #[serde(deserialize_with = "CacheConfig::deserialize_with_default::<_, \
                                 {ByteSize::mb(64).as_u64()}>")]
@@ -776,8 +776,8 @@ impl StorageTimeoutPolicy {
 impl Default for SearcherConfig {
     fn default() -> Self {
         SearcherConfig {
-            fast_field_cache: None,
-            split_footer_cache: None,
+            legacy_fast_field_cache: None,
+            legacy_split_footer_cache: None,
             partial_request_cache: CacheConfig::default_with_memory_capacity(ByteSize::mb(64)),
             predicate_cache: CacheConfig::default_with_memory_capacity(ByteSize::mb(256)),
             max_num_concurrent_split_searches: 100,
@@ -811,13 +811,13 @@ impl SearcherConfig {
     fn default_request_timeout_secs() -> NonZeroU64 {
         NonZeroU64::new(30).unwrap()
     }
-    /// Resolve split range caching. Explicit `storage_cache` settings take precedence.
+    /// Resolve `storage_cache`. Explicit settings take precedence over legacy memory budgets.
     /// Otherwise, the legacy budgets sum to a memory-only cache. A zero sum disables it.
     pub fn resolved_storage_cache(&self) -> anyhow::Result<Option<StorageCacheConfig>> {
         // Validate legacy settings even when an explicit storage_cache overrides their budgets.
         for (name, config) in [
-            ("fast_field_cache", &self.fast_field_cache),
-            ("split_footer_cache", &self.split_footer_cache),
+            ("fast_field_cache", &self.legacy_fast_field_cache),
+            ("split_footer_cache", &self.legacy_split_footer_cache),
         ] {
             if let Some(config) = config {
                 config
@@ -833,12 +833,12 @@ impl SearcherConfig {
             ));
         }
         let fast_field_capacity = self
-            .fast_field_cache
+            .legacy_fast_field_cache
             .as_ref()
             .map(CacheConfig::memory_capacity)
             .unwrap_or(ByteSize::gb(1));
         let footer_capacity = self
-            .split_footer_cache
+            .legacy_split_footer_cache
             .as_ref()
             .map(CacheConfig::memory_capacity)
             .unwrap_or(ByteSize::mb(500));
@@ -1421,6 +1421,29 @@ mod tests {
         assert!(
             serde_yaml::from_str::<CacheConfig>("{capacity: 64MiB, memory_capacity: 128MiB}")
                 .is_err()
+        );
+
+        let config: SearcherConfig = serde_yaml::from_str(
+            "fast_field_cache_capacity: 32M\nsplit_footer_cache_capacity: 64M",
+        )
+        .unwrap();
+        let serialized = serde_json::to_value(&config).unwrap();
+        assert_eq!(
+            serialized["fast_field_cache"]["memory_capacity"],
+            32_000_000u64
+        );
+        assert_eq!(
+            serialized["split_footer_cache"]["memory_capacity"],
+            64_000_000u64
+        );
+        let round_trip: SearcherConfig = serde_json::from_value(serialized).unwrap();
+        assert_eq!(
+            round_trip.legacy_fast_field_cache,
+            config.legacy_fast_field_cache
+        );
+        assert_eq!(
+            round_trip.legacy_split_footer_cache,
+            config.legacy_split_footer_cache
         );
     }
 

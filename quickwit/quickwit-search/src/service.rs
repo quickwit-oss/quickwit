@@ -466,7 +466,7 @@ impl SearcherContext {
         );
         let storage_cache_opt = searcher_config
             .resolved_storage_cache()
-            .expect("invalid split range cache config")
+            .expect("invalid storage_cache config")
             .filter(|config| config.disk_capacity.as_u64() == 0)
             .map(|config| {
                 // Standalone and Lambda searchers do not run storage-cache initialization.
@@ -475,7 +475,7 @@ impl SearcherContext {
                         &config,
                         &quickwit_storage::FeuerIoQueues::default(),
                     ))
-                    .expect("failed to initialize split range memory cache"),
+                    .expect("failed to initialize memory-only storage_cache"),
                 )
             });
         let leaf_search_cache = LeafSearchCache::new(&searcher_config.partial_request_cache);
@@ -640,10 +640,21 @@ mod tests {
                 assert_eq!(context.storage_cache_opt.is_some(), enabled);
                 let reads_before = counters.snapshot().1;
                 for num_reads in 1..=2 {
+                    let (bytes_before_footer, reads_before_footer) = counters.snapshot();
                     let (hotcache, bundle) = open_split_bundle(&context, storage.clone(), &offsets)
                         .await
                         .unwrap();
                     assert_eq!(hotcache.as_slice(), b"HOT");
+                    let expected_footer_reads = u64::from(!enabled || num_reads == 1);
+                    assert_eq!(
+                        counters.snapshot(),
+                        (
+                            bytes_before_footer
+                                + (offsets.split_footer_end - offsets.split_footer_start)
+                                    * expected_footer_reads,
+                            reads_before_footer + expected_footer_reads,
+                        )
+                    );
                     assert_eq!(
                         bundle
                             .get_slice(Path::new("segment.fast"), 0..8)
