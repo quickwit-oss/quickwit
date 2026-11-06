@@ -14,6 +14,7 @@
 
 #![deny(clippy::disallowed_methods)]
 
+mod coalesce_ranges;
 mod coolid;
 mod env;
 
@@ -55,6 +56,7 @@ use std::fmt::Display;
 use std::future::Future;
 use std::ops::{Range, RangeInclusive};
 
+pub use coalesce_ranges::coalesce_ranges;
 pub use coolid::new_coolid;
 pub use cpus::num_cpus;
 pub use env::{
