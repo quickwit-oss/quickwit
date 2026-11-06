@@ -34,8 +34,11 @@ impl SearchRequest {
         use std::ops::Bound;
         (
             self.start_timestamp
-                .map_or(Bound::Unbounded, Bound::Included),
-            self.end_timestamp.map_or(Bound::Unbounded, Bound::Excluded),
+                .map(Bound::Included)
+                .unwrap_or(Bound::Unbounded),
+            self.end_timestamp
+                .map(Bound::Excluded)
+                .unwrap_or(Bound::Unbounded),
         )
     }
 }
@@ -45,8 +48,11 @@ impl SplitIdAndFooterOffsets {
         use std::ops::Bound;
         (
             self.timestamp_start
-                .map_or(Bound::Unbounded, Bound::Included),
-            self.timestamp_end.map_or(Bound::Unbounded, Bound::Included),
+                .map(Bound::Included)
+                .unwrap_or(Bound::Unbounded),
+            self.timestamp_end
+                .map(Bound::Included)
+                .unwrap_or(Bound::Unbounded),
         )
     }
 }
