@@ -19,17 +19,15 @@ use quickwit_config::CacheConfig;
 use quickwit_proto::search::{
     CountHits, LeafResourceStats, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
 };
+use quickwit_storage::metrics::CacheMetrics;
 use quickwit_storage::{FeuerCache, OwnedBytes};
 use serde::Serialize;
 use tantivy::index::SegmentId;
 
-#[path = "result_cache.rs"]
-mod result_cache;
-use result_cache::ResultCache;
-
 /// A cache to memoize `leaf_search_single_split` results.
 pub struct LeafSearchCache {
-    content: ResultCache,
+    cache: FeuerCache,
+    lookup_metrics: Option<&'static CacheMetrics>,
 }
 
 // TODO we could be smarter about search_after. If we have a cached request with a search_after
@@ -49,27 +47,31 @@ pub struct LeafSearchCache {
 
 impl LeafSearchCache {
     pub fn new(config: &CacheConfig) -> LeafSearchCache {
+        let memory_capacity = config.memory_capacity().as_u64();
         LeafSearchCache {
-            content: ResultCache::memory(
-                config,
-                "partial_request",
-                &quickwit_storage::metrics::PARTIAL_REQUEST_CACHE,
-            ),
-        }
-    }
-    pub fn with_storage_cache(cache: FeuerCache) -> Self {
-        Self {
-            content: ResultCache::disk(cache),
+            cache: FeuerCache::memory(memory_capacity, "partial_request")
+                .expect("invalid Feuer memory cache configuration"),
+            lookup_metrics: (memory_capacity > 0)
+                .then_some(&quickwit_storage::metrics::PARTIAL_REQUEST_CACHE),
         }
     }
 
+    /// Use a supplied Feuer cache.
+    pub fn with_feuer_cache(cache: FeuerCache) -> Self {
+        Self {
+            cache,
+            lookup_metrics: None,
+        }
+    }
+
+    // These synchronous test helpers are used with memory-only caches.
     #[cfg(test)]
     pub fn get(
         &self,
         split_info: SplitIdAndFooterOffsets,
         request: SearchRequest,
     ) -> Option<LeafSearchResponse> {
-        self.content.block_on(self.get_async(split_info, request))
+        futures::executor::block_on(self.get_async(split_info, request))
     }
 
     #[cfg(test)]
@@ -79,8 +81,7 @@ impl LeafSearchCache {
         request: SearchRequest,
         result: LeafSearchResponse,
     ) {
-        self.content
-            .block_on(self.put_async(split_info, request, result));
+        futures::executor::block_on(self.put_async(split_info, request, result));
     }
 
     pub async fn get_async(
@@ -89,7 +90,12 @@ impl LeafSearchCache {
         search_request: SearchRequest,
     ) -> Option<LeafSearchResponse> {
         let key = CacheKey::from_split_meta_and_request(split_info, search_request);
-        let encoded_result = self.content.get(&key).await?;
+        let key = serde_json::to_string(&key).expect("cache keys are serializable");
+        let bytes = self.cache.get(key).await;
+        if let Some(metrics) = self.lookup_metrics {
+            metrics.record_get(bytes.as_ref().map(|bytes| bytes.len()));
+        }
+        let encoded_result = bytes?;
         Some(LeafSearchResponse::decode(&*encoded_result).expect("invalid cached leaf response"))
     }
 
@@ -107,10 +113,9 @@ impl LeafSearchCache {
             ..Default::default()
         });
         let key = CacheKey::from_split_meta_and_request(split_info, search_request);
+        let key = serde_json::to_string(&key).expect("cache keys are serializable");
         let encoded_result = result.encode_to_vec();
-        self.content
-            .put(&key, OwnedBytes::new(encoded_result))
-            .await;
+        self.cache.put(key, OwnedBytes::new(encoded_result)).await;
     }
 }
 
@@ -230,25 +235,31 @@ impl RangeBounds<i64> for HalfOpenRange {
 }
 
 pub struct PredicateCacheImpl {
-    content: ResultCache,
+    cache: FeuerCache,
+    lookup_metrics: Option<&'static CacheMetrics>,
+    runtime: Option<tokio::runtime::Handle>,
     enabled: bool,
 }
 
 impl PredicateCacheImpl {
     pub fn new(config: &CacheConfig) -> Self {
+        let memory_capacity = config.memory_capacity().as_u64();
         PredicateCacheImpl {
-            content: ResultCache::memory(
-                config,
-                "predicate",
-                &quickwit_storage::metrics::PREDICATE_CACHE,
-            ),
-            enabled: config.memory_capacity().as_u64() > 0,
+            cache: FeuerCache::memory(memory_capacity, "predicate")
+                .expect("invalid Feuer memory cache configuration"),
+            lookup_metrics: (memory_capacity > 0)
+                .then_some(&quickwit_storage::metrics::PREDICATE_CACHE),
+            runtime: None,
+            enabled: memory_capacity > 0,
         }
     }
 
-    pub fn with_storage_cache(cache: FeuerCache) -> Self {
+    /// Use a supplied Feuer cache. Must be called within a Tokio runtime.
+    pub fn with_feuer_cache(cache: FeuerCache) -> Self {
         Self {
-            content: ResultCache::disk(cache),
+            cache,
+            lookup_metrics: None,
+            runtime: Some(tokio::runtime::Handle::current()),
             enabled: true,
         }
     }
@@ -265,8 +276,13 @@ impl PredicateCacheImpl {
         if !self.enabled {
             return None;
         }
-        let key = (split_id.as_str(), query_ast_json.as_str());
-        let encoded_result = self.content.get(&key).await?;
+        let key = serde_json::to_string(&(split_id.as_str(), query_ast_json.as_str()))
+            .expect("cache keys are serializable");
+        let bytes = self.cache.get(key).await;
+        if let Some(metrics) = self.lookup_metrics {
+            metrics.record_get(bytes.as_ref().map(|bytes| bytes.len()));
+        }
+        let encoded_result = bytes?;
         assert!(
             encoded_result.len() >= 32,
             "invalid cached predicate header"
@@ -294,9 +310,10 @@ impl PredicateCacheImpl {
         let mut buffer = Vec::with_capacity(32 + hits_buffer.len());
         buffer.extend_from_slice(segment.uuid_string().as_bytes());
         buffer.extend_from_slice(&hits_buffer);
-        let key = (split_id.as_str(), query_ast_json.as_str());
+        let key = serde_json::to_string(&(split_id.as_str(), query_ast_json.as_str()))
+            .expect("cache keys are serializable");
         let entry_num_bytes = buffer.len();
-        if !self.content.put(&key, OwnedBytes::new(buffer)).await {
+        if !self.cache.put(key, OwnedBytes::new(buffer)).await {
             quickwit_common::rate_limited_warn!(
                 limit_per_min = 10,
                 split_id,
@@ -324,8 +341,12 @@ impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
         segment: SegmentId,
         hits: quickwit_query::query_ast::HitSet,
     ) {
-        self.content
-            .block_on(self.put_async(split_id, query_ast_json, segment, hits));
+        let future = self.put_async(split_id, query_ast_json, segment, hits);
+        // Blocking with the saved Tokio runtime requires a synchronous caller.
+        match &self.runtime {
+            Some(runtime) => runtime.block_on(future),
+            None => futures::executor::block_on(future),
+        }
     }
 }
 
@@ -581,6 +602,49 @@ mod tests {
         assert_ne!(reference_key, serialize_key(&other_split, &request));
     }
 
+    #[test]
+    fn test_memory_caches_without_tokio_runtime() {
+        // Zero disables caching. Feuer admits values larger than a positive capacity target.
+        for capacity in [0, 1] {
+            let config = ByteSize::b(capacity).into();
+            let split = SplitIdAndFooterOffsets::default();
+            let request = SearchRequest::default();
+            let cache = LeafSearchCache::new(&config);
+            assert!(cache.get(split.clone(), request.clone()).is_none());
+            cache.put(
+                split.clone(),
+                request.clone(),
+                LeafSearchResponse {
+                    num_hits: 7,
+                    ..Default::default()
+                },
+            );
+            let key = serde_json::to_string(&CacheKey::from_split_meta_and_request(
+                split.clone(),
+                request.clone(),
+            ))
+            .unwrap();
+            assert_eq!(
+                futures::executor::block_on(cache.cache.get(key)).is_some(),
+                capacity > 0,
+            );
+            assert_eq!(
+                cache.get(split, request).map(|response| response.num_hits),
+                (capacity > 0).then_some(7),
+            );
+
+            let cache = PredicateCacheImpl::new(&config);
+            assert_eq!(cache.is_enabled(), capacity > 0);
+            let segment = SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
+            cache.put("split".into(), "query".into(), segment, HitSet::empty());
+            assert_eq!(
+                futures::executor::block_on(cache.get("split".into(), "query".into()))
+                    .map(|(segment, _)| segment),
+                (capacity > 0).then_some(segment),
+            );
+        }
+    }
+
     #[tokio::test]
     async fn test_predicate_cache_separates_keys() {
         let cache = PredicateCacheImpl::new(&ByteSize::mb(64).into());
@@ -601,6 +665,13 @@ mod tests {
         assert!(cached_hits.is_empty());
         assert!(
             cache
+                .cache
+                .get(r#"["split-1","first-query"]"#.to_string())
+                .await
+                .is_some()
+        );
+        assert!(
+            cache
                 .get("split-1".to_string(), "second-query".to_string())
                 .await
                 .is_none()
@@ -615,16 +686,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_predicate_cache_reads_with_runtime_handle() {
-        // Exercise the saved-runtime path on every platform. A synchronous get would call
-        // Handle::block_on inside this async task, even when the backing cache is in memory.
-        let cache = PredicateCacheImpl::with_storage_cache(
+        // Read from a cache holding a Tokio runtime handle, using memory storage on every platform.
+        // Calling Handle::block_on here would panic inside the async task.
+        let cache = std::sync::Arc::new(PredicateCacheImpl::with_feuer_cache(
             quickwit_storage::FeuerCache::memory(1_000_000, "predicate").unwrap(),
-        );
+        ));
         assert!(cache.get("split".into(), "query".into()).await.is_none());
         let segment = SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
-        cache
-            .put_async("split".into(), "query".into(), segment, HitSet::empty())
-            .await;
+        let cache_for_write = cache.clone();
+        quickwit_common::thread_pool::run_cpu_intensive(move || {
+            cache_for_write.put("split".into(), "query".into(), segment, HitSet::empty());
+        })
+        .await
+        .unwrap();
         let (cached_segment, hits) = cache.get("split".into(), "query".into()).await.unwrap();
         assert_eq!(cached_segment, segment);
         assert!(hits.is_empty());

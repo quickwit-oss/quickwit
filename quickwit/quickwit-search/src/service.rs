@@ -527,7 +527,7 @@ impl SearcherContext {
             ));
         }
         if let Some(config) = &partial_request_cache_config {
-            self.leaf_search_cache = LeafSearchCache::with_storage_cache(
+            self.leaf_search_cache = LeafSearchCache::with_feuer_cache(
                 quickwit_storage::FeuerCache::open(
                     config,
                     &queues,
@@ -538,7 +538,7 @@ impl SearcherContext {
             );
         }
         if let Some(config) = &predicate_cache_config {
-            self.predicate_cache = Arc::new(PredicateCacheImpl::with_storage_cache(
+            self.predicate_cache = Arc::new(PredicateCacheImpl::with_feuer_cache(
                 quickwit_storage::FeuerCache::open(config, &queues, "predicate_cache", "predicate")
                     .await?,
             ));

@@ -43,7 +43,9 @@ impl FeuerIoQueues {
             config.disk_capacity.as_u64(),
             config.memory_capacity.as_u64(),
         )?
-        .with_file_name(file_name)?;
+        .with_file_name(file_name)?
+        // Increment when key normalization, key encoding, or cached byte formats change.
+        .with_payload_version(1);
         let scorer = std::sync::Arc::new(feuer::AvoidedRetrievalCostScorer {
             cost_per_request: fixed_retrieval_equivalent_bytes as f64,
             ..Default::default()
@@ -76,7 +78,7 @@ impl FeuerIoQueues {
 }
 
 /// A Feuer cache for immutable encoded results.
-/// Keys must include a format version. Values for a given key must never change.
+/// Values for a given key must never change.
 pub struct FeuerCache {
     cache: Option<feuer::Cache>,
 }
