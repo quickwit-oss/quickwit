@@ -12,6 +12,7 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+arc-swap = { workspace = true, features = ["weak"] }
 async-trait = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }

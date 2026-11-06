@@ -23,11 +23,13 @@ use tracing::{debug, error};
 
 use crate::envelope::Envelope;
 use crate::mailbox::{Inbox, create_mailbox};
+use crate::priority::{PriorityGate, PriorityGates};
 use crate::registry::{ActorJoinHandle, ActorRegistry};
 use crate::scheduler::{NoAdvanceTimeGuard, SchedulerClient};
 use crate::supervisor::Supervisor;
 use crate::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, KillSwitch, Mailbox, QueueCapacity,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorPriority, KillSwitch, Mailbox,
+    QueueCapacity,
 };
 
 #[derive(Clone)]
@@ -35,6 +37,8 @@ pub struct SpawnContext {
     pub(crate) scheduler_client: SchedulerClient,
     pub(crate) kill_switch: KillSwitch,
     pub(crate) registry: ActorRegistry,
+    // Shared by all the actors of the universe.
+    pub(crate) priority_gates: PriorityGates,
 }
 
 impl SpawnContext {
@@ -43,6 +47,7 @@ impl SpawnContext {
             scheduler_client,
             kill_switch: Default::default(),
             registry: ActorRegistry::default(),
+            priority_gates: PriorityGates::default(),
         }
     }
 
@@ -67,6 +72,7 @@ impl SpawnContext {
             scheduler_client: self.scheduler_client.clone(),
             kill_switch: self.kill_switch.child(),
             registry: self.registry.clone(),
+            priority_gates: self.priority_gates.clone(),
         }
     }
 
@@ -168,12 +174,32 @@ impl<A: Actor> SpawnBuilder<A> {
         // We prevent fast forward of the scheduler during  initialization.
         let no_advance_time_guard = self.spawn_ctx.scheduler_client.no_advance_time_guard();
         let runtime_handle = actor.runtime_handle();
+        let priority_gate = self
+            .spawn_ctx
+            .priority_gates
+            .gate_for_runtime(&runtime_handle);
+        let priority = actor.priority();
         let (ctx, inbox, state_rx) = self.create_actor_context_and_inbox(&actor);
         debug!(actor_id = %ctx.actor_instance_id(), "spawn-actor");
         let mailbox = ctx.mailbox().clone();
         let ctx_clone = ctx.clone();
-        let loop_async_actor_future =
-            async move { actor_loop(actor, inbox, no_advance_time_guard, ctx).await };
+        let loop_async_actor_future = async move {
+            let actor_loop_future = actor_loop(
+                actor,
+                inbox,
+                priority,
+                priority_gate.clone(),
+                no_advance_time_guard,
+                ctx,
+            );
+            // The whole actor loop runs with the actor's priority:
+            // - high: any wake-up (new message, end of backpressure, reply...) closes the gate
+            //   until the actor is polled.
+            // - low: the actor is only polled while the gate is open.
+            priority_gate
+                .run_with_priority(priority, actor_loop_future)
+                .await
+        };
         let join_handle = ActorJoinHandle::new(quickwit_common::spawn_named_task_on(
             loop_async_actor_future,
             std::any::type_name::<A>(),
@@ -241,6 +267,9 @@ impl fmt::Debug for ActorExitPhase {
 /// If no message is available, this function will yield until a message arrives.
 /// If a high priority message is arrives first it is guaranteed to be processed first.
 /// This other way around is however not guaranteed.
+///
+/// Waiting for a message runs in a protected zone: an idle actor must not be
+/// reported as frozen by the supervisor.
 async fn recv_envelope<A: Actor>(inbox: &mut Inbox<A>, ctx: &ActorContext<A>) -> Envelope<A> {
     if ctx.state().is_running() {
         ctx.protect_future(inbox.recv()).await.expect(
@@ -261,6 +290,9 @@ struct ActorExecutionEnv<A: Actor> {
     actor: SyncWrapper<A>,
     inbox: Inbox<A>,
     ctx: ActorContext<A>,
+    priority: ActorPriority,
+    // Gate of the runtime the actor runs on.
+    priority_gate: PriorityGate,
 }
 
 impl<A: Actor> ActorExecutionEnv<A> {
@@ -305,22 +337,58 @@ impl<A: Actor> ActorExecutionEnv<A> {
         Ok(())
     }
 
+    /// Waits until no high priority actor of the runtime is waiting to run.
+    ///
+    /// Usually returns immediately. Does nothing for high priority actors.
+    async fn wait_for_high_priority_actors(&self) {
+        if self.priority != ActorPriority::Low {
+            return;
+        }
+        let wait_for_gate = self
+            .priority_gate
+            .run_with_priority(ActorPriority::Low, std::future::ready(()));
+        self.ctx.protect_future(wait_for_gate).await;
+    }
+
     async fn process_all_available_messages(
         &mut self,
     ) -> Result<(), (ActorExitStatus, ActorExitPhase)> {
         self.yield_and_check_if_killed().await?;
+        // Priority is handled at the level of the whole actor loop (see `SpawnBuilder::spawn`).
+        // In particular, a low priority actor woken up by a new message is not polled, and does
+        // not take the message out of its mailbox, while the gate is closed.
         let envelope = recv_envelope(&mut self.inbox, &self.ctx).await;
         self.process_one_message(envelope).await?;
         // If the actor is Running (not Paused), we consume all the messages in the mailbox
         // and call `on_drained_message`.
         if self.ctx.state().is_running() {
             loop {
-                while let Some(envelope) = try_recv_envelope(&mut self.inbox) {
-                    self.process_one_message(envelope).await?;
+                loop {
+                    // The gate of the actor loop is only checked when a poll starts. This loop
+                    // may never return `Pending` on its own, so a low priority actor also checks
+                    // the gate between messages.
+                    if self.priority == ActorPriority::Low && !self.priority_gate.is_open() {
+                        self.wait_for_high_priority_actors().await;
+                    }
+                    if let Some(envelope) = try_recv_envelope(&mut self.inbox) {
+                        self.process_one_message(envelope).await?;
+                    } else {
+                        break;
+                    }
                 }
-                // We have reached the last message.
+
+                // We seem to have drained our mailbox.
+                //
+                // A high priority actor stops here. `yield_now` would only wake it up once the
+                // worker has nothing else to run, possibly never if low priority actors keep it
+                // busy. If an upstream actor is blocked by backpressure, our next receive picks
+                // up its message.
+                if self.priority == ActorPriority::High {
+                    break;
+                }
+
                 // Let's still yield and see if we have more messages:
-                // an upstream actor might have experienced backpressure, and is now waiting for our
+                // an upstream actor might have experienced backpressure, and was waiting for our
                 // mailbox to have some room.
                 self.ctx.yield_now().await;
                 if self.inbox.is_empty() {
@@ -379,6 +447,8 @@ impl<A: Actor> Drop for ActorExecutionEnv<A> {
 async fn actor_loop<A: Actor>(
     actor: A,
     inbox: Inbox<A>,
+    priority: ActorPriority,
+    priority_gate: PriorityGate,
     no_advance_time_guard: NoAdvanceTimeGuard,
     ctx: ActorContext<A>,
 ) -> ActorExitStatus {
@@ -386,6 +456,8 @@ async fn actor_loop<A: Actor>(
         actor: SyncWrapper::new(actor),
         inbox,
         ctx,
+        priority,
+        priority_gate,
     };
 
     let initialize_exit_status_res: Result<(), ActorExitStatus> = actor_env.initialize().await;

@@ -19,7 +19,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use thiserror::Error;
 
-use crate::{ActorContext, QueueCapacity, SendError};
+use crate::{ActorContext, ActorPriority, QueueCapacity, SendError};
 
 /// The actor exit status represents the outcome of the execution of an actor,
 /// after the end of the execution.
@@ -125,13 +125,28 @@ pub trait Actor: Send + Sized + 'static {
     ///
     /// For actors that are calling `.await` regularly,
     /// returning `false` can yield better performance.
+    ///
+    /// The default depends on `Actor::priority`: `true` for low priority actors,
+    /// `false` for high priority actors. A high priority actor that yields gives
+    /// up its priority boost (see [`ActorPriority`]).
     fn yield_after_each_message(&self) -> bool {
-        true
+        match self.priority() {
+            ActorPriority::High => false,
+            ActorPriority::Low => true,
+        }
     }
 
     /// The Actor's incoming mailbox queue capacity. It is set when the actor is spawned.
     fn queue_capacity(&self) -> QueueCapacity {
         QueueCapacity::Unbounded
+    }
+
+    /// Scheduling priority of the actor, relative to the other actors running
+    /// on the same runtime. It is read once, when the actor is spawned.
+    ///
+    /// See [`ActorPriority`].
+    fn priority(&self) -> ActorPriority {
+        ActorPriority::Low
     }
 
     /// Extracts an observable state. Useful for unit tests, and admin UI.

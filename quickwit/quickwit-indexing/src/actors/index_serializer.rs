@@ -13,7 +13,9 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_actors::{
+    Actor, ActorContext, ActorExitStatus, ActorPriority, Handler, Mailbox, QueueCapacity,
+};
 use quickwit_common::io::{IoControls, Limiter};
 use quickwit_common::runtimes::RuntimeType;
 use tokio::runtime::Handle;
@@ -59,6 +61,11 @@ impl Actor for IndexSerializer {
 
     fn runtime_handle(&self) -> Handle {
         RuntimeType::Blocking.get_runtime_handle()
+    }
+
+    // Finalizing splits should not wait behind the other actors of the blocking runtime.
+    fn priority(&self) -> ActorPriority {
+        ActorPriority::High
     }
 }
 
