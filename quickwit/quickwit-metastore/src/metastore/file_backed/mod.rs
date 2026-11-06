@@ -87,7 +87,7 @@ pub(crate) enum LazyIndexStatus {
     /// The index is being created but its metadata have yet to be written on the storage.
     Creating,
     /// The index is created and available.
-    Active(LazyFileBackedIndex),
+    Active(Arc<LazyFileBackedIndex>),
     /// The index is being deleted and but its index metadata file has not yet been removed from
     /// storage.
     Deleting,
@@ -241,12 +241,12 @@ impl FileBackedMetastore {
                 // At this point, we hold both locks.
                 state_wlock_guard.indexes.insert(
                     index_id.to_string(),
-                    LazyIndexStatus::Active(LazyFileBackedIndex::new(
+                    LazyIndexStatus::Active(Arc::new(LazyFileBackedIndex::new(
                         self.storage.clone(),
                         index_id.to_string(),
                         self.polling_interval_opt,
                         None,
-                    )),
+                    ))),
                 );
                 locked_index.discarded = true;
                 Err(error)
@@ -312,10 +312,23 @@ impl FileBackedMetastore {
     async fn index(&self, index_id: &str) -> MetastoreResult<Arc<Mutex<FileBackedIndex>>> {
         {
             // Happy path!
-            // If the object is already in our cache then we just return a copy
-            let inner_rlock_guard = self.state.read().await;
-            if let Some(index_state) = inner_rlock_guard.indexes.get(index_id) {
-                return get_index_mutex(index_id, index_state).await;
+            // If the object is already in our cache then we just return a copy.
+            //
+            // The handle is cloned and the guard released *before* awaiting: `get()` loads
+            // the index from storage on first access, and tokio's `RwLock` is
+            // write-preferring, so holding the read guard across that download lets a single
+            // queued writer block every later reader -- including readers of unrelated
+            // indexes whose metadata is already in memory.
+            let lazy_index_opt = {
+                let state_rlock_guard = self.state.read().await;
+                state_rlock_guard
+                    .indexes
+                    .get(index_id)
+                    .map(|index_state| resolve_lazy_index(index_id, index_state))
+                    .transpose()?
+            };
+            if let Some(lazy_index) = lazy_index_opt {
+                return lazy_index.get().await;
             }
         }
         // At this point we do not hold our mutex, so we need to do a little dance
@@ -333,23 +346,28 @@ impl FileBackedMetastore {
         // the map. We want to avoid two copies to exist in the application, so we keep only
         // one.
         if let Some(index_state) = state_wlock_guard.indexes.get(index_id) {
-            return get_index_mutex(index_id, index_state).await;
+            let lazy_index = resolve_lazy_index(index_id, index_state)?;
+            drop(state_wlock_guard);
+            return lazy_index.get().await;
         }
 
         // We need to instantiate a `LazyFileBackedIndex` that will hold the mutex
         // and take care of spawning the polling if needed.
         let index = index_result?;
-        let lazy_index = LazyFileBackedIndex::new(
+        let lazy_index = Arc::new(LazyFileBackedIndex::new(
             self.storage.clone(),
             index_id.to_string(),
             self.polling_interval_opt,
             Some(index),
+        ));
+        state_wlock_guard.indexes.insert(
+            index_id.to_string(),
+            LazyIndexStatus::Active(lazy_index.clone()),
         );
-        let index_mutex = lazy_index.get().await?;
-        state_wlock_guard
-            .indexes
-            .insert(index_id.to_string(), LazyIndexStatus::Active(lazy_index));
-        Ok(index_mutex)
+        drop(state_wlock_guard);
+        // The index was handed to the constructor, so the `OnceCell` is already populated
+        // and this resolves without touching storage.
+        lazy_index.get().await
     }
 
     async fn index_metadata_inner(
@@ -534,12 +552,12 @@ impl MetastoreService for FileBackedMetastore {
 
         state_wlock_guard.indexes.insert(
             index_id.clone(),
-            LazyIndexStatus::Active(LazyFileBackedIndex::new(
+            LazyIndexStatus::Active(Arc::new(LazyFileBackedIndex::new(
                 self.storage.clone(),
                 index_id.clone(),
                 self.polling_interval_opt,
                 Some(index),
-            )),
+            ))),
         );
         // Set state to `Active` and rollback on metastore error.
         let manifest = state_wlock_guard.as_manifest();
@@ -1313,12 +1331,16 @@ impl MetastoreService for FileBackedMetastore {
 
 impl MetastoreServiceExt for FileBackedMetastore {}
 
-async fn get_index_mutex(
+/// Resolves an index status to its lazy index handle.
+///
+/// Deliberately synchronous: callers hold the metastore state lock, and loading the index
+/// has to happen after that guard is dropped. See [`FileBackedMetastore::index`].
+fn resolve_lazy_index(
     index_id: &str,
     lazy_index_status: &LazyIndexStatus,
-) -> MetastoreResult<Arc<Mutex<FileBackedIndex>>> {
+) -> MetastoreResult<Arc<LazyFileBackedIndex>> {
     match lazy_index_status {
-        LazyIndexStatus::Active(lazy_index) => lazy_index.get().await,
+        LazyIndexStatus::Active(lazy_index) => Ok(lazy_index.clone()),
         LazyIndexStatus::Creating => Err(MetastoreError::Internal {
             message: format!("index `{index_id}` cannot be retrieved"),
             cause: "index `{index_id}` is in transitioning state `creating` and this should not \
