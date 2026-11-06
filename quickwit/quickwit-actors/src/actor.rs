@@ -19,7 +19,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use thiserror::Error;
 
-use crate::{ActorContext, QueueCapacity, SendError};
+use crate::{ActorContext, QueueCapacity, SendError, short_type_name, to_task_metrics_label};
 
 /// The actor exit status represents the outcome of the execution of an actor,
 /// after the end of the execution.
@@ -106,9 +106,15 @@ pub trait Actor: Send + Sized + 'static {
     /// Ideally respect the `CamelCase` convention.
     ///
     /// It does not need to be "instance-unique", and can be the name of
-    /// the actor implementation.
+    /// the actor implementation. Defaults to the type name without its module path.
     fn name(&self) -> String {
-        type_name::<Self>().to_string()
+        short_type_name(type_name::<Self>())
+    }
+
+    /// Snake_case `task` label of this actor's Tokio task metrics. Defaults to the snake_case type
+    /// name. Must be static and identical across instances (no index or source IDs).
+    fn task_metrics_label(&self) -> &'static str {
+        to_task_metrics_label(type_name::<Self>())
     }
 
     /// The runner method makes it possible to decide the environment

@@ -127,6 +127,38 @@ impl Handler<AddPeer> for PingerSenderActor {
 }
 
 #[tokio::test]
+async fn test_actor_metrics_ignore_instance_names() {
+    struct NamedActor(&'static str);
+
+    impl Actor for NamedActor {
+        type ObservableState = ();
+
+        fn name(&self) -> String {
+            self.0.to_string()
+        }
+
+        fn observable_state(&self) {}
+    }
+
+    let first = NamedActor("first-instance");
+    let second = NamedActor("second-instance");
+    assert_ne!(first.name(), second.name());
+    assert_eq!(first.task_metrics_label(), "named_actor");
+    assert_eq!(first.task_metrics_label(), second.task_metrics_label());
+    let runtime = tokio::runtime::Handle::current();
+    let monitor =
+        quickwit_common::runtimes::metrics::task_monitor(first.task_metrics_label(), &runtime);
+    let universe = Universe::with_accelerated_time();
+    for actor in [first, second] {
+        let (mailbox, handle) = universe.spawn_builder().spawn(actor);
+        drop(mailbox);
+        assert!(handle.join().await.0.is_success());
+    }
+    assert_eq!(monitor.cumulative().instrumented_count, 2);
+    assert!(monitor.cumulative().total_poll_count >= 2);
+}
+
+#[tokio::test]
 async fn test_actor_stops_when_last_mailbox_is_dropped() {
     quickwit_common::setup_logging_for_tests();
     let universe = Universe::with_accelerated_time();
