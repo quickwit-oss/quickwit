@@ -76,21 +76,6 @@ impl CacheNode {
             state: CacheState::Uninitialized,
         }
     }
-
-    pub async fn fill_cache_state(&mut self, cache: &Arc<dyn PredicateCache>, split_id: &str) {
-        let Ok(query) = serde_json::to_string(&self.inner) else {
-            return;
-        };
-        if let Some((segment_id, hits)) = cache.get(split_id.to_string(), query.clone()).await {
-            self.state = CacheState::CacheHit(CacheEntry { segment_id, hits });
-        } else {
-            self.state = CacheState::CacheMiss(CacheFiller {
-                cache: cache.clone(),
-                split_id: split_id.to_string(),
-                query,
-            });
-        }
-    }
 }
 
 impl BuildTantivyAst for CacheNode {
@@ -475,6 +460,7 @@ pub struct PredicateCacheInjector {
 impl PredicateCacheInjector {
     pub async fn resolve(&self, query_ast: &mut QueryAst) {
         let mut pending = vec![query_ast];
+        let mut lookups = Vec::new();
         while let Some(query_ast) = pending.pop() {
             match query_ast {
                 QueryAst::Bool(bool_query) => pending.extend(
@@ -488,9 +474,23 @@ impl PredicateCacheInjector {
                 ),
                 QueryAst::Boost { underlying, .. } => pending.push(underlying),
                 QueryAst::Cache(cache_node) => {
-                    cache_node
-                        .fill_cache_state(&self.cache, &self.split_id)
-                        .await;
+                    if let Ok(query) = serde_json::to_string(&cache_node.inner) {
+                        // Borrow only the state so nested cache nodes can be resolved concurrently.
+                        let state = &mut cache_node.state;
+                        lookups.push(async move {
+                            *state = if let Some((segment_id, hits)) =
+                                self.cache.get(self.split_id.clone(), query.clone()).await
+                            {
+                                CacheState::CacheHit(CacheEntry { segment_id, hits })
+                            } else {
+                                CacheState::CacheMiss(CacheFiller {
+                                    cache: self.cache.clone(),
+                                    split_id: self.split_id.clone(),
+                                    query,
+                                })
+                            };
+                        });
+                    }
                     pending.push(&mut cache_node.inner);
                 }
                 QueryAst::Term(_)
@@ -507,6 +507,7 @@ impl PredicateCacheInjector {
                 | QueryAst::CalcField(_) => {}
             }
         }
+        futures::future::join_all(lookups).await;
     }
 }
 
@@ -857,6 +858,37 @@ mod tests {
                 })
             ));
         }
+    }
+
+    #[async_trait::async_trait]
+    impl PredicateCache for tokio::sync::Barrier {
+        async fn get(&self, _: String, _: String) -> Option<(SegmentId, HitSet)> {
+            self.wait().await;
+            None
+        }
+
+        fn put(&self, _: String, _: String, _: SegmentId, _: HitSet) {
+            unreachable!("preparation only reads the cache");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cache_injector_resolves_concurrently() {
+        let cached_all = QueryAst::from(CacheNode::new(QueryAst::MatchAll));
+        let mut ast = QueryAst::from(crate::query_ast::BoolQuery {
+            must: vec![CacheNode::new(cached_all.clone()).into(), cached_all],
+            ..Default::default()
+        });
+        let injector = PredicateCacheInjector {
+            cache: Arc::new(tokio::sync::Barrier::new(3)),
+            split_id: "split".to_string(),
+        };
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            injector.resolve(&mut ast),
+        )
+        .await
+        .expect("sibling and nested lookups must run concurrently");
     }
 
     #[tokio::test]

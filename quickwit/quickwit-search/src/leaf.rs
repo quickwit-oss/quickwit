@@ -132,12 +132,12 @@ pub(crate) async fn open_split_bundle(
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<(OwnedBytes, BundleStorage)> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
-    let range_cached_storage: Arc<dyn Storage> = match &searcher_context.storage_cache_opt {
+    let cached_storage: Arc<dyn Storage> = match &searcher_context.storage_cache_opt {
         Some(cache) => wrap_storage_with_split_range_cache(cache.clone(), index_storage.clone()),
         None => index_storage.clone(),
     };
     // Footer reads use `storage_cache`, before `split_cache` is added for body reads.
-    let footer_data = range_cached_storage
+    let footer_data = cached_storage
         .get_slice(
             &split_file,
             split_and_footer_offsets.split_footer_start as usize
@@ -147,7 +147,7 @@ pub(crate) async fn open_split_bundle(
         .with_context(|| {
             format!(
                 "failed to fetch hotcache and footer from {} for split `{}`",
-                range_cached_storage.uri(),
+                cached_storage.uri(),
                 split_and_footer_offsets.split_id
             )
         })?;
@@ -156,9 +156,9 @@ pub(crate) async fn open_split_bundle(
     // This is before the bundle storage: at this point, this storage is reading `.split` files.
     let index_storage_with_split_cache =
         if let Some(split_cache) = searcher_context.split_cache_opt.as_ref() {
-            SearchSplitCache::wrap_storage(split_cache.clone(), range_cached_storage)
+            SearchSplitCache::wrap_storage(split_cache.clone(), cached_storage)
         } else {
-            range_cached_storage
+            cached_storage
         };
 
     let (bundle_storage, hotcache_bytes) = BundleStorage::open_from_split_bytes(
