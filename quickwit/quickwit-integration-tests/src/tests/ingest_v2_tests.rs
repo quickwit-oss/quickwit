@@ -514,6 +514,151 @@ async fn test_commit_wait_for() {
 }
 
 #[tokio::test]
+async fn test_commit_wait_for_searcher_only_router() {
+    let sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Indexer, QuickwitService::Janitor])
+        .add_node([QuickwitService::ControlPlane, QuickwitService::Metastore])
+        .add_node([QuickwitService::Searcher])
+        .build_and_start()
+        .await;
+    let searcher_config = &sandbox
+        .node_configs
+        .iter()
+        .find(|(_, services)| services.contains(&QuickwitService::Searcher))
+        .unwrap()
+        .0;
+    assert_eq!(
+        searcher_config.enabled_services,
+        [QuickwitService::Searcher].into_iter().collect()
+    );
+    let client = sandbox.rest_client(QuickwitService::Searcher);
+    let index_id = "test_commit_wait_for_searcher_only_router";
+    let index_config = format!(
+        r#"
+        version: 0.8
+        index_id: {index_id}
+        doc_mapping:
+            field_mappings:
+            - name: body
+              type: text
+        indexing_settings:
+            commit_timeout_secs: 1
+        "#
+    );
+    client
+        .indexes()
+        .create(index_config, ConfigFormat::Yaml, false)
+        .await
+        .unwrap();
+
+    // Sequential requests must each receive their own remote publication update.
+    for body in ["first", "second"] {
+        let ingest_resp = tokio::time::timeout(
+            Duration::from_secs(30),
+            ingest(
+                &client,
+                index_id,
+                ingest_json!({"body": body}),
+                CommitType::WaitFor,
+            ),
+        )
+        .await
+        .expect("ingest through the searcher-only router should complete within 30 seconds")
+        .unwrap();
+        assert_eq!(
+            ingest_resp,
+            RestIngestResponse {
+                num_docs_for_processing: 1,
+                num_ingested_docs: Some(1),
+                num_rejected_docs: Some(0),
+                parse_failures: None,
+            },
+        );
+        sandbox
+            .assert_hit_count(index_id, &format!("body:{body}"), 1)
+            .await;
+    }
+
+    // Delete the index to avoid waiting for the commit timeout on shutdown #5068.
+    client.indexes().delete(index_id, false).await.unwrap();
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_commit_force_searcher_only_router() {
+    let sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Indexer, QuickwitService::Janitor])
+        .add_node([QuickwitService::ControlPlane, QuickwitService::Metastore])
+        .add_node([QuickwitService::Searcher])
+        .build_and_start()
+        .await;
+    let searcher_config = &sandbox
+        .node_configs
+        .iter()
+        .find(|(_, services)| services.contains(&QuickwitService::Searcher))
+        .unwrap()
+        .0;
+    assert_eq!(
+        searcher_config.enabled_services,
+        [QuickwitService::Searcher].into_iter().collect()
+    );
+    let client = sandbox.rest_client(QuickwitService::Searcher);
+    let index_id = "test_commit_force_searcher_only_router";
+    // `commit_timeout_secs` must stay strictly above the 30s completion deadline below.
+    // A natural commit inside that window would finish the request without Force publication
+    // reaching the searcher-only router, so the test would pass for the wrong reason.
+    let index_config = format!(
+        r#"
+        version: 0.8
+        index_id: {index_id}
+        doc_mapping:
+            field_mappings:
+            - name: body
+              type: text
+        indexing_settings:
+            commit_timeout_secs: 60
+        "#
+    );
+    client
+        .indexes()
+        .create(index_config, ConfigFormat::Yaml, false)
+        .await
+        .unwrap();
+
+    // Sequential requests must each receive their own remote publication update.
+    for body in ["first", "second"] {
+        let ingest_resp = tokio::time::timeout(
+            Duration::from_secs(30),
+            ingest(
+                &client,
+                index_id,
+                ingest_json!({"body": body}),
+                CommitType::Force,
+            ),
+        )
+        .await
+        .expect("ingest through the searcher-only router should complete within 30 seconds")
+        .unwrap();
+        assert_eq!(
+            ingest_resp,
+            RestIngestResponse {
+                num_docs_for_processing: 1,
+                num_ingested_docs: Some(1),
+                num_rejected_docs: Some(0),
+                parse_failures: None,
+            },
+        );
+        sandbox
+            .assert_hit_count(index_id, &format!("body:{body}"), 1)
+            .await;
+    }
+
+    // Delete the index to avoid waiting for the commit timeout on shutdown #5068.
+    client.indexes().delete(index_id, false).await.unwrap();
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn test_commit_auto() {
     let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
     let index_id = "test_commit_auto";

@@ -72,11 +72,11 @@ struct ClusterShardPositionsUpdate {
 
 impl Event for LocalShardPositionsUpdate {}
 
-/// The published shard positions is a model unique to the indexer service instance that
-/// keeps track of the latest (known) published position for the shards of all managed sources.
+/// Tracks the latest known published shard positions on every node with an ingest router.
 ///
-/// It receives updates through the event broker, and only keeps the maximum published position
-/// for each shard.
+/// Receives local indexing updates through the event broker and remote updates through cluster
+/// gossip, keeping only the maximum published position for each shard. Local indexing updates are
+/// written to gossip, and both kinds of updates emit local `ShardPositionsUpdate` events.
 pub struct ShardPositionsService {
     shard_positions_per_source: FnvHashMap<SourceUid, BTreeMap<ShardId, Position>>,
     cluster: Cluster,
