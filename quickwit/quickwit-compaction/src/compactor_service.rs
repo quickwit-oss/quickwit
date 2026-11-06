@@ -301,6 +301,7 @@ impl CompactorService {
             pipeline_id,
             doc_mapper,
             merge_policy,
+            indexing_settings.split_num_docs_target,
             retention_policy,
             self.metastore.clone(),
             split_store,

@@ -353,6 +353,7 @@ impl IndexingService {
                     split_store: split_store.clone(),
                     merge_scheduler_service,
                     merge_policy: merge_policy.clone(),
+                    split_num_docs_target: index_config.indexing_settings.split_num_docs_target,
                     retention_policy: retention_policy.clone(),
                     merge_io_throughput_limiter_opt: self.merge_io_throughput_limiter_opt.clone(),
                     max_concurrent_split_uploads: self.max_concurrent_split_uploads,

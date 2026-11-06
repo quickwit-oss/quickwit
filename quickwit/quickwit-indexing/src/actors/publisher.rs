@@ -64,6 +64,8 @@ pub struct Publisher {
     merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
     source_mailbox_opt: Option<Mailbox<SourceActor>>,
     publish_token: SharedPublishToken,
+    /// Document target from the same index settings used to build this pipeline.
+    split_num_docs_target: usize,
     counters: PublisherCounters,
 }
 
@@ -74,6 +76,7 @@ impl Publisher {
         merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
         source_mailbox_opt: Option<Mailbox<SourceActor>>,
         publish_token: SharedPublishToken,
+        split_num_docs_target: usize,
     ) -> Publisher {
         Publisher {
             publisher_type,
@@ -81,6 +84,7 @@ impl Publisher {
             merge_planner_mailbox_opt,
             source_mailbox_opt,
             publish_token,
+            split_num_docs_target,
             counters: PublisherCounters::default(),
         }
     }
@@ -281,7 +285,7 @@ impl Handler<SplitsUpdate> for Publisher {
             return Err(publish_error);
         }
         for split in &new_splits {
-            record_published_split(&index_id, split);
+            record_published_split(&index_id, split, self.split_num_docs_target);
         }
         let num_docs: usize = new_splits.iter().map(|split| split.num_docs).sum();
         // `footer_offsets.end` is the on-disk size of the split file in bytes.
@@ -366,6 +370,7 @@ mod tests {
             Some(merge_planner_mailbox),
             Some(source_mailbox),
             SharedPublishToken::default(),
+            100,
         );
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
@@ -445,6 +450,7 @@ mod tests {
             Some(merge_planner_mailbox),
             Some(source_mailbox),
             SharedPublishToken::default(),
+            100,
         );
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
@@ -510,6 +516,7 @@ mod tests {
             Some(merge_planner_mailbox),
             None,
             SharedPublishToken::default(),
+            100,
         );
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
         publisher_mailbox
@@ -551,6 +558,7 @@ mod tests {
             Some(merge_planner_mailbox),
             None,
             SharedPublishToken::default(),
+            100,
         );
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
@@ -603,6 +611,7 @@ mod tests {
             None,
             None,
             SharedPublishToken::default(),
+            100,
         );
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
         publisher_mailbox
@@ -647,6 +656,7 @@ mod tests {
             None,
             Some(source_mailbox),
             SharedPublishToken::default(),
+            100,
         );
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
         let publish_lock = PublishLock::default();
@@ -714,6 +724,7 @@ mod tests {
             None,
             Some(source_mailbox),
             SharedPublishToken::default(),
+            100,
         );
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
         let publish_lock = PublishLock::default();

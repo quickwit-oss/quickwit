@@ -344,6 +344,7 @@ impl IndexingPipeline {
             self.params.merge_planner_mailbox_opt.clone(),
             Some(source_mailbox.clone()),
             self.publish_token.clone(),
+            self.params.indexing_settings.split_num_docs_target,
         );
         let (publisher_mailbox, publisher_handle) = ctx
             .spawn_actor()
@@ -1043,6 +1044,7 @@ mod tests {
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let merge_pipeline_params = MergePipelineParams {
             pipeline_id: pipeline_id.merge_pipeline_id(),
+            split_num_docs_target: IndexingSettings::for_test().split_num_docs_target,
             doc_mapper: doc_mapper.clone(),
             indexing_directory: TempDirectory::for_test(),
             metastore: metastore.clone(),

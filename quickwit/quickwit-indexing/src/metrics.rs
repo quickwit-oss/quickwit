@@ -15,14 +15,15 @@
 use quickwit_common::metrics::exponential_buckets;
 use quickwit_metastore::SplitMetadata;
 use quickwit_metrics::{
-    LabelNames, LazyCounter, LazyGauge, LazyHistogram, counter, histogram, label_names,
+    LabelNames, Labels, LazyCounter, LazyGauge, LazyHistogram, counter, histogram, label_names,
     label_values, lazy_counter, lazy_gauge, lazy_histogram,
 };
 
 pub(crate) const ACTOR_NAME: LabelNames<1> = label_names!("actor_name");
 pub(crate) const COMPONENT: LabelNames<1> = label_names!("component");
 pub(crate) const INDEX_SOURCE: LabelNames<2> = label_names!("index", "source");
-pub(crate) const PUBLISHED_SPLIT: LabelNames<3> = label_names!("index", "source", "merge_ops");
+pub(crate) const PUBLISHED_SPLIT: LabelNames<4> =
+    label_names!("index", "source", "merge_ops", "doc_target_reached");
 
 pub(crate) static PROCESSED_DOCS_TOTAL: LazyCounter = lazy_counter!(
         name: "processed_docs_total",
@@ -74,18 +75,33 @@ pub(crate) static PUBLISHED_SPLIT_SIZE_BYTES: LazyHistogram = lazy_histogram!(
     buckets: exponential_buckets(1_000_000.0, 2.0, 14).unwrap(),
 );
 
-/// Records one split after the metastore has successfully published it.
-///
-/// All metrics deliberately use the same labels so ratios computed over a time
-/// window describe the same set of splits.
-pub(crate) fn record_published_split(index_id: &str, split: &SplitMetadata) {
+fn published_split_labels(
+    index_id: &str,
+    split: &SplitMetadata,
+    split_num_docs_target: usize,
+) -> Labels<4> {
     let index = quickwit_common::metrics::index_label(index_id);
-    let labels = label_values!(
+    label_values!(
         PUBLISHED_SPLIT =>
         index.to_string(),
         split.source_id.to_string(),
-        split.num_merge_ops.to_string()
-    );
+        split.num_merge_ops.to_string(),
+        if split.num_docs >= split_num_docs_target { "true" } else { "false" }
+    )
+}
+
+/// Records one split after the metastore has successfully published it.
+///
+/// All metrics deliberately use the same labels so ratios computed over a time
+/// window describe the same set of splits. `doc_target_reached` compares the
+/// split's document count with the publishing pipeline's configured target;
+/// age, merge count, and maturity do not affect it.
+pub(crate) fn record_published_split(
+    index_id: &str,
+    split: &SplitMetadata,
+    split_num_docs_target: usize,
+) {
+    let labels = published_split_labels(index_id, split, split_num_docs_target);
     let split_size_bytes = split.footer_offsets.end;
 
     counter!(parent: PUBLISHED_SPLIT_BYTES_TOTAL, labels: [labels.clone()])
@@ -148,3 +164,75 @@ pub(crate) static KAFKA_REBALANCE_TOTAL: LazyCounter = lazy_counter!(
         description: "Number of kafka rebalances",
         subsystem: "indexing",
 );
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use quickwit_metastore::SplitMaturity;
+
+    use super::*;
+
+    #[test]
+    fn test_published_split_doc_target_labels() {
+        // Exercise zero, below, exactly at, and above a non-default target.
+        for (num_docs, expected) in [(0, "false"), (99, "false"), (100, "true"), (101, "true")] {
+            // Neither explicit maturity, elapsed age nor merge count should
+            // substitute for the configured document target.
+            for (maturity, create_timestamp, num_merge_ops) in [
+                (SplitMaturity::Mature, 0, 300),
+                (
+                    SplitMaturity::Immature {
+                        maturation_period: Duration::from_secs(60),
+                    },
+                    0,
+                    1,
+                ),
+                (
+                    SplitMaturity::Immature {
+                        maturation_period: Duration::from_secs(60),
+                    },
+                    i64::MAX - 60,
+                    0,
+                ),
+            ] {
+                let split = SplitMetadata {
+                    source_id: "test-source".to_string(),
+                    num_docs,
+                    maturity,
+                    create_timestamp,
+                    num_merge_ops,
+                    ..Default::default()
+                };
+                let labels = published_split_labels("test-index", &split, 100);
+                let index = quickwit_common::metrics::index_label("test-index");
+                let merge_ops = num_merge_ops.to_string();
+                assert_eq!(
+                    labels.iter().collect::<Vec<_>>(),
+                    vec![
+                        ("index", index.as_ref()),
+                        ("source", "test-source"),
+                        ("merge_ops", merge_ops.as_str()),
+                        ("doc_target_reached", expected),
+                    ]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_published_split_doc_target_uses_configured_target() {
+        let split = SplitMetadata {
+            num_docs: 100,
+            ..Default::default()
+        };
+        for (target, expected) in [(50, "true"), (100, "true"), (200, "false")] {
+            let labels = published_split_labels("test-index", &split, target);
+            assert!(
+                labels
+                    .iter()
+                    .any(|label| label == ("doc_target_reached", expected))
+            );
+        }
+    }
+}

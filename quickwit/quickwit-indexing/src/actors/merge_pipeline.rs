@@ -270,6 +270,7 @@ impl MergePipeline {
             Some(self.merge_planner_mailbox.clone()),
             None,
             SharedPublishToken::default(),
+            self.params.split_num_docs_target,
         );
         let (merge_publisher_mailbox, merge_publisher_handle) = ctx
             .spawn_actor()
@@ -554,6 +555,7 @@ impl Handler<Spawn> for MergePipeline {
 #[derive(Clone)]
 pub struct MergePipelineParams {
     pub pipeline_id: MergePipelineId,
+    pub split_num_docs_target: usize,
     pub doc_mapper: Arc<DocMapper>,
     pub indexing_directory: TempDirectory,
     pub metastore: MetastoreServiceClient,
@@ -618,6 +620,8 @@ mod tests {
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let pipeline_params = MergePipelineParams {
             pipeline_id,
+            split_num_docs_target: quickwit_config::IndexingSettings::default()
+                .split_num_docs_target,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             indexing_directory: TempDirectory::for_test(),
             metastore: MetastoreServiceClient::from_mock(mock_metastore),

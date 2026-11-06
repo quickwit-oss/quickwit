@@ -168,6 +168,7 @@ impl DeleteTaskPipeline {
             None,
             None,
             SharedPublishToken::default(),
+            index_config.indexing_settings.split_num_docs_target,
         );
         let (publisher_mailbox, publisher_supervisor_handler) =
             ctx.spawn_actor().supervise(publisher);

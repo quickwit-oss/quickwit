@@ -107,6 +107,7 @@ pub struct CompactionPipeline {
     handles: Option<CompactionPipelineHandles>,
     doc_mapper: Arc<DocMapper>,
     merge_policy: Arc<dyn quickwit_indexing::merge_policy::MergePolicy>,
+    split_num_docs_target: usize,
     retention_policy: Option<RetentionPolicy>,
     metastore: MetastoreServiceClient,
     split_store: IndexingSplitStore,
@@ -126,6 +127,7 @@ impl CompactionPipeline {
         pipeline_id: MergePipelineId,
         doc_mapper: Arc<DocMapper>,
         merge_policy: Arc<dyn quickwit_indexing::merge_policy::MergePolicy>,
+        split_num_docs_target: usize,
         retention_policy: Option<RetentionPolicy>,
         metastore: MetastoreServiceClient,
         split_store: IndexingSplitStore,
@@ -144,6 +146,7 @@ impl CompactionPipeline {
             pipeline_id,
             doc_mapper,
             merge_policy,
+            split_num_docs_target,
             retention_policy,
             metastore,
             split_store,
@@ -291,6 +294,7 @@ impl CompactionPipeline {
             None,
             None,
             SharedPublishToken::default(),
+            self.split_num_docs_target,
         );
         let (merge_publisher_mailbox, merge_publisher_handle) = spawn_ctx
             .spawn_builder()
@@ -415,6 +419,7 @@ pub(crate) mod tests {
             pipeline_id,
             Arc::new(default_doc_mapper_for_test()),
             default_merge_policy(),
+            quickwit_config::IndexingSettings::default().split_num_docs_target,
             None,
             metastore,
             split_store,
