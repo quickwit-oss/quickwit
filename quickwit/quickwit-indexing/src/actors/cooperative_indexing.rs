@@ -12,20 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::hash::{DefaultHasher, Hash, Hasher};
-use std::sync::{Arc, LazyLock};
+use std::hash::Hash;
+use std::sync::Arc;
 use std::time::Duration;
 
 use quickwit_proto::indexing::{CpuCapacity, PIPELINE_FULL_CAPACITY, PipelineMetrics};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
 
-/// We allow ourselves to adjust the sleep time by at most `NUDGE_TOLERANCE`
-/// in order to steer a pipeline to its phase.
-const NUDGE_TOLERANCE: Duration = Duration::from_secs(5);
-
-// Origin of time. It is used to compute the phase of the pipeline.
-static ORIGIN_OF_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
+use super::pipeline_schedule::{MAX_PIPELINE_TIMEOUT_NUDGE, PipelineSchedule};
 
 /// Cooperative indexing is a mechanism to deal with a large amount of pipelines.
 ///
@@ -44,17 +39,10 @@ static ORIGIN_OF_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
 ///
 /// The key logic is in the computation of that sleep time.
 ///
-/// We want to set it in order to steer the pipeline toward an ideal cycle with a period
-/// of `commit_timeout`,
+/// We want to set it in order to steer the pipeline toward the ideal cycle of its
+/// `PipelineSchedule`.
 ///
-/// A period in this ideal cycle should, for some k,
-/// - start at `t0 + k * commit_timeout + target_phase`
-/// - end at `t0 + (k+1)*commit_timeout + target_phase`.
-///
-/// `target_phase` is computed using a hash over the pipeline id, and meant to follow
-/// a uniform distribution over the interval [0, commit_timeout).
-///
-/// Each period of this cycle is divided into three phases.
+/// Each period of this cycle is divided into three stages.
 /// - waking [t_wake..t_work_start) acquisition of the period guard (this is instantaneous)
 ///   acquisition of the semaphore
 /// - working [t_work_start..t_work_end)
@@ -69,60 +57,47 @@ static ORIGIN_OF_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
 /// mailbox to be drained.
 ///
 /// We then allow ourselves to tweak the sleep time one way or another by at
-/// most two seconds to eventually nudge the system toward the desired phase.
+/// most `MAX_PIPELINE_TIMEOUT_NUDGE` to eventually nudge the system toward the target phase.
 pub(crate) struct CooperativeIndexingCycle {
-    target_phase: Duration,
-    commit_timeout: Duration,
+    schedule: PipelineSchedule,
     indexing_permits: Arc<Semaphore>,
 }
 
 impl CooperativeIndexingCycle {
     /// Creates a new cooperative indexing cycle object.
-    /// `phase_id` is hashed to compute the target phase.
+    /// `phase_seed` is hashed to compute the target phase.
     pub fn new(
-        phase_id: &(impl Hash + ?Sized),
+        phase_seed: &(impl Hash + ?Sized),
         commit_timeout: Duration,
         indexing_permits: Arc<Semaphore>,
     ) -> CooperativeIndexingCycle {
-        assert!(commit_timeout.as_millis() > 0);
-        let mut hasher = DefaultHasher::new();
-        phase_id.hash(&mut hasher);
-        let target_phase_millis: u64 = hasher.finish() % commit_timeout.as_millis() as u64;
-        Self::new_with_phase(
-            Duration::from_millis(target_phase_millis),
-            commit_timeout,
+        CooperativeIndexingCycle {
+            schedule: PipelineSchedule::new(phase_seed, commit_timeout),
             indexing_permits,
-        )
+        }
     }
 
-    fn new_with_phase(
-        target_phase: Duration,
-        commit_timeout: Duration,
-        indexing_permits: Arc<Semaphore>,
-    ) -> CooperativeIndexingCycle {
-        // Force the initial of the origin of time.
-        let _t0 = *ORIGIN_OF_TIME;
+    #[cfg(test)]
+    fn with_schedule(schedule: PipelineSchedule, indexing_permits: Arc<Semaphore>) -> Self {
         CooperativeIndexingCycle {
-            target_phase,
-            commit_timeout,
+            schedule,
             indexing_permits,
         }
     }
 
     pub fn initial_sleep_duration(&self) -> Duration {
-        let t0 = *ORIGIN_OF_TIME;
-        let commit_timeout_millis = self.commit_timeout.as_millis() as u64;
-        let current_phase_millis: u64 = t0.elapsed().as_millis() as u64 % commit_timeout_millis;
-        let target_phase_millis: u64 = self.target_phase.as_millis() as u64 % commit_timeout_millis;
-        let initial_sleep_millis: u64 = (commit_timeout_millis + target_phase_millis
-            - current_phase_millis)
-            % commit_timeout_millis;
-        if initial_sleep_millis + 2 * NUDGE_TOLERANCE.as_millis() as u64 > commit_timeout_millis {
+        let initial_sleep = self.schedule.time_until_target_phase(Instant::now());
+        if initial_sleep + 2 * MAX_PIPELINE_TIMEOUT_NUDGE > self.schedule.period() {
             // We are reasonably close to the target phase. No need to sleep. The nudge
             // will be enough.
             return Duration::default();
         }
-        Duration::from_millis(initial_sleep_millis)
+        initial_sleep
+    }
+
+    // with cooperative indexing, the nudging is done only when the actor mailbox is empty
+    pub fn commit_timeout(&self) -> Duration {
+        self.schedule.period()
     }
 
     pub async fn cooperative_indexing_period(&self) -> CooperativeIndexingPeriod {
@@ -134,8 +109,7 @@ impl CooperativeIndexingCycle {
         CooperativeIndexingPeriod {
             t_wake,
             t_work_start,
-            commit_timeout: self.commit_timeout,
-            target_phase: self.target_phase,
+            schedule: self.schedule,
             _permit: permit,
         }
     }
@@ -146,8 +120,7 @@ pub(crate) struct CooperativeIndexingPeriod {
     t_wake: Instant,
     // measured after the acquisition of the semaphore.
     t_work_start: Instant,
-    commit_timeout: Duration,
-    target_phase: Duration,
+    schedule: PipelineSchedule,
     _permit: OwnedSemaphorePermit,
 }
 
@@ -160,7 +133,7 @@ impl CooperativeIndexingPeriod {
         let elapsed = end - self.t_work_start;
         let throughput_mb_per_sec: u64 =
             uncompressed_num_bytes / (1u64 + elapsed.as_micros() as u64);
-        let commit_timeout = self.commit_timeout;
+        let commit_timeout = self.schedule.period();
         let pipeline_throughput_fraction =
             (elapsed.as_micros() as f32 / commit_timeout.as_micros() as f32).min(1.0f32);
         let cpu_load: CpuCapacity = PIPELINE_FULL_CAPACITY * pipeline_throughput_fraction;
@@ -171,30 +144,10 @@ impl CooperativeIndexingPeriod {
     }
 
     fn compute_sleep_duration(&self, t_work_end: Instant) -> Duration {
-        let commit_timeout_millis = self.commit_timeout.as_millis() as u64;
-        let phase_millis: u64 =
-            ((t_work_end - *ORIGIN_OF_TIME).as_millis() as u64) % commit_timeout_millis;
-        let delta_phase: i64 = phase_millis as i64 - self.target_phase.as_millis() as i64;
-        // delta phase is within (-commit_timeout_millis, commit_timeout_millis)
-        // We fold it back to [-commit_timeout_millis/2, commit_timeout_millis/2)
-        let half_commit_timeout_millis = commit_timeout_millis as i64 / 2;
-        let delta_phase = if delta_phase >= half_commit_timeout_millis {
-            delta_phase - commit_timeout_millis as i64
-        } else if delta_phase < -half_commit_timeout_millis {
-            delta_phase + commit_timeout_millis as i64
-        } else {
-            delta_phase
-        };
-        let nudge_tolerance_millis = NUDGE_TOLERANCE.as_millis() as i64;
-        let nudge_millis: i64 = delta_phase.clamp(-nudge_tolerance_millis, nudge_tolerance_millis);
-        let sleep_duration_millis = self.commit_timeout.as_millis() as i64
-            - (t_work_end - self.t_wake).as_millis() as i64
-            - nudge_millis;
-        if sleep_duration_millis > 0 {
-            Duration::from_millis(sleep_duration_millis as u64)
-        } else {
-            Duration::ZERO
-        }
+        let elapsed = Duration::from_millis((t_work_end - self.t_wake).as_millis() as u64);
+        self.schedule
+            .nudged_commit_timeout(t_work_end)
+            .saturating_sub(elapsed)
     }
 
     /// This drops the indexing permit, allowing another indexer to start indexing.
@@ -210,11 +163,12 @@ impl CooperativeIndexingPeriod {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::actors::pipeline_schedule::PHASE_ORIGIN;
 
     #[track_caller]
     fn assert_approx_equal_sleep_time(left: Duration, right: Duration) {
         let delta = (left.as_millis() as i128 - right.as_millis() as i128).unsigned_abs();
-        if delta >= NUDGE_TOLERANCE.mul_f32(1.1).as_millis() {
+        if delta >= MAX_PIPELINE_TIMEOUT_NUDGE.mul_f32(1.1).as_millis() {
             panic!("{left:?} and {right:?} are not approximately equal.");
         }
     }
@@ -242,26 +196,26 @@ mod tests {
     #[tokio::test]
     async fn test_initial_sleep_time() {
         tokio::time::pause();
-        let t0 = *ORIGIN_OF_TIME;
+        let t0 = *PHASE_ORIGIN;
         for target_phase_secs in [0, 1, 2, 5, 10, 15, 20, 25, 29, 30, 1_000] {
             for start_time_secs in [0, 1, 2, 5, 10, 15, 20, 25, 29, 30] {
                 let target_phase = Duration::from_secs(target_phase_secs);
                 let semaphore = Arc::new(Semaphore::new(1));
                 tokio::time::sleep(Duration::from_secs(start_time_secs)).await;
-                let cooperative_indexing = CooperativeIndexingCycle::new_with_phase(
-                    target_phase,
-                    Duration::from_secs(30),
+                let cooperative_indexing = CooperativeIndexingCycle::with_schedule(
+                    PipelineSchedule::new_with_phase(target_phase, Duration::from_secs(30)),
                     semaphore.clone(),
                 );
                 let initial_sleep_duration: Duration =
                     cooperative_indexing.initial_sleep_duration();
                 tokio::time::sleep(initial_sleep_duration).await;
-                let target_phase_millis = cooperative_indexing.target_phase.as_millis() as i64;
-                let commit_timeout_ms = cooperative_indexing.commit_timeout.as_millis() as i64;
+                let target_phase_millis =
+                    cooperative_indexing.schedule.target_phase().as_millis() as i64;
+                let commit_timeout_ms = cooperative_indexing.schedule.period().as_millis() as i64;
                 let phase_millis =
                     (t0.elapsed().as_millis() as i64 - target_phase_millis) % commit_timeout_ms;
                 assert!(phase_millis >= -100, "{phase_millis}");
-                assert!(phase_millis <= (NUDGE_TOLERANCE.as_millis() as i64) * 2 + 100);
+                assert!(phase_millis <= (MAX_PIPELINE_TIMEOUT_NUDGE.as_millis() as i64) * 2 + 100);
             }
         }
     }
@@ -336,14 +290,13 @@ mod tests {
         let num_steps = 15;
         let semaphore = Arc::new(Semaphore::new(num_threads));
         let commit_timeout = Duration::from_secs(30);
-        let t0 = Instant::now();
+        let t0 = *PHASE_ORIGIN;
         let mut handles = Vec::new();
         for i in 0..num_pipelines {
             let target_phase =
                 Duration::from_millis(commit_timeout.as_millis() as u64 * i / num_pipelines);
-            let cooperative_indexing = CooperativeIndexingCycle::new_with_phase(
-                target_phase,
-                commit_timeout,
+            let cooperative_indexing = CooperativeIndexingCycle::with_schedule(
+                PipelineSchedule::new_with_phase(target_phase, commit_timeout),
                 semaphore.clone(),
             );
             let join_handle = tokio::task::spawn(async move {
