@@ -28,6 +28,7 @@ jobs:
         env:
           STATUS_SHA: ${{ github.event.workflow_run.head_sha }}
         with:
+          retries: 3
           script: |
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
@@ -118,6 +119,7 @@ jobs:
           STATUS_SHA: ${{ github.event.workflow_run.head_sha }}
           TEST_RESULT: ${{ needs.full-tests.result }}
         with:
+          retries: 3
           script: |
             const passed = process.env.TEST_RESULT === 'success';
             const state = passed ? 'success' : 'failure';
@@ -145,6 +147,7 @@ jobs:
           STATUS_SHA: ${{ github.event.workflow_run.head_sha }}
           COVERAGE_RESULT: ${{ needs.coverage.result }}
         with:
+          retries: 3
           script: |
             const passed = process.env.COVERAGE_RESULT === 'success';
             const state = passed ? 'success' : 'failure';
