@@ -176,17 +176,15 @@ impl<'a> QueryAstVisitor<'a> for ShapeCostVisitor {
     }
 
     fn visit_wildcard(&mut self, wildcard_query: &'a WildcardQuery) -> Result<(), Self::Err> {
-        if wildcard_query.value.starts_with('*') {
-            // Coalescing reads for a leading wildcard can download the entire postings file.
-            // Reserve more memory to limit concurrent warmups, once per query.
-            self.warmup_memory_factor = 10;
-        }
         // Ignore up to two initial ?, more ? or * are treated as leading wildcard.
         let mut prefix = wildcard_query.value.as_str();
         for _ in 0..2 {
             prefix = prefix.strip_prefix('?').unwrap_or(prefix);
         }
         if prefix.starts_with(['*', '?']) {
+            // Coalescing reads for a leading wildcard can download the entire postings file.
+            // Reserve more memory to limit concurrent warmups, once per query.
+            self.warmup_memory_factor = 10;
             self.add_leaf(Q_WC_LEADING);
         } else {
             self.add_leaf(Q_WC_TRAILING);
@@ -288,7 +286,9 @@ mod tests {
             (r"\*error", 2.0, 1),
             ("?error*", 2.0, 1),
             ("??error*", 2.0, 1),
-            ("???error*", 125.0, 1),
+            ("???error*", 125.0, 10),
+            ("?*error*", 125.0, 10),
+            ("??*error*", 125.0, 10),
         ] {
             let query = WildcardQuery {
                 field: "message".to_string(),
