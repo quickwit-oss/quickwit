@@ -119,9 +119,17 @@ message GetOrCreateOpenShardsFailure {
 message AdviseResetShardsRequest {
   repeated quickwit.ingest.ShardIds shard_ids = 1;
   string ingester_id = 2;
+  // V1 of this API, for which the value of api_version is 0 (meaning its not set), was used by ingesters to ask the
+  // control plane which shards to delete and which to truncate.
+  // V2 of this API, for which the value of api_version is 2, is used by ingesters to reconcile all of its shards,
+  // including which shards to keep, and which to force delete (deleted index or source). The fields used in these
+  // requests start with `reconcile__`.
+  uint32 api_version = 3;
 }
 
 message AdviseResetShardsResponse {
   repeated quickwit.ingest.ShardIds shards_to_delete = 1;
   repeated quickwit.ingest.ShardIdPositions shards_to_truncate = 2;
+  repeated quickwit.ingest.ShardIds reconcile__shards_to_force_delete = 3;
+  repeated quickwit.ingest.ShardIds reconcile__shards_to_keep = 4;
 }

@@ -30,8 +30,9 @@ service IngesterService {
   // Creates and initializes a set of newly opened shards. This RPC is called by the control plane on ingesters.
   rpc InitShards(InitShardsRequest) returns (InitShardsResponse);
 
-  // Only retain the shards that are listed in the request.
-  // Other shards are deleted.
+  // V1 of this API only retained the shards that are listed in the request and deleted others.
+  // V2 asks the ingester to call AdviseResetShards, which will trigger a full reconciliation of the ingester's shards
+  // with the control plane's state.
   rpc RetainShards(RetainShardsRequest) returns (RetainShardsResponse);
 
   // Truncates a set of shards at the given positions. This RPC is called by indexers on ingesters.
@@ -39,6 +40,9 @@ service IngesterService {
 
   // Closes a set of shards. This RPC is called by the control plane.
   rpc CloseShards(CloseShardsRequest) returns (CloseShardsResponse);
+
+  // Marks shards advertisable, so that they can begin receiving persist requests.
+  rpc AdvertiseShards(AdvertiseShardsRequest) returns (AdvertiseShardsResponse);
 
   // Decommissions the ingester.
   rpc Decommission(DecommissionRequest) returns (DecommissionResponse);
@@ -52,6 +56,9 @@ message RetainShardsForSource {
 
 message RetainShardsRequest {
   repeated RetainShardsForSource retain_shards_for_sources = 1;
+  // When not set (value is 0), RetainShards v1 is called, which truncates and deletes shards.
+  // When set to 2, it asks the ingester to call AdviseResetShards to fully reconcile state.
+  uint32 api_version = 2;
 }
 
 message RetainShardsResponse {
@@ -204,6 +211,14 @@ message CloseShardsRequest {
 }
 
 message CloseShardsResponse {
+  repeated quickwit.ingest.ShardPKey successes = 1;
+}
+
+message AdvertiseShardsRequest {
+  repeated quickwit.ingest.ShardPKey shard_pkeys = 1;
+}
+
+message AdvertiseShardsResponse {
   repeated quickwit.ingest.ShardPKey successes = 1;
 }
 
