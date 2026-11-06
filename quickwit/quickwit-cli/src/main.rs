@@ -26,7 +26,7 @@ use quickwit_cli::metrics::register_build_info_metric;
 #[cfg(target_os = "linux")]
 use quickwit_cli::proc_io::start_proc_io_metrics_loop;
 use quickwit_cli::{busy_detector, install_default_crypto_provider};
-use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
+use quickwit_common::runtimes::metrics::register_runtime;
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use tracing::error;
 
@@ -128,7 +128,7 @@ async fn main_impl() -> anyhow::Result<()> {
     register_build_info_metric(build_info);
 
     let runtime_handle = tokio::runtime::Handle::current();
-    scrape_tokio_runtime_metrics(&runtime_handle, "main");
+    register_runtime(&runtime_handle, "main");
 
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();

@@ -16,40 +16,13 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{LazyLock, OnceLock};
-use std::time::Duration;
 
-use quickwit_metrics::{
-    Counter, Gauge, LazyCounter, LazyGauge, counter, gauge, labels, lazy_counter, lazy_gauge,
-};
 use tokio::runtime::Runtime;
-use tokio_metrics::{RuntimeMetrics, RuntimeMonitor};
 use tracing::warn;
 
+pub mod metrics;
+
 static RUNTIMES: OnceLock<HashMap<RuntimeType, tokio::runtime::Runtime>> = OnceLock::new();
-
-static TOKIO_SCHEDULED_TASKS: LazyGauge = lazy_gauge!(
-    name: "tokio_scheduled_tasks",
-    description: "The total number of tasks currently scheduled in workers' local queues.",
-    subsystem: "runtime",
-);
-
-static TOKIO_WORKER_BUSY_DURATION_MILLISECONDS_TOTAL: LazyCounter = lazy_counter!(
-    name: "tokio_worker_busy_duration_milliseconds_total",
-    description: " The total amount of time worker threads were busy.",
-    subsystem: "runtime",
-);
-
-static TOKIO_WORKER_BUSY_RATIO: LazyGauge = lazy_gauge!(
-    name: "tokio_worker_busy_ratio",
-    description: "The ratio of time worker threads were busy since the last time runtime metrics were collected.",
-    subsystem: "runtime",
-);
-
-static TOKIO_WORKER_THREADS: LazyGauge = lazy_gauge!(
-    name: "tokio_worker_threads",
-    description: "The number of worker threads used by the runtime.",
-    subsystem: "runtime",
-);
 
 /// Describes which runtime an actor should run on.
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
@@ -199,7 +172,7 @@ fn start_runtimes(config: RuntimesConfig) -> HashMap<RuntimeType, Runtime> {
         .build()
         .unwrap();
 
-    scrape_tokio_runtime_metrics(blocking_runtime.handle(), "blocking");
+    metrics::register_runtime(blocking_runtime.handle(), "blocking");
     runtimes.insert(RuntimeType::Blocking, blocking_runtime);
 
     let non_blocking_runtime = tokio::runtime::Builder::new_multi_thread()
@@ -213,7 +186,7 @@ fn start_runtimes(config: RuntimesConfig) -> HashMap<RuntimeType, Runtime> {
         .build()
         .unwrap();
 
-    scrape_tokio_runtime_metrics(non_blocking_runtime.handle(), "non_blocking");
+    metrics::register_runtime(non_blocking_runtime.handle(), "non_blocking");
     runtimes.insert(RuntimeType::NonBlocking, non_blocking_runtime);
 
     runtimes
@@ -242,51 +215,6 @@ impl RuntimeType {
             .unwrap()
             .handle()
             .clone()
-    }
-}
-
-/// Spawns a background task
-pub fn scrape_tokio_runtime_metrics(handle: &tokio::runtime::Handle, label: &'static str) {
-    let runtime_monitor = RuntimeMonitor::new(handle);
-    handle.spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(1));
-        let mut runtime_metrics_recorder = RuntimeMetricsRecorder::new(label);
-
-        for tokio_runtime_metrics in runtime_monitor.intervals() {
-            interval.tick().await;
-            runtime_metrics_recorder.update(&tokio_runtime_metrics);
-        }
-    });
-}
-
-struct RuntimeMetricsRecorder {
-    scheduled_tasks: Gauge,
-    worker_busy_duration_milliseconds_total: Counter,
-    worker_busy_ratio: Gauge,
-    worker_threads: Gauge,
-}
-
-impl RuntimeMetricsRecorder {
-    pub fn new(label: &'static str) -> Self {
-        let labels = labels!("runtime_type" => label);
-        Self {
-            scheduled_tasks: gauge!(parent: TOKIO_SCHEDULED_TASKS, labels: [labels]),
-            worker_busy_duration_milliseconds_total: counter!(
-                parent: TOKIO_WORKER_BUSY_DURATION_MILLISECONDS_TOTAL,
-                labels: [labels]),
-            worker_busy_ratio: gauge!(parent: TOKIO_WORKER_BUSY_RATIO, labels: [labels]),
-            worker_threads: gauge!(parent: TOKIO_WORKER_THREADS, labels: [labels]),
-        }
-    }
-
-    pub fn update(&mut self, runtime_metrics: &RuntimeMetrics) {
-        self.scheduled_tasks
-            .set(runtime_metrics.total_local_queue_depth as f64);
-        self.worker_busy_duration_milliseconds_total
-            .inc_by(runtime_metrics.total_busy_duration.as_millis() as u64);
-        self.worker_busy_ratio.set(runtime_metrics.busy_ratio());
-        self.worker_threads
-            .set(runtime_metrics.workers_count as f64);
     }
 }
 

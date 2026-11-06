@@ -195,6 +195,13 @@ impl Actor for Publisher {
         self.publisher_type.actor_name().to_string()
     }
 
+    fn task_metrics_label(&self) -> &'static str {
+        match self.publisher_type {
+            PublisherType::MainPublisher => "publisher",
+            PublisherType::MergePublisher => "merge_publisher",
+        }
+    }
+
     fn queue_capacity(&self) -> QueueCapacity {
         match self.publisher_type {
             PublisherType::MainPublisher => QueueCapacity::Bounded(1),

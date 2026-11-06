@@ -307,6 +307,12 @@ pub trait Source: Send + 'static {
     /// A name identifying the type of source.
     fn name(&self) -> String;
 
+    /// Value of the `task` label on the Tokio task metrics of the source actor running this
+    /// source. See [`Actor::task_metrics_label`] for the contract.
+    fn task_metrics_label(&self) -> &'static str {
+        quickwit_actors::to_task_metrics_label(std::any::type_name::<Self>())
+    }
+
     /// Returns an observable_state for the actor.
     ///
     /// This object is simply a json object, and its content may vary depending on the
@@ -350,6 +356,10 @@ impl Actor for SourceActor {
 
     fn name(&self) -> String {
         self.source.name()
+    }
+
+    fn task_metrics_label(&self) -> &'static str {
+        self.source.task_metrics_label()
     }
 
     fn observable_state(&self) -> Self::ObservableState {
