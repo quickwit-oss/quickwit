@@ -251,7 +251,11 @@ fn into_metastore_error(
                 "failed to {operation_name} manifest file located at `{uri}/{}`",
                 path.display()
             ),
-            cause: storage_error.to_string(),
+            cause: format!(
+                "storage error(kind={:?}, source={})",
+                storage_error.kind(),
+                storage_error.source_message()
+            ),
         },
     }
 }
