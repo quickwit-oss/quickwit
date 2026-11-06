@@ -24,27 +24,67 @@ use unicode_segmentation::UnicodeSegmentation;
 pub struct UnicodeSegmenterTokenizer;
 
 pub struct UnicodeSegmenterTokenStream<'a> {
-    iter: unicode_segmentation::UnicodeWordIndices<'a>,
-    token: Token,
+    words: unicode_segmentation::UnicodeWordIndices<'a>,
+    emit_dot_parts: bool,
+    parts: Option<std::str::Split<'a, char>>,
+    part_offset: usize,
     position: usize,
+    token: Token,
 }
 
-impl<'a> TokenStream for UnicodeSegmenterTokenStream<'a> {
-    fn advance(&mut self) -> bool {
-        if let Some((start, word)) = self.iter.next() {
-            let pos = self.position;
-            let end = start + word.len();
-            let token = self.token_mut();
-            token.text.clear();
-            token.text.push_str(word);
-            token.offset_from = start;
-            token.offset_to = end;
-            token.position = pos;
-            self.position += 1;
-            true
-        } else {
-            false
+impl<'a> UnicodeSegmenterTokenStream<'a> {
+    pub(super) fn new(text: &'a str, emit_dot_parts: bool) -> Self {
+        Self {
+            words: text.unicode_word_indices(),
+            emit_dot_parts,
+            parts: None,
+            part_offset: 0,
+            position: 0,
+            token: Token::default(),
         }
+    }
+
+    fn set_token(&mut self, text: &str, offset: usize, position_length: usize) {
+        self.token.text.clear();
+        self.token.text.push_str(text);
+        self.token.offset_from = offset;
+        self.token.offset_to = offset + text.len();
+        self.token.position = self.position;
+        self.token.position_length = position_length;
+    }
+}
+
+impl TokenStream for UnicodeSegmenterTokenStream<'_> {
+    fn advance(&mut self) -> bool {
+        if let Some(part) = self.parts.as_mut().and_then(Iterator::next) {
+            self.set_token(part, self.part_offset, 1);
+            self.part_offset += part.len() + 1;
+            self.position += 1;
+            return true;
+        }
+        self.parts = None;
+
+        let Some((offset, word)) = self.words.next() else {
+            return false;
+        };
+        let split = self.emit_dot_parts
+            && word.contains('.')
+            && !word
+                .chars()
+                .all(|character| character == '.' || character.is_numeric());
+        if split {
+            // Unicode word boundaries exclude leading, trailing, and consecutive
+            // dots, so every part is nonempty. The first part shares the original's
+            // position, and subsequent parts occupy consecutive positions.
+            let parts = word.split('.');
+            self.set_token(word, offset, parts.clone().count());
+            self.parts = Some(parts);
+            self.part_offset = offset;
+        } else {
+            self.set_token(word, offset, 1);
+            self.position += 1;
+        }
+        true
     }
 
     fn token(&self) -> &Token {
@@ -60,11 +100,7 @@ impl Tokenizer for UnicodeSegmenterTokenizer {
     type TokenStream<'a> = UnicodeSegmenterTokenStream<'a>;
 
     fn token_stream<'a>(&'a mut self, text: &'a str) -> Self::TokenStream<'a> {
-        UnicodeSegmenterTokenStream {
-            iter: text.unicode_word_indices(),
-            token: Token::default(),
-            position: 0,
-        }
+        UnicodeSegmenterTokenStream::new(text, false)
     }
 }
 
@@ -74,13 +110,15 @@ mod tests {
 
     #[test]
     fn test_unicode_segmenter_tokenizer() {
-        let text = r#"The quick ("brown") fox can't jump 32.3 feet, right?"#;
+        let text = r#"The quick ("brown") fox can't jump 32.3 feet, right? Foo.Bar end"#;
         let mut tokenizer = UnicodeSegmenterTokenizer;
         let mut stream = tokenizer.token_stream(text);
 
         let mut tokens = Vec::new();
         while stream.advance() {
             let token = stream.token().clone();
+            assert_eq!(token.position, tokens.len());
+            assert_eq!(token.position_length, 1);
             tokens.push((token.offset_from, token.offset_to, token.text));
         }
 
@@ -94,6 +132,8 @@ mod tests {
             (35, 39, "32.3"),
             (40, 44, "feet"),
             (46, 51, "right"),
+            (53, 60, "Foo.Bar"),
+            (61, 64, "end"),
         ];
         assert_eq!(
             tokens,
