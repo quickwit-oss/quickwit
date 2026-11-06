@@ -14,8 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use quickwit_config::TransformConfig;
-use tracing::warn;
+use quickwit_config::{AbortStrategy, TransformConfig};
 use vrl::compiler::runtime::Runtime;
 pub use vrl::compiler::runtime::Terminate as VrlTerminate;
 use vrl::compiler::state::RuntimeState;
@@ -44,6 +43,7 @@ pub(super) struct VrlProgram {
     runtime: Runtime,
     metadata: VrlValue,
     secrets: VrlSecrets,
+    on_abort: AbortStrategy,
 }
 
 impl VrlProgram {
@@ -58,12 +58,16 @@ impl VrlProgram {
             metadata: &mut self.metadata,
             secrets: &mut self.secrets,
         };
+        let on_abort = self.on_abort;
+        // Logging happens in `DocProcessor::process_raw_doc`, rate limited.
         let runtime_res = self
             .runtime
             .resolve(&mut target, &self.program, &self.timezone)
-            .map_err(|transform_error| {
-                warn!(transform_error=?transform_error);
-                DocProcessorError::Transform(transform_error)
+            .map_err(|transform_error| match transform_error {
+                VrlTerminate::Abort(_) if on_abort == AbortStrategy::SilentlyDrop => {
+                    DocProcessorError::TransformAbort(transform_error)
+                }
+                _ => DocProcessorError::Transform(transform_error),
             });
 
         if let VrlValue::Object(metadata) = target.metadata {
@@ -75,6 +79,7 @@ impl VrlProgram {
     }
 
     pub fn try_from_transform_config(transform_config: TransformConfig) -> anyhow::Result<Self> {
+        let on_abort = transform_config.on_abort();
         let (program, timezone) = transform_config.compile_vrl_script()?;
         let state = RuntimeState::default();
         let runtime = Runtime::new(state);
@@ -85,6 +90,201 @@ impl VrlProgram {
             timezone,
             metadata: VrlValue::Object(BTreeMap::new()),
             secrets: VrlSecrets::default(),
+            on_abort,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Classifies a `transform_doc` result so tests can assert on category without needing
+    /// `VrlDoc: Debug`.
+    #[derive(Debug, PartialEq, Eq)]
+    enum Outcome {
+        Ok,
+        TransformAbort,
+        TransformError,
+        DocMapperParsing,
+        JsonParsing,
+        OltpLogsParsing,
+        OltpTracesParsing,
+    }
+
+    fn classify(result: &Result<VrlDoc, DocProcessorError>) -> Outcome {
+        match result {
+            Ok(_) => Outcome::Ok,
+            Err(DocProcessorError::TransformAbort(_)) => Outcome::TransformAbort,
+            Err(DocProcessorError::Transform(VrlTerminate::Abort(_))) => Outcome::TransformError,
+            Err(DocProcessorError::Transform(VrlTerminate::Error(_))) => Outcome::TransformError,
+            Err(DocProcessorError::Transform(VrlTerminate::Interrupted)) => Outcome::TransformError,
+            Err(DocProcessorError::DocMapperParsing(_)) => Outcome::DocMapperParsing,
+            Err(DocProcessorError::JsonParsing(_)) => Outcome::JsonParsing,
+            Err(DocProcessorError::OltpLogsParsing(_)) => Outcome::OltpLogsParsing,
+            Err(DocProcessorError::OltpTracesParsing(_)) => Outcome::OltpTracesParsing,
+        }
+    }
+
+    fn is_explicit_abort(result: &Result<VrlDoc, DocProcessorError>) -> bool {
+        matches!(
+            result,
+            Err(DocProcessorError::TransformAbort(VrlTerminate::Abort(_)))
+                | Err(DocProcessorError::Transform(VrlTerminate::Abort(_)))
+        )
+    }
+
+    fn vrl_doc(json: serde_json::Value) -> VrlDoc {
+        let vrl_value = serde_json::from_value::<VrlValue>(json).expect("valid VRL value");
+        let num_bytes = 0;
+        VrlDoc::new(vrl_value, num_bytes)
+    }
+
+    #[test]
+    fn test_successful_transform_passes_through() {
+        let transform_config = TransformConfig::for_test(".body = upcase(string!(.body))");
+        let mut vrl_program = VrlProgram::try_from_transform_config(transform_config).unwrap();
+        let result = vrl_program
+            .transform_doc(vrl_doc(serde_json::json!({"body": "hello"})))
+            .expect("transform should succeed");
+        let json = serde_json::to_value(result.vrl_value).unwrap();
+        assert_eq!(json, serde_json::json!({"body": "HELLO"}));
+    }
+
+    #[test]
+    fn test_abort_with_silently_drop_routes_to_transform_abort() {
+        let transform_config =
+            TransformConfig::for_test("abort").with_on_abort(AbortStrategy::SilentlyDrop);
+        let mut vrl_program = VrlProgram::try_from_transform_config(transform_config).unwrap();
+        let result = vrl_program.transform_doc(vrl_doc(serde_json::json!({"body": "x"})));
+        assert_eq!(classify(&result), Outcome::TransformAbort);
+        assert!(is_explicit_abort(&result));
+    }
+
+    #[test]
+    fn test_abort_with_treat_as_error_routes_to_transform_error() {
+        let transform_config =
+            TransformConfig::for_test("abort").with_on_abort(AbortStrategy::TreatAsError);
+        let mut vrl_program = VrlProgram::try_from_transform_config(transform_config).unwrap();
+        let result = vrl_program.transform_doc(vrl_doc(serde_json::json!({"body": "x"})));
+        assert_eq!(classify(&result), Outcome::TransformError);
+        assert!(is_explicit_abort(&result));
+    }
+
+    #[test]
+    fn test_runtime_error_routes_to_transform_error_regardless_of_on_abort() {
+        // `parse_json!` on a non-string raises a runtime error (Terminate::Error),
+        // which is distinct from an explicit `abort`.
+        let script = "parse_json!(.body)";
+        for on_abort in [AbortStrategy::SilentlyDrop, AbortStrategy::TreatAsError] {
+            let transform_config = TransformConfig::for_test(script).with_on_abort(on_abort);
+            let mut vrl_program = VrlProgram::try_from_transform_config(transform_config).unwrap();
+            let result = vrl_program.transform_doc(vrl_doc(serde_json::json!({"body": 42})));
+            assert_eq!(
+                classify(&result),
+                Outcome::TransformError,
+                "runtime error must classify as TransformError (on_abort={on_abort:?})"
+            );
+            assert!(
+                !is_explicit_abort(&result),
+                "runtime error must NOT be an Abort (on_abort={on_abort:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn test_on_abort_does_not_affect_successful_transforms() {
+        for on_abort in [AbortStrategy::SilentlyDrop, AbortStrategy::TreatAsError] {
+            let transform_config =
+                TransformConfig::for_test(".body = upcase(string!(.body))").with_on_abort(on_abort);
+            let mut vrl_program = VrlProgram::try_from_transform_config(transform_config).unwrap();
+            let result = vrl_program
+                .transform_doc(vrl_doc(serde_json::json!({"body": "hello"})))
+                .expect("transform should succeed regardless of on_abort");
+            let json = serde_json::to_value(result.vrl_value).unwrap();
+            assert_eq!(json, serde_json::json!({"body": "HELLO"}));
+        }
+    }
+
+    #[test]
+    fn test_conditional_abort_only_drops_matching_docs() {
+        // Validates the intended use case: filter-style scripts that abort on a predicate.
+        let script = r#"
+            if .drop == true {
+                abort
+            }
+        "#;
+        let transform_config =
+            TransformConfig::for_test(script).with_on_abort(AbortStrategy::SilentlyDrop);
+        let mut vrl_program = VrlProgram::try_from_transform_config(transform_config).unwrap();
+
+        // Non-aborting doc passes through.
+        let kept = vrl_program
+            .transform_doc(vrl_doc(serde_json::json!({"body": "keep", "drop": false})))
+            .expect("non-aborting doc should pass through");
+        let kept_json = serde_json::to_value(kept.vrl_value).unwrap();
+        assert_eq!(
+            kept_json,
+            serde_json::json!({"body": "keep", "drop": false})
+        );
+
+        // Aborting doc returns TransformAbort.
+        let dropped = vrl_program.transform_doc(vrl_doc(serde_json::json!({"drop": true})));
+        assert_eq!(classify(&dropped), Outcome::TransformAbort);
+        assert!(is_explicit_abort(&dropped));
+    }
+
+    #[test]
+    fn test_abort_with_message_routes_same_as_bare_abort() {
+        // VRL allows `abort "reason"` — verify message-bearing aborts route identically
+        // to bare aborts (same Terminate::Abort variant, same routing).
+        for (script, on_abort, expected) in [
+            (
+                r#"abort "filtered as debug""#,
+                AbortStrategy::SilentlyDrop,
+                Outcome::TransformAbort,
+            ),
+            (
+                r#"abort "filtered as debug""#,
+                AbortStrategy::TreatAsError,
+                Outcome::TransformError,
+            ),
+        ] {
+            let transform_config = TransformConfig::for_test(script).with_on_abort(on_abort);
+            let mut vrl_program = VrlProgram::try_from_transform_config(transform_config).unwrap();
+            let result = vrl_program.transform_doc(vrl_doc(serde_json::json!({"body": "x"})));
+            assert_eq!(
+                classify(&result),
+                expected,
+                "abort-with-message must route same as bare abort (on_abort={on_abort:?})"
+            );
+            assert!(is_explicit_abort(&result));
+        }
+    }
+
+    #[test]
+    fn test_transform_abort_error_display_includes_reason() {
+        // Display impl is used in logs and `?` propagation; the abort reason must surface.
+        let transform_config = TransformConfig::for_test(r#"abort "explicit reason""#)
+            .with_on_abort(AbortStrategy::SilentlyDrop);
+        let mut vrl_program = VrlProgram::try_from_transform_config(transform_config).unwrap();
+        let result = vrl_program.transform_doc(vrl_doc(serde_json::json!({"body": "x"})));
+        let err = match result {
+            Ok(_) => panic!("expected an abort error"),
+            Err(err) => err,
+        };
+        let rendered = format!("{err}");
+        assert!(rendered.contains("explicit reason"), "{rendered}");
+    }
+
+    #[test]
+    fn test_num_bytes_is_preserved_through_transform() {
+        let transform_config = TransformConfig::for_test(".body = upcase(string!(.body))");
+        let mut vrl_program = VrlProgram::try_from_transform_config(transform_config).unwrap();
+        let vrl_value =
+            serde_json::from_value::<VrlValue>(serde_json::json!({"body": "h"})).unwrap();
+        let input = VrlDoc::new(vrl_value, 1234);
+        let output = vrl_program.transform_doc(input).unwrap();
+        assert_eq!(output.num_bytes, 1234);
     }
 }
