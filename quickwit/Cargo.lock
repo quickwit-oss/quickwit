@@ -7803,7 +7803,6 @@ dependencies = [
  "fnv",
  "futures",
  "google-cloud-auth",
- "google-cloud-gax",
  "google-cloud-googleapis",
  "google-cloud-pubsub",
  "itertools 0.15.0",
