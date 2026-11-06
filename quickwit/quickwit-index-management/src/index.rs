@@ -13,33 +13,41 @@
 // limitations under the License.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context;
+use futures::TryStreamExt;
 use futures_util::StreamExt;
 use itertools::Itertools;
 use quickwit_common::fs::{empty_dir, get_cache_directory_path};
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::rate_limited_error;
+use quickwit_common::shared_consts::SPLIT_RECOVERY_METADATA_FILE_NAME;
 use quickwit_config::{IndexConfig, SourceConfig, validate_identifier};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{
     AddSourceRequestExt, CreateIndexResponseExt, IndexMetadata, IndexMetadataResponseExt,
     ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt,
-    MetastoreServiceStreamSplitsExt, SplitInfo, SplitMetadata, SplitState, UpdateIndexRequestExt,
-    UpdateSourceRequestExt,
+    MetastoreServiceStreamSplitsExt, SplitInfo, SplitMetadata, SplitState, StageSplitsRequestExt,
+    UpdateIndexRequestExt, UpdateSourceRequestExt,
 };
 use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, EntityKind, IndexMetadataRequest,
     ListIndexesMetadataRequest, ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
-    MetastoreService, MetastoreServiceClient, ResetSourceCheckpointRequest, UpdateIndexRequest,
-    UpdateSourceRequest, serde_utils,
+    MetastoreService, MetastoreServiceClient, PublishSplitsRequest, ResetSourceCheckpointRequest,
+    SplitRecoveryMetadata, StageSplitsRequest, UpdateIndexRequest, UpdateSourceRequest,
+    serde_utils,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
-use quickwit_storage::{StorageResolver, StorageResolverError};
+use quickwit_storage::{
+    BundleStorage, ObjectMetadata, Storage, StorageResolver, StorageResolverError,
+};
 use thiserror::Error;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::garbage_collection::{
     DeleteSplitsError, SplitRemovalInfo, delete_splits_from_storage_and_metastore,
@@ -563,6 +571,389 @@ impl IndexService {
 
         Ok(source_config)
     }
+
+    pub async fn recover_index_from_storage(
+        &mut self,
+        index_id: &str,
+        dry_run: bool,
+    ) -> Result<SplitRecoveryInfo, IndexServiceError> {
+        let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
+        let index_metadata = self
+            .metastore
+            .index_metadata(index_metadata_request)
+            .await?
+            .deserialize_index_metadata()?;
+
+        let storage = self
+            .storage_resolver
+            .resolve(&index_metadata.index_config().index_uri)
+            .await?;
+
+        let read_outcome = read_splits_recovery_metadata(&storage).await?;
+        let index_uid = index_metadata.index_uid;
+
+        if !read_outcome.unreadable_splits.is_empty() {
+            warn!(
+                index_id=%index_id,
+                num_unreadable_splits=read_outcome.unreadable_splits.len(),
+                "some split files could not be read"
+            );
+        }
+        info!(
+            index_id=%index_id,
+            dry_run=dry_run,
+            num_recovered_splits=read_outcome.recovered_splits.len(),
+            num_unreadable_splits=read_outcome.unreadable_splits.len(),
+            "read split recovery metadata"
+        );
+
+        let known_split_states: HashMap<SplitId, SplitState> =
+            self.list_metastore_split_states(index_uid.clone()).await?;
+        let plan = plan_split_recovery(
+            &index_uid,
+            read_outcome.recovered_splits,
+            &known_split_states,
+        );
+
+        let recovery_info = SplitRecoveryInfo {
+            dry_run,
+            published_splits: plan.splits_to_publish,
+            merged_split_ids: plan.merged_split_ids,
+            already_known_split_ids: plan.already_known_split_ids,
+            unreadable_splits: read_outcome.unreadable_splits,
+        };
+        if dry_run {
+            return Ok(recovery_info);
+        }
+
+        for splits_batch in recovery_info
+            .published_splits
+            .chunks(PUBLISH_SPLITS_BATCH_SIZE)
+        {
+            self.publish_recovered_splits(&index_uid, splits_batch)
+                .await?;
+        }
+        info!(
+            index_id=%index_id,
+            num_published_splits=recovery_info.published_splits.len(),
+            num_published_docs=recovery_info.num_docs_published(),
+            num_replaced_splits=recovery_info.num_replaced_splits(),
+            "published recovered splits"
+        );
+        Ok(recovery_info)
+    }
+
+    /// Lists the state of each split the metastore already holds as published or marked for
+    /// deletion.
+    async fn list_metastore_split_states(
+        &mut self,
+        index_uid: IndexUid,
+    ) -> Result<HashMap<SplitId, SplitState>, IndexServiceError> {
+        let list_splits_query = ListSplitsQuery::for_index(index_uid)
+            .with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
+        let list_splits_request =
+            ListSplitsRequest::try_from_list_splits_query(&list_splits_query)?;
+        let split_states: HashMap<SplitId, SplitState> = self
+            .metastore
+            .list_splits(list_splits_request)
+            .await?
+            .collect_splits()
+            .await?
+            .into_iter()
+            .map(|split| (split.split_metadata.split_id, split.split_state))
+            .collect();
+        Ok(split_states)
+    }
+
+    /// Stages then publishes a batch of recovered splits.
+    async fn publish_recovered_splits(
+        &mut self,
+        index_uid: &IndexUid,
+        splits_to_publish: &[SplitToPublish],
+    ) -> Result<(), IndexServiceError> {
+        let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
+            index_uid.clone(),
+            splits_to_publish
+                .iter()
+                .map(|split_to_publish| split_to_publish.split_metadata.clone()),
+        )?;
+        self.metastore.stage_splits(stage_splits_request).await?;
+
+        let publish_splits_request = PublishSplitsRequest {
+            index_uid: Some(index_uid.clone()),
+            staged_split_ids: splits_to_publish
+                .iter()
+                .map(|split_to_publish| split_to_publish.split_metadata.split_id().to_string())
+                .collect(),
+            replaced_split_ids: splits_to_publish
+                .iter()
+                .flat_map(|split_to_publish| split_to_publish.replaced_split_ids.iter())
+                .map(|split_id| split_id.to_string())
+                .collect(),
+            index_checkpoint_delta_json_opt: None,
+            publish_token_opt: None,
+        };
+        self.metastore
+            .publish_splits(publish_splits_request)
+            .await?;
+        Ok(())
+    }
+}
+
+struct SplitRecoveryPlan {
+    splits_to_publish: Vec<SplitToPublish>,
+    merged_split_ids: Vec<SplitId>,
+    already_known_split_ids: Vec<SplitId>,
+}
+
+/// Decides which recovered splits should be published into `index_uid`.
+///
+/// Ignores split ids already stored in the metastore and splits that got
+/// merged together and that still remain (probably with a pending deletion before the disaster).
+fn plan_split_recovery(
+    index_uid: &IndexUid,
+    recovered_splits: Vec<RecoveredSplit>,
+    known_split_states: &HashMap<SplitId, SplitState>,
+) -> SplitRecoveryPlan {
+    let parent_split_ids: HashMap<&SplitId, &[SplitId]> = recovered_splits
+        .iter()
+        .map(|recovered_split| {
+            (
+                recovered_split.split_metadata.split_id(),
+                recovered_split.parent_split_ids.as_slice(),
+            )
+        })
+        .collect();
+    let merged_split_ids: HashSet<&SplitId> = recovered_splits
+        .iter()
+        .flat_map(|recovered_split| recovered_split.parent_split_ids.iter())
+        .collect();
+
+    let mut plan = SplitRecoveryPlan {
+        splits_to_publish: Vec::new(),
+        merged_split_ids: Vec::new(),
+        already_known_split_ids: Vec::new(),
+    };
+    let mut visited_ancestor_ids: HashSet<SplitId> = HashSet::new();
+    for recovered_split in &recovered_splits {
+        let split_id = recovered_split.split_metadata.split_id();
+        if merged_split_ids.contains(split_id) {
+            plan.merged_split_ids.push(split_id.clone());
+            continue;
+        }
+        if known_split_states.contains_key(split_id) {
+            plan.already_known_split_ids.push(split_id.clone());
+            continue;
+        }
+        let recovered_index_uid = &recovered_split.split_metadata.index_uid;
+        if recovered_index_uid.index_id != index_uid.index_id {
+            warn!(
+                split_id = %recovered_split.split_metadata.split_id,
+                found_index_id = %recovered_index_uid.index_id,
+                expected_index_id = %index_uid.index_id,
+                "skipping split belonging to another index"
+            );
+            continue;
+        }
+        let replaced_split_ids = collect_replaced_split_ids(
+            split_id,
+            &parent_split_ids,
+            known_split_states,
+            &mut visited_ancestor_ids,
+        );
+        // we've just checked index_id is the same, we overwriting the uid to keep
+        // the incarnation id uniform
+        let mut split_metadata = recovered_split.split_metadata.clone();
+        split_metadata.index_uid = index_uid.clone();
+        // set opstamp to 0 as we dont know the state of delete tasks
+        split_metadata.delete_opstamp = 0;
+        plan.splits_to_publish.push(SplitToPublish {
+            split_metadata,
+            replaced_split_ids,
+        });
+    }
+    plan
+}
+
+/// Collects the ancestors of `split_id` in the merge graph that the metastore still holds as
+/// published: publishing `split_id` must replace them, otherwise their documents would show up
+/// twice.
+fn collect_replaced_split_ids(
+    split_id: &SplitId,
+    parent_split_ids: &HashMap<&SplitId, &[SplitId]>,
+    known_split_states: &HashMap<SplitId, SplitState>,
+    visited_ancestor_ids: &mut HashSet<SplitId>,
+) -> Vec<SplitId> {
+    let mut replaced_split_ids: Vec<SplitId> = Vec::new();
+    let mut ancestor_ids_to_visit: Vec<&SplitId> = parent_split_ids
+        .get(split_id)
+        .copied()
+        .unwrap_or_default()
+        .iter()
+        .collect();
+
+    while let Some(ancestor_id) = ancestor_ids_to_visit.pop() {
+        if !visited_ancestor_ids.insert(ancestor_id.clone()) {
+            continue;
+        }
+        if known_split_states.get(ancestor_id) == Some(&SplitState::Published) {
+            replaced_split_ids.push(ancestor_id.clone());
+        }
+        // The ancestor may itself be the result of a merge: its own parents are superseded too.
+        if let Some(grand_parent_split_ids) = parent_split_ids.get(ancestor_id) {
+            ancestor_ids_to_visit.extend(grand_parent_split_ids.iter());
+        }
+    }
+    replaced_split_ids
+}
+
+const READ_RECOVERY_METADATA_CONCURRENCY: usize = 10;
+
+const PUBLISH_SPLITS_BATCH_SIZE: usize = 1_000;
+
+#[derive(Debug)]
+struct RecoveredSplit {
+    split_metadata: SplitMetadata,
+    parent_split_ids: Vec<SplitId>,
+}
+
+#[derive(Debug)]
+pub struct UnreadableSplit {
+    pub split_file: PathBuf,
+    pub error: anyhow::Error,
+}
+
+#[derive(Debug, Default)]
+struct SplitsRecoveryMetadata {
+    pub recovered_splits: Vec<RecoveredSplit>,
+    pub unreadable_splits: Vec<UnreadableSplit>,
+}
+
+#[derive(Debug)]
+pub struct SplitToPublish {
+    pub split_metadata: SplitMetadata,
+    pub replaced_split_ids: Vec<SplitId>,
+}
+
+pub struct SplitRecoveryInfo {
+    /// Whether the splits were only planned, and not actually published.
+    pub dry_run: bool,
+    /// Splits published into the index, or that a dry run would have published.
+    pub published_splits: Vec<SplitToPublish>,
+    /// Recovered splits that was merged into another split.
+    pub merged_split_ids: Vec<SplitId>,
+    /// Recovered splits the metastore already knew about.
+    pub already_known_split_ids: Vec<SplitId>,
+    /// Split files whose recovery metadata could not be read.
+    pub unreadable_splits: Vec<UnreadableSplit>,
+}
+
+impl SplitRecoveryInfo {
+    pub fn num_split_files(&self) -> usize {
+        self.published_splits.len()
+            + self.merged_split_ids.len()
+            + self.already_known_split_ids.len()
+            + self.unreadable_splits.len()
+    }
+
+    pub fn num_docs_published(&self) -> u64 {
+        self.published_splits
+            .iter()
+            .map(|split_to_publish| split_to_publish.split_metadata.num_docs as u64)
+            .sum()
+    }
+
+    /// Returns the ids of the published splits replaced by the recovered splits, and hence marked
+    /// for deletion.
+    pub fn replaced_split_ids(&self) -> impl Iterator<Item = &SplitId> {
+        self.published_splits
+            .iter()
+            .flat_map(|split_to_publish| split_to_publish.replaced_split_ids.iter())
+    }
+
+    pub fn num_replaced_splits(&self) -> usize {
+        self.replaced_split_ids().count()
+    }
+}
+
+async fn read_splits_recovery_metadata(
+    storage: &Arc<dyn Storage>,
+) -> Result<SplitsRecoveryMetadata, IndexServiceError> {
+    let split_objects: Vec<ObjectMetadata> = list_split_objects(storage).await?;
+
+    let read_results: Vec<(PathBuf, anyhow::Result<RecoveredSplit>)> =
+        futures::stream::iter(split_objects)
+            .map(|split_object| {
+                let storage = storage.clone();
+                async move {
+                    let split_file = split_object.path.clone();
+                    let read_result = read_split_recovery_metadata(storage, split_object).await;
+                    (split_file, read_result)
+                }
+            })
+            .buffer_unordered(READ_RECOVERY_METADATA_CONCURRENCY)
+            .collect()
+            .await;
+
+    let mut outcome = SplitsRecoveryMetadata::default();
+    for (split_file, read_result) in read_results {
+        match read_result {
+            Ok(recovered_split) => outcome.recovered_splits.push(recovered_split),
+            Err(error) => outcome
+                .unreadable_splits
+                .push(UnreadableSplit { split_file, error }),
+        }
+    }
+    Ok(outcome)
+}
+
+async fn list_split_objects(
+    storage: &Arc<dyn Storage>,
+) -> Result<Vec<ObjectMetadata>, IndexServiceError> {
+    let object_pages: Vec<Vec<ObjectMetadata>> = storage
+        .list(Path::new(""))
+        .try_collect()
+        .await
+        .map_err(|error| {
+            IndexServiceError::Internal(format!(
+                "failed to list objects in `{}`: {error}",
+                storage.uri()
+            ))
+        })?;
+
+    let split_objects: Vec<ObjectMetadata> = object_pages
+        .into_iter()
+        .flatten()
+        .filter(|object| object.path.extension() == Some(OsStr::new("split")))
+        .collect();
+
+    Ok(split_objects)
+}
+
+async fn read_split_recovery_metadata(
+    storage: Arc<dyn Storage>,
+    split_object: ObjectMetadata,
+) -> anyhow::Result<RecoveredSplit> {
+    let (recovery_metadata_bytes, footer_offsets) = BundleStorage::fetch_file_from_split(
+        storage,
+        PathBuf::from(SPLIT_RECOVERY_METADATA_FILE_NAME),
+        &split_object.path,
+        split_object.size.as_u64(),
+    )
+    .await
+    .context("failed to fetch split recovery metadata")?;
+
+    let recovery_metadata = SplitRecoveryMetadata::deserialize(&recovery_metadata_bytes)
+        .context("failed to deserialize split recovery metadata")?;
+
+    let (split_metadata, parent_split_ids) =
+        SplitMetadata::try_from_recovery_metadata(recovery_metadata, footer_offsets)
+            .context("failed to rebuild split metadata")?;
+
+    Ok(RecoveredSplit {
+        split_metadata,
+        parent_split_ids,
+    })
 }
 
 /// Clears the cache directory of a given source.
@@ -769,5 +1160,255 @@ mod tests {
             .unwrap();
         assert!(splits.is_empty());
         assert!(!storage.exists(split_path).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_list_metastore_split_states_ignores_staged_splits() {
+        let metastore = metastore_for_test();
+        let storage_resolver = StorageResolver::for_test();
+        let mut index_service = IndexService::new(metastore.clone(), storage_resolver);
+        let index_config = IndexConfig::for_test("test-index", "ram://indexes/test-index");
+        let index_uid = index_service
+            .create_index(index_config, false)
+            .await
+            .unwrap()
+            .index_uid;
+
+        let staged_split = SplitMetadata::for_test("staged-split".into());
+        let published_split = SplitMetadata::for_test("published-split".into());
+        let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
+            index_uid.clone(),
+            [staged_split, published_split],
+        )
+        .unwrap();
+        metastore.stage_splits(stage_splits_request).await.unwrap();
+        let publish_splits_request = PublishSplitsRequest {
+            index_uid: Some(index_uid.clone()),
+            staged_split_ids: vec!["published-split".to_string()],
+            replaced_split_ids: Vec::new(),
+            index_checkpoint_delta_json_opt: None,
+            publish_token_opt: None,
+        };
+        metastore
+            .publish_splits(publish_splits_request)
+            .await
+            .unwrap();
+
+        let known_split_states = index_service
+            .list_metastore_split_states(index_uid)
+            .await
+            .unwrap();
+        let expected_split_states: HashMap<SplitId, SplitState> =
+            [("published-split".into(), SplitState::Published)]
+                .into_iter()
+                .collect();
+        assert_eq!(known_split_states, expected_split_states);
+    }
+
+    #[tokio::test]
+    async fn test_publish_recovered_splits_marks_replaced_splits_for_deletion() {
+        let metastore = metastore_for_test();
+        let storage_resolver = StorageResolver::for_test();
+        let mut index_service = IndexService::new(metastore.clone(), storage_resolver);
+        let index_config = IndexConfig::for_test("test-index", "ram://indexes/test-index");
+        let index_uid = index_service
+            .create_index(index_config, false)
+            .await
+            .unwrap()
+            .index_uid;
+
+        let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
+            index_uid.clone(),
+            [SplitMetadata::for_test("merged-split".into())],
+        )
+        .unwrap();
+        metastore.stage_splits(stage_splits_request).await.unwrap();
+        let publish_splits_request = PublishSplitsRequest {
+            index_uid: Some(index_uid.clone()),
+            staged_split_ids: vec!["merged-split".to_string()],
+            replaced_split_ids: Vec::new(),
+            index_checkpoint_delta_json_opt: None,
+            publish_token_opt: None,
+        };
+        metastore
+            .publish_splits(publish_splits_request)
+            .await
+            .unwrap();
+
+        let split_to_publish = SplitToPublish {
+            split_metadata: SplitMetadata::for_test("merge-result-split".into()),
+            replaced_split_ids: vec!["merged-split".into()],
+        };
+        index_service
+            .publish_recovered_splits(&index_uid, &[split_to_publish])
+            .await
+            .unwrap();
+
+        let split_states = index_service
+            .list_metastore_split_states(index_uid)
+            .await
+            .unwrap();
+        let expected_split_states: HashMap<SplitId, SplitState> = [
+            ("merge-result-split".into(), SplitState::Published),
+            ("merged-split".into(), SplitState::MarkedForDeletion),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(split_states, expected_split_states);
+    }
+
+    /// Builds a split recovered from the storage of `recovered-index`, stamped with the index
+    /// incarnation that preceded the one the metastore holds today.
+    fn recovered_split(split_id: &str, parent_split_ids: &[&str]) -> RecoveredSplit {
+        let mut split_metadata = SplitMetadata::for_test(split_id.into());
+        split_metadata.index_uid = IndexUid::for_test("recovered-index", 1);
+        split_metadata.num_docs = 10;
+        RecoveredSplit {
+            split_metadata,
+            parent_split_ids: parent_split_ids.iter().map(|id| (*id).into()).collect(),
+        }
+    }
+
+    fn known_split_states(
+        split_states: impl IntoIterator<Item = (&'static str, SplitState)>,
+    ) -> HashMap<SplitId, SplitState> {
+        split_states
+            .into_iter()
+            .map(|(split_id, split_state)| (split_id.into(), split_state))
+            .collect()
+    }
+
+    fn publishable_split_ids(plan: &SplitRecoveryPlan) -> Vec<&str> {
+        plan.splits_to_publish
+            .iter()
+            .map(|split_to_publish| split_to_publish.split_metadata.split_id().as_str())
+            .collect()
+    }
+
+    #[test]
+    fn test_plan_split_recovery_restamps_index_uid() {
+        let index_uid = IndexUid::for_test("recovered-index", 2);
+        let plan = plan_split_recovery(
+            &index_uid,
+            vec![recovered_split("split-1", &[])],
+            &HashMap::new(),
+        );
+        assert_eq!(plan.splits_to_publish.len(), 1);
+        assert_eq!(
+            plan.splits_to_publish[0].split_metadata.index_uid,
+            index_uid
+        );
+    }
+
+    #[test]
+    fn test_plan_split_recovery_skips_splits_of_another_index() {
+        let index_uid = IndexUid::for_test("recovered-index", 2);
+        let mut foreign_split = recovered_split("split-1", &[]);
+        foreign_split.split_metadata.index_uid = IndexUid::for_test("another-index", 1);
+        let plan = plan_split_recovery(&index_uid, vec![foreign_split], &HashMap::new());
+        assert!(plan.splits_to_publish.is_empty());
+    }
+
+    #[test]
+    fn test_plan_split_recovery_skips_splits_superseded_by_a_merge_chain() {
+        // `split-3` was merged out of `split-2`, itself merged out of `split-1`: all three files
+        // can still be in the storage, but only the last one may be published.
+        let index_uid = IndexUid::for_test("recovered-index", 2);
+        let plan = plan_split_recovery(
+            &index_uid,
+            vec![
+                recovered_split("split-1", &[]),
+                recovered_split("split-2", &["split-1"]),
+                recovered_split("split-3", &["split-2"]),
+            ],
+            &HashMap::new(),
+        );
+        assert_eq!(publishable_split_ids(&plan), ["split-3"]);
+        assert_eq!(plan.merged_split_ids.len(), 2);
+        assert!(plan.already_known_split_ids.is_empty());
+        assert!(plan.splits_to_publish[0].replaced_split_ids.is_empty());
+    }
+
+    #[test]
+    fn test_plan_split_recovery_skips_splits_already_in_the_metastore() {
+        let index_uid = IndexUid::for_test("recovered-index", 2);
+        let known_split_states = known_split_states([("split-1", SplitState::Published)]);
+        let plan = plan_split_recovery(
+            &index_uid,
+            vec![
+                recovered_split("split-1", &[]),
+                recovered_split("split-2", &[]),
+            ],
+            &known_split_states,
+        );
+        assert_eq!(publishable_split_ids(&plan), ["split-2"]);
+        assert_eq!(plan.already_known_split_ids.len(), 1);
+    }
+
+    #[test]
+    fn test_plan_split_recovery_replaces_published_ancestors() {
+        // The metastore was restored from a backup taken before the merges: publishing
+        // `split-4` must retire the splits it was merged out of, transitively.
+        let index_uid = IndexUid::for_test("recovered-index", 2);
+        let known_split_states = known_split_states([
+            ("split-1", SplitState::Published),
+            ("split-2", SplitState::Published),
+            ("split-3", SplitState::Published),
+        ]);
+        let plan = plan_split_recovery(
+            &index_uid,
+            vec![
+                recovered_split("split-3", &["split-1", "split-2"]),
+                recovered_split("split-4", &["split-3"]),
+            ],
+            &known_split_states,
+        );
+        assert_eq!(publishable_split_ids(&plan), ["split-4"]);
+        let mut replaced_split_ids: Vec<&str> = plan.splits_to_publish[0]
+            .replaced_split_ids
+            .iter()
+            .map(SplitId::as_str)
+            .collect();
+        replaced_split_ids.sort();
+        assert_eq!(replaced_split_ids, ["split-1", "split-2", "split-3"]);
+    }
+
+    #[test]
+    fn test_plan_split_recovery_does_not_replace_unpublished_ancestors() {
+        // Replacing a split that the metastore does not hold as published is rejected, and an
+        // ancestor already marked for deletion is on its way out anyway.
+        let index_uid = IndexUid::for_test("recovered-index", 2);
+        let known_split_states = known_split_states([("split-1", SplitState::MarkedForDeletion)]);
+        let plan = plan_split_recovery(
+            &index_uid,
+            vec![recovered_split("split-3", &["split-1", "split-2"])],
+            &known_split_states,
+        );
+        assert_eq!(publishable_split_ids(&plan), ["split-3"]);
+        assert!(plan.splits_to_publish[0].replaced_split_ids.is_empty());
+    }
+
+    #[test]
+    fn test_plan_split_recovery_replaces_an_ancestor_at_most_once() {
+        // `split-1` was merged twice: the first merge result was never published, so both
+        // results sit in the storage. The metastore only accepts it as replaced once.
+        let index_uid = IndexUid::for_test("recovered-index", 2);
+        let known_split_states = known_split_states([("split-1", SplitState::Published)]);
+        let plan = plan_split_recovery(
+            &index_uid,
+            vec![
+                recovered_split("split-2", &["split-1"]),
+                recovered_split("split-3", &["split-1"]),
+            ],
+            &known_split_states,
+        );
+        assert_eq!(publishable_split_ids(&plan), ["split-2", "split-3"]);
+        let replaced_split_ids: Vec<&str> = plan
+            .splits_to_publish
+            .iter()
+            .flat_map(|split_to_publish| split_to_publish.replaced_split_ids.iter())
+            .map(SplitId::as_str)
+            .collect();
+        assert_eq!(replaced_split_ids, ["split-1"]);
     }
 }
