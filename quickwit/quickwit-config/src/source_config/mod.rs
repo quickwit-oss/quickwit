@@ -172,6 +172,7 @@ impl crate::TestableForRegression for SourceConfig {
             transform_config: Some(TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: default_timezone(),
+                drop_on_abort: default_drop_on_abort(),
             }),
             input_format: SourceInputFormat::Json,
         }
@@ -620,6 +621,10 @@ fn default_consumer_name() -> String {
     "quickwit".to_string()
 }
 
+fn default_drop_on_abort() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TransformConfig {
@@ -633,6 +638,10 @@ pub struct TransformConfig {
     /// manipulations. Defaults to `UTC` if not timezone is specified.
     #[serde(default = "default_timezone")]
     timezone: String,
+
+    /// Drops any event that is manually aborted during processing.
+    #[serde(default = "default_drop_on_abort")]
+    pub drop_on_abort: bool,
 }
 
 fn default_timezone() -> String {
@@ -646,6 +655,7 @@ impl TransformConfig {
         Self {
             vrl_script,
             timezone: timezone_opt.unwrap_or_else(default_timezone),
+            drop_on_abort: default_drop_on_abort(),
         }
     }
 
@@ -709,6 +719,7 @@ impl TransformConfig {
         Self {
             vrl_script: vrl_script.to_string(),
             timezone: default_timezone(),
+            drop_on_abort: default_drop_on_abort(),
         }
     }
 }
@@ -754,6 +765,7 @@ mod tests {
             transform_config: Some(TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: "local".to_string(),
+                drop_on_abort: default_drop_on_abort(),
             }),
             input_format: SourceInputFormat::Json,
         };
@@ -849,6 +861,7 @@ mod tests {
             transform_config: Some(TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: "local".to_string(),
+                drop_on_abort: default_drop_on_abort(),
             }),
             input_format: SourceInputFormat::Json,
         };
@@ -1355,6 +1368,7 @@ mod tests {
             transform_config: Some(TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: default_timezone(),
+                drop_on_abort: default_drop_on_abort(),
             }),
             input_format: SourceInputFormat::Json,
         };
@@ -1368,6 +1382,7 @@ mod tests {
             let transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: "local".to_string(),
+                drop_on_abort: default_drop_on_abort(),
             };
             let transform_config_yaml = serde_yaml::to_string(&transform_config).unwrap();
             assert_eq!(
@@ -1379,6 +1394,7 @@ mod tests {
             let transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: default_timezone(),
+                drop_on_abort: default_drop_on_abort(),
             };
             let transform_config_yaml = serde_yaml::to_string(&transform_config).unwrap();
             assert_eq!(
@@ -1400,6 +1416,7 @@ mod tests {
             let expected_transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: default_timezone(),
+                drop_on_abort: default_drop_on_abort(),
             };
             assert_eq!(transform_config, expected_transform_config);
         }
@@ -1414,6 +1431,7 @@ mod tests {
             let expected_transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: "Turkey".to_string(),
+                drop_on_abort: default_drop_on_abort(),
             };
             assert_eq!(transform_config, expected_transform_config);
         }
@@ -1426,6 +1444,7 @@ mod tests {
             let transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: "Turkey".to_string(),
+                drop_on_abort: default_drop_on_abort(),
             };
             transform_config.compile_vrl_script().unwrap();
         }
@@ -1439,6 +1458,7 @@ mod tests {
                 "#
                 .to_string(),
                 timezone: default_timezone(),
+                drop_on_abort: default_drop_on_abort(),
             };
             transform_config.compile_vrl_script().unwrap();
         }
@@ -1446,6 +1466,7 @@ mod tests {
             let transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: "foo".to_string(),
+                drop_on_abort: default_drop_on_abort(),
             };
             let error = transform_config.compile_vrl_script().unwrap_err();
             assert!(error.to_string().starts_with("failed to parse timezone"));
@@ -1454,6 +1475,7 @@ mod tests {
             let transform_config = TransformConfig {
                 vrl_script: "foo".to_string(),
                 timezone: "Turkey".to_string(),
+                drop_on_abort: default_drop_on_abort(),
             };
             let error = transform_config.compile_vrl_script().unwrap_err();
             assert!(error.to_string().starts_with("failed to compile"));
@@ -1506,6 +1528,7 @@ mod tests {
                 transform_config: Some(TransformConfig {
                     vrl_script: ".message = downcase(string!(.message))".to_string(),
                     timezone: "local".to_string(),
+                    drop_on_abort: default_drop_on_abort(),
                 }),
                 input_format: SourceInputFormat::Json,
             };
