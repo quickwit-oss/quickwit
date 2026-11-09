@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Azure Blob Storage: support custom endpoints via `endpoint` and `endpoint_suffix` configuration options for sovereign clouds (#6624)
+- `searcher.warmup_single_split_max_allocation`: maximum warmup memory a single split search can reserve, `max(warmup_single_split_initial_allocation, warmup_memory_budget / 4)` by default. A split search that would need more fails
 
 ### Fixed
 - (Jaeger) Query resource attributes when Jaeger request carries tags
@@ -21,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ingest endpoints (Elasticsearch `_bulk`, OTLP, native ingest) no longer require a `Content-Length` header: `ingest_api.max_body_size` is enforced while the body is read, so chunked and HTTP/2 requests without the header are accepted instead of being rejected with HTTP 411.
 - Renamed `ingest_api.content_length_limit` to `ingest_api.max_body_size`; the former name is still accepted as a config alias.
 - **Breaking**: `ingest_api.max_decompressed_body_size` must be between `ingest_api.max_body_size` and 4 GiB; node configs outside this range now fail validation at startup. Configs that set `content_length_limit` (or `max_body_size`) above 256 MiB must also raise `max_decompressed_body_size`.
+- `searcher.warmup_memory_budget` is now a hard limit: split searches reserve memory before downloading their warmup data, and fail instead of going over the budget
+- `searcher.warmup_single_split_initial_allocation` above `searcher.warmup_memory_budget` is now rejected at startup, even without a split cache
 
 ### Deprecated
 
