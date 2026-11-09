@@ -26,4 +26,8 @@ mod s3_compatible_storage_resolver;
 #[cfg(feature = "azure")]
 mod azure_blob_storage;
 #[cfg(feature = "azure")]
+mod azure_credentials;
+#[cfg(feature = "azure")]
+mod azure_shared_key;
+#[cfg(feature = "azure")]
 pub use self::azure_blob_storage::{AzureBlobStorage, AzureBlobStorageFactory};
