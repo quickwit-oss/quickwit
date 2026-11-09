@@ -1,7 +1,7 @@
 ---
 title: Install Quickwit with Glasskube
 sidebar_label: Glasskube
-sidebar_position: 3
+sidebar_position: 4
 ---
 
 [Glasskube](https://glasskube.dev) is a package manager for Kubernetes that empowers you to effortlessly install, upgrade, configure, and manage your Kubernetes cluster packages, all while streamlining repetitive and cumbersome maintenance tasks.
