@@ -8445,7 +8445,6 @@ version = "0.9.3"
 dependencies = [
  "anyhow",
  "async-trait",
- "enum-iterator",
  "hostname",
  "md5",
  "quickwit-common",

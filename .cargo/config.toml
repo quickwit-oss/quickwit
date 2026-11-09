@@ -2,7 +2,7 @@
 rustflags = ["--cfg", "tokio_unstable"]
 rustdocflags = ["--cfg", "tokio_unstable"]
 
-# Keeps tests and `cargo run` from sending telemetry. A value already set in the environment wins.
+# Keeps tests and `cargo run` from sending telemetry.
 [env]
 QW_DISABLE_TELEMETRY = "1"
 

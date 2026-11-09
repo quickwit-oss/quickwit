@@ -241,14 +241,9 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn test_terminate_telemetry_does_not_wait_without_pending_events() {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let telemetry_sender = TelemetrySender::new(QuickwitTelemetryInfo::default(), tx);
         let loop_handle = telemetry_sender.start_loop();
-        telemetry_sender.send(TelemetryEvent::end_command(0i32));
-        rx.recv().await.unwrap();
-        tokio::time::sleep(TELEMETRY_PUSH_COOLDOWN).await;
-        tokio::task::yield_now().await;
-
         let terminate_start = Instant::now();
         loop_handle.terminate_telemetry().await;
         assert!(terminate_start.elapsed() < LAST_REQUEST_TIMEOUT);

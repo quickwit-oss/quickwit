@@ -13,16 +13,14 @@
 // limitations under the License.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::mem;
+use std::sync::Mutex;
 
-use enum_iterator::{Sequence, all, cardinality};
 use serde::{Deserialize, Serialize};
 
 use crate::payload::TelemetryEvent;
 
-#[derive(
-    Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize, Sequence,
-)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ApiKind {
     ElasticsearchSearch,
@@ -37,9 +35,7 @@ pub enum ApiKind {
 }
 
 /// Type of the source that documents are indexed from.
-#[derive(
-    Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize, Sequence,
-)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IndexingSourceKind {
     File,
@@ -63,104 +59,79 @@ pub struct IndexingUsage {
     pub rejected_docs: String,
 }
 
-/// Indexed by `api_kind as usize`.
-struct ApiRequestCounts([AtomicU64; cardinality::<ApiKind>()]);
-
-impl ApiRequestCounts {
-    const fn new() -> Self {
-        Self([const { AtomicU64::new(0) }; cardinality::<ApiKind>()])
-    }
-
-    fn record(&self, api_kind: ApiKind) {
-        self.0[api_kind as usize].fetch_add(1, Ordering::Relaxed);
-    }
-
-    /// Returns the bucketed counts of the APIs that received requests, and resets the counts.
-    fn take(&self) -> BTreeMap<ApiKind, String> {
-        let mut api_usage = BTreeMap::new();
-        for api_kind in all::<ApiKind>() {
-            let num_requests = self.0[api_kind as usize].swap(0, Ordering::Relaxed);
-            if num_requests > 0 {
-                api_usage.insert(api_kind, magnitude_bucket(num_requests));
-            }
-        }
-        api_usage
-    }
-}
-
+#[derive(Default)]
 struct SourceIndexingCounts {
-    num_indexed_docs: AtomicU64,
-    num_indexed_bytes: AtomicU64,
-    num_rejected_docs: AtomicU64,
+    num_indexed_docs: u64,
+    num_indexed_bytes: u64,
+    num_rejected_docs: u64,
 }
 
-impl SourceIndexingCounts {
+/// Counts since the previous report, behind one lock so that a report never holds only part of a
+/// batch.
+struct UsageCounts {
+    num_api_requests: BTreeMap<ApiKind, u64>,
+    indexing_counts: BTreeMap<IndexingSourceKind, SourceIndexingCounts>,
+}
+
+impl UsageCounts {
     const fn new() -> Self {
         Self {
-            num_indexed_docs: AtomicU64::new(0),
-            num_indexed_bytes: AtomicU64::new(0),
-            num_rejected_docs: AtomicU64::new(0),
+            num_api_requests: BTreeMap::new(),
+            indexing_counts: BTreeMap::new(),
         }
     }
-}
 
-/// Indexed by `source_kind as usize`.
-struct IndexingCounts([SourceIndexingCounts; cardinality::<IndexingSourceKind>()]);
-
-impl IndexingCounts {
-    const fn new() -> Self {
-        Self([const { SourceIndexingCounts::new() }; cardinality::<IndexingSourceKind>()])
+    fn record_api_request(&mut self, api_kind: ApiKind) {
+        *self.num_api_requests.entry(api_kind).or_default() += 1;
     }
 
-    fn record(
-        &self,
+    fn record_indexed_batch(
+        &mut self,
         source_kind: IndexingSourceKind,
         num_indexed_docs: u64,
         num_indexed_bytes: u64,
         num_rejected_docs: u64,
     ) {
-        let source_counts = &self.0[source_kind as usize];
-        source_counts
-            .num_indexed_docs
-            .fetch_add(num_indexed_docs, Ordering::Relaxed);
-        source_counts
-            .num_indexed_bytes
-            .fetch_add(num_indexed_bytes, Ordering::Relaxed);
-        source_counts
-            .num_rejected_docs
-            .fetch_add(num_rejected_docs, Ordering::Relaxed);
+        if num_indexed_docs == 0 && num_rejected_docs == 0 {
+            return;
+        }
+        let source_counts = self.indexing_counts.entry(source_kind).or_default();
+        source_counts.num_indexed_docs += num_indexed_docs;
+        source_counts.num_indexed_bytes += num_indexed_bytes;
+        source_counts.num_rejected_docs += num_rejected_docs;
     }
 
-    /// Returns the bucketed counts of the types of sources that received documents, and resets
-    /// the counts.
-    fn take(&self) -> BTreeMap<IndexingSourceKind, IndexingUsage> {
-        let mut indexing_usage = BTreeMap::new();
-        for source_kind in all::<IndexingSourceKind>() {
-            let source_counts = &self.0[source_kind as usize];
-            let num_indexed_docs = source_counts.num_indexed_docs.swap(0, Ordering::Relaxed);
-            let num_indexed_bytes = source_counts.num_indexed_bytes.swap(0, Ordering::Relaxed);
-            let num_rejected_docs = source_counts.num_rejected_docs.swap(0, Ordering::Relaxed);
-            if num_indexed_docs == 0 && num_rejected_docs == 0 {
-                continue;
-            }
-            let source_usage = IndexingUsage {
-                indexed_docs: magnitude_bucket(num_indexed_docs),
-                indexed_bytes: magnitude_bucket(num_indexed_bytes),
-                rejected_docs: magnitude_bucket(num_rejected_docs),
-            };
-            indexing_usage.insert(source_kind, source_usage);
-        }
-        indexing_usage
+    /// Returns the bucketed counts, and resets them.
+    fn take(
+        &mut self,
+    ) -> (
+        BTreeMap<ApiKind, String>,
+        BTreeMap<IndexingSourceKind, IndexingUsage>,
+    ) {
+        let api_usage = mem::take(&mut self.num_api_requests)
+            .into_iter()
+            .map(|(api_kind, num_requests)| (api_kind, magnitude_bucket(num_requests)))
+            .collect();
+        let indexing_usage = mem::take(&mut self.indexing_counts)
+            .into_iter()
+            .map(|(source_kind, source_counts)| {
+                let source_usage = IndexingUsage {
+                    indexed_docs: magnitude_bucket(source_counts.num_indexed_docs),
+                    indexed_bytes: magnitude_bucket(source_counts.num_indexed_bytes),
+                    rejected_docs: magnitude_bucket(source_counts.num_rejected_docs),
+                };
+                (source_kind, source_usage)
+            })
+            .collect();
+        (api_usage, indexing_usage)
     }
 }
 
-static API_REQUEST_COUNTS: ApiRequestCounts = ApiRequestCounts::new();
-
-static INDEXING_COUNTS: IndexingCounts = IndexingCounts::new();
+static USAGE_COUNTS: Mutex<UsageCounts> = Mutex::new(UsageCounts::new());
 
 pub fn record_api_request(api_kind: ApiKind) {
     if crate::is_telemetry_enabled() {
-        API_REQUEST_COUNTS.record(api_kind);
+        USAGE_COUNTS.lock().unwrap().record_api_request(api_kind);
     }
 }
 
@@ -173,7 +144,7 @@ pub fn record_indexed_batch(
     num_rejected_docs: u64,
 ) {
     if crate::is_telemetry_enabled() {
-        INDEXING_COUNTS.record(
+        USAGE_COUNTS.lock().unwrap().record_indexed_batch(
             source_kind,
             num_indexed_docs,
             num_indexed_bytes,
@@ -211,8 +182,7 @@ impl TelemetryEvent {
             ..
         } = self
         {
-            *api_usage = API_REQUEST_COUNTS.take();
-            *indexing_usage = INDEXING_COUNTS.take();
+            (*api_usage, *indexing_usage) = USAGE_COUNTS.lock().unwrap().take();
         }
     }
 }
@@ -234,23 +204,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_discriminants_follow_declaration_order() {
-        for (index, api_kind) in all::<ApiKind>().enumerate() {
-            assert_eq!(api_kind as usize, index);
-        }
-        for (index, source_kind) in all::<IndexingSourceKind>().enumerate() {
-            assert_eq!(source_kind as usize, index);
-        }
-    }
-
-    #[test]
-    fn test_api_request_counts_reports_buckets_and_resets() {
-        let api_request_counts = ApiRequestCounts::new();
-        api_request_counts.record(ApiKind::NativeSearch);
+    fn test_usage_counts_reports_buckets_and_resets() {
+        let mut usage_counts = UsageCounts::new();
+        usage_counts.record_api_request(ApiKind::NativeSearch);
         for _ in 0..12 {
-            api_request_counts.record(ApiKind::ElasticsearchIngest);
+            usage_counts.record_api_request(ApiKind::ElasticsearchIngest);
         }
-        let api_usage = api_request_counts.take();
+        usage_counts.record_indexed_batch(IndexingSourceKind::Kafka, 1_500, 2_000_000, 0);
+        usage_counts.record_indexed_batch(IndexingSourceKind::Kafka, 500, 1_000_000, 3);
+        usage_counts.record_indexed_batch(IndexingSourceKind::File, 0, 0, 0);
+        let (api_usage, indexing_usage) = usage_counts.take();
         assert_eq!(
             api_usage,
             BTreeMap::from([
@@ -258,15 +221,6 @@ mod tests {
                 (ApiKind::NativeSearch, "1-9".to_string()),
             ])
         );
-        assert!(api_request_counts.take().is_empty());
-    }
-
-    #[test]
-    fn test_indexing_counts_reports_buckets_and_resets() {
-        let indexing_counts = IndexingCounts::new();
-        indexing_counts.record(IndexingSourceKind::Kafka, 1_500, 2_000_000, 0);
-        indexing_counts.record(IndexingSourceKind::Kafka, 500, 1_000_000, 3);
-        let indexing_usage = indexing_counts.take();
         let expected_kafka_usage = IndexingUsage {
             indexed_docs: "1000-9999".to_string(),
             indexed_bytes: "1000000-9999999".to_string(),
@@ -276,7 +230,9 @@ mod tests {
             indexing_usage,
             BTreeMap::from([(IndexingSourceKind::Kafka, expected_kafka_usage)])
         );
-        assert!(indexing_counts.take().is_empty());
+        let (api_usage, indexing_usage) = usage_counts.take();
+        assert!(api_usage.is_empty());
+        assert!(indexing_usage.is_empty());
     }
 
     #[test]

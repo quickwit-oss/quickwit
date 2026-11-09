@@ -57,25 +57,14 @@ fn classify_elasticsearch_request(method: &Method, elasticsearch_path: &str) -> 
     }
 }
 
-pub(crate) fn count_otlp_logs_grpc_request(
-    request: tonic::Request<()>,
-) -> Result<tonic::Request<()>, tonic::Status> {
-    quickwit_telemetry::record_api_request(ApiKind::OtlpLogs);
-    Ok(request)
-}
-
-pub(crate) fn count_otlp_traces_grpc_request(
-    request: tonic::Request<()>,
-) -> Result<tonic::Request<()>, tonic::Status> {
-    quickwit_telemetry::record_api_request(ApiKind::OtlpTraces);
-    Ok(request)
-}
-
-pub(crate) fn count_jaeger_grpc_request(
-    request: tonic::Request<()>,
-) -> Result<tonic::Request<()>, tonic::Status> {
-    quickwit_telemetry::record_api_request(ApiKind::Jaeger);
-    Ok(request)
+/// Returns a gRPC interceptor that counts the requests to `api_kind`.
+pub(crate) fn grpc_request_counter(
+    api_kind: ApiKind,
+) -> impl FnMut(tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status> + Clone {
+    move |request| {
+        quickwit_telemetry::record_api_request(api_kind);
+        Ok(request)
+    }
 }
 
 #[cfg(test)]

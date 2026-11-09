@@ -97,8 +97,6 @@ pub fn start_telemetry_loop(
 /// events when the node shuts down. Each request holds at most 10 events, so some events are
 /// dropped if this function is called too often.
 ///
-/// If a request fails, the error is only logged at the debug level.
-///
 /// The event is an enum so that readers can audit what information is sent.
 pub fn send_telemetry_event(event: TelemetryEvent) {
     if let Some(telemetry_sender) = TELEMETRY_SENDER.get() {
@@ -116,7 +114,6 @@ pub fn is_telemetry_enabled() -> bool {
 /// in releases 0.6.0 to 0.8.x.
 pub const DISABLE_TELEMETRY_ENV_KEY: &str = "QW_DISABLE_TELEMETRY";
 
-/// Returns true if `QW_DISABLE_TELEMETRY` is set.
 pub fn is_telemetry_disabled() -> bool {
     std::env::var_os(DISABLE_TELEMETRY_ENV_KEY).is_some()
 }

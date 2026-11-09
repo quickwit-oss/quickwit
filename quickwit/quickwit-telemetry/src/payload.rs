@@ -99,21 +99,11 @@ pub struct ClientInfo {
     memory: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct BuildTelemetryInfo {
     pub commit: String,
     pub target: String,
     pub release: bool,
-}
-
-impl Default for BuildTelemetryInfo {
-    fn default() -> Self {
-        Self {
-            commit: "unknown".to_string(),
-            target: "unknown".to_string(),
-            release: false,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
