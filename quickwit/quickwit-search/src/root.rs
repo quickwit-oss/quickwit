@@ -3276,7 +3276,7 @@ mod tests {
                 localexec_num_splits: 1,
                 localexec_num_docs: 10,
                 lambda_bottleneck: 0,
-                split_resources_sum: Some(split_a),
+                split_resources_sum: Some(split_a.clone()),
                 split_resources_worst: Some(split_a),
                 wall_time_microsecs: 1_000,
                 ..Default::default()
@@ -3288,7 +3288,7 @@ mod tests {
                 localexec_num_splits: 1,
                 localexec_num_docs: 20,
                 lambda_bottleneck: 1,
-                split_resources_sum: Some(split_b),
+                split_resources_sum: Some(split_b.clone()),
                 split_resources_worst: Some(split_b),
                 wall_time_microsecs: 2_500,
                 ..Default::default()
@@ -3357,7 +3357,7 @@ mod tests {
                 resource_stats: Some(LeafResourceStats {
                     localexec_num_splits: 1,
                     localexec_num_docs: 7,
-                    split_resources_sum: Some(split),
+                    split_resources_sum: Some(split.clone()),
                     split_resources_worst: Some(split),
                     wall_time_microsecs: 500,
                     ..Default::default()
@@ -3442,7 +3442,7 @@ mod tests {
         let leaf_stats_1 = LeafResourceStats {
             localexec_num_splits: 1,
             localexec_num_docs: 10,
-            split_resources_sum: Some(split1_stats),
+            split_resources_sum: Some(split1_stats.clone()),
             split_resources_worst: Some(split1_stats),
             wall_time_microsecs: 1_000,
             ..Default::default()
@@ -3450,7 +3450,7 @@ mod tests {
         let leaf_stats_2 = LeafResourceStats {
             localexec_num_splits: 1,
             localexec_num_docs: 20,
-            split_resources_sum: Some(split2_stats),
+            split_resources_sum: Some(split2_stats.clone()),
             split_resources_worst: Some(split2_stats),
             wall_time_microsecs: 2_500,
             ..Default::default()
@@ -3468,7 +3468,7 @@ mod tests {
                     failed_splits: Vec::new(),
                     num_attempted_splits: 1,
                     num_successful_splits: 1,
-                    resource_stats: Some(leaf_stats_1),
+                    resource_stats: Some(leaf_stats_1.clone()),
                     ..Default::default()
                 })
             },
@@ -3489,7 +3489,7 @@ mod tests {
                     failed_splits: Vec::new(),
                     num_attempted_splits: 1,
                     num_successful_splits: 1,
-                    resource_stats: Some(leaf_stats_2),
+                    resource_stats: Some(leaf_stats_2.clone()),
                     ..Default::default()
                 })
             },
