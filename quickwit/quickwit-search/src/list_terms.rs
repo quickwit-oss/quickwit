@@ -353,8 +353,13 @@ pub async fn leaf_list_terms(
                     .searcher_config
                     .warmup_single_split_initial_allocation,
             )
-            // A reservation above the total budget could never acquire a permit.
-            .min(searcher_context.searcher_config.warmup_memory_budget);
+            // A split search can never reserve more than the per-split limit, which is also lower
+            // or equal to the total budget (a reservation above it could never acquire a permit).
+            .min(
+                searcher_context
+                    .searcher_config
+                    .effective_warmup_single_split_max_allocation(),
+            );
             // query_complexity_factor is 1.0 here (no effect) because list_terms doesn't execute
             // the query.
             let job_cost = compute_split_query_cost(split.num_docs, 1.0);
