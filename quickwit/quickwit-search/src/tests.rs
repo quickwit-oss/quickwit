@@ -23,8 +23,8 @@ use quickwit_doc_mapper::DocMapper;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_indexing::TestSandbox;
 use quickwit_proto::search::{
-    CountHits, LeafListTermsResponse, ListTermsRequest, SearchRequest, SortByValue, SortField,
-    SortOrder, SortValue, TraceId,
+    CountHits, LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, SearchRequest,
+    SortByValue, SortField, SortOrder, SortValue, TraceId,
 };
 use quickwit_query::query_ast::{
     BoolQuery, HitSet, PredicateCache, QueryAst, RangeQuery, qast_helper, qast_json_helper,
@@ -1243,22 +1243,21 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         .collect::<Vec<u32>>()
 }
 
-#[tokio::test]
-async fn test_leaf_search_fails_when_warmup_exceeds_memory_limit() {
+/// Indexes 1,000 documents in a single split, and runs a phrase query leaf search on it with
+/// `searcher_config`.
+async fn phrase_query_leaf_search_with_config(
+    index_id: &str,
+    searcher_config: SearcherConfig,
+) -> LeafSearchResponse {
     let doc_mapping_yaml = r#"
             field_mappings:
               - name: body
                 type: text
                 record: position
         "#;
-    let test_sandbox = TestSandbox::create(
-        "leaf_search_warmup_memory_limit",
-        doc_mapping_yaml,
-        "{}",
-        &["body"],
-    )
-    .await
-    .unwrap();
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"])
+        .await
+        .unwrap();
     let docs: Vec<serde_json::Value> = (0..1_000)
         .map(|doc_id| json!({"body": format!("hello happy tax payer {doc_id}")}))
         .collect();
@@ -1281,11 +1280,7 @@ async fn test_leaf_search_fails_when_warmup_exceeds_memory_limit() {
         max_hits: 10,
         ..Default::default()
     });
-    // The permit fits (its size is clamped to the limit), but the warmup cannot download anything.
-    let mut searcher_config = SearcherConfig::default();
-    searcher_config.warmup_memory_budget = ByteSize(1);
     let searcher_context = Arc::new(SearcherContext::new_without_invoker(searcher_config, None));
-
     let leaf_search_response = single_doc_mapping_leaf_search(
         searcher_context,
         request,
@@ -1295,6 +1290,21 @@ async fn test_leaf_search_fails_when_warmup_exceeds_memory_limit() {
     )
     .await
     .unwrap();
+    test_sandbox.assert_quit().await;
+    leaf_search_response
+}
+
+#[tokio::test]
+async fn test_leaf_search_fails_when_warmup_exceeds_split_max_allocation() {
+    // The searcher has plenty of warmup memory (100GB by default), but a single split search can
+    // only reserve 1 byte.
+    let mut searcher_config = SearcherConfig::default();
+    searcher_config.warmup_single_split_max_allocation = Some(ByteSize(1));
+    let leaf_search_response = phrase_query_leaf_search_with_config(
+        "leaf_search_warmup_split_max_allocation",
+        searcher_config,
+    )
+    .await;
 
     assert_eq!(leaf_search_response.failed_splits.len(), 1);
     let split_error = &leaf_search_response.failed_splits[0].error;
@@ -1302,7 +1312,18 @@ async fn test_leaf_search_fails_when_warmup_exceeds_memory_limit() {
         split_error.contains("out of warmup memory"),
         "unexpected split error: {split_error}"
     );
-    test_sandbox.assert_quit().await;
+}
+
+#[tokio::test]
+async fn test_leaf_search_succeeds_within_split_max_allocation() {
+    // With the default per-split limit (100GB / 4), the same search succeeds.
+    let leaf_search_response = phrase_query_leaf_search_with_config(
+        "leaf_search_warmup_split_max_allocation_default",
+        SearcherConfig::default(),
+    )
+    .await;
+    assert!(leaf_search_response.failed_splits.is_empty());
+    assert_eq!(leaf_search_response.num_hits, 1_000);
 }
 
 #[tokio::test]

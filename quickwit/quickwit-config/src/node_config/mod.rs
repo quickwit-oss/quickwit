@@ -434,6 +434,13 @@ pub struct SearcherConfig {
     pub use_metastore_read_replica: bool,
     pub warmup_memory_budget: ByteSize,
     pub warmup_single_split_initial_allocation: ByteSize,
+    /// Maximum warmup memory a single split search can reserve. A split search that would need
+    /// more fails, even if the searcher has warmup memory left.
+    ///
+    /// Defaults to `max(warmup_single_split_initial_allocation, warmup_memory_budget / 4)`: use
+    /// [`SearcherConfig::effective_warmup_single_split_max_allocation`] to read it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warmup_single_split_max_allocation: Option<ByteSize>,
     /// Lambda configuration for serverless leaf search execution.
     /// If set, enables Lambda execution for leaf search.
     ///
@@ -658,6 +665,7 @@ impl Default for SearcherConfig {
             use_metastore_read_replica: false,
             warmup_memory_budget: ByteSize::gb(100),
             warmup_single_split_initial_allocation: ByteSize::mb(300),
+            warmup_single_split_max_allocation: None,
             lambda: None,
         }
     }
@@ -675,26 +683,53 @@ impl SearcherConfig {
     fn default_request_timeout_secs() -> NonZeroU64 {
         NonZeroU64::new(30).unwrap()
     }
+    /// Maximum warmup memory a single split search can reserve:
+    /// `warmup_single_split_max_allocation` if set, otherwise
+    /// `max(warmup_single_split_initial_allocation, warmup_memory_budget / 4)`.
+    ///
+    /// Never above `warmup_memory_budget` for a config that was validated.
+    pub fn effective_warmup_single_split_max_allocation(&self) -> ByteSize {
+        if let Some(warmup_single_split_max_allocation) = self.warmup_single_split_max_allocation {
+            warmup_single_split_max_allocation
+        } else {
+            self.warmup_single_split_initial_allocation
+                .max(ByteSize(self.warmup_memory_budget.as_u64() / 4))
+        }
+    }
     fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.warmup_single_split_initial_allocation <= self.warmup_memory_budget,
+            "warmup_single_split_initial_allocation ({}) must be lower or equal to \
+             warmup_memory_budget ({})",
+            self.warmup_single_split_initial_allocation,
+            self.warmup_memory_budget
+        );
+        if let Some(warmup_single_split_max_allocation) = self.warmup_single_split_max_allocation {
+            anyhow::ensure!(
+                warmup_single_split_max_allocation <= self.warmup_memory_budget,
+                "warmup_single_split_max_allocation ({}) must be lower or equal to \
+                 warmup_memory_budget ({})",
+                warmup_single_split_max_allocation,
+                self.warmup_memory_budget
+            );
+            // Otherwise, the initial allocation would be silently capped to the max.
+            anyhow::ensure!(
+                self.warmup_single_split_initial_allocation <= warmup_single_split_max_allocation,
+                "warmup_single_split_initial_allocation ({}) must be lower or equal to \
+                 warmup_single_split_max_allocation ({})",
+                self.warmup_single_split_initial_allocation,
+                warmup_single_split_max_allocation
+            );
+        }
         if let Some(split_cache_limits) = self.split_cache {
-            if self.max_num_concurrent_split_searches
-                > split_cache_limits.max_file_descriptors.get() as usize
-            {
-                anyhow::bail!(
-                    "max_num_concurrent_split_searches ({}) must be lower or equal to \
-                     split_cache.max_file_descriptors ({})",
-                    self.max_num_concurrent_split_searches,
-                    split_cache_limits.max_file_descriptors
-                );
-            }
-            if self.warmup_single_split_initial_allocation > self.warmup_memory_budget {
-                anyhow::bail!(
-                    "warmup_single_split_initial_allocation ({}) must be lower or equal to \
-                     warmup_memory_budget ({})",
-                    self.warmup_single_split_initial_allocation,
-                    self.warmup_memory_budget
-                );
-            }
+            anyhow::ensure!(
+                self.max_num_concurrent_split_searches
+                    <= split_cache_limits.max_file_descriptors.get() as usize,
+                "max_num_concurrent_split_searches ({}) must be lower or equal to \
+                 split_cache.max_file_descriptors ({})",
+                self.max_num_concurrent_split_searches,
+                split_cache_limits.max_file_descriptors
+            );
         }
         Ok(())
     }
@@ -1110,6 +1145,108 @@ mod tests {
                 "1500m"
             );
         }
+    }
+
+    #[test]
+    fn test_searcher_config_warmup_single_split_max_allocation_default() {
+        let searcher_config = SearcherConfig {
+            warmup_memory_budget: ByteSize::gb(8),
+            ..Default::default()
+        };
+        assert_eq!(searcher_config.warmup_single_split_max_allocation, None);
+        assert_eq!(
+            searcher_config.effective_warmup_single_split_max_allocation(),
+            ByteSize::gb(2)
+        );
+        searcher_config.validate().unwrap();
+    }
+
+    #[test]
+    fn test_searcher_config_warmup_single_split_max_allocation_default_small_budget() {
+        // A quarter of the budget (250MB) is below the initial allocation (300MB): the default
+        // max is the initial allocation, so the initial allocation is never capped.
+        let searcher_config = SearcherConfig {
+            warmup_memory_budget: ByteSize::gb(1),
+            ..Default::default()
+        };
+        assert_eq!(
+            searcher_config.warmup_single_split_initial_allocation,
+            ByteSize::mb(300)
+        );
+        assert_eq!(
+            searcher_config.effective_warmup_single_split_max_allocation(),
+            ByteSize::mb(300)
+        );
+        searcher_config.validate().unwrap();
+    }
+
+    #[test]
+    fn test_searcher_config_warmup_single_split_max_allocation_explicit() {
+        let searcher_config: SearcherConfig = serde_json::from_str(
+            r#"{"warmup_memory_budget": "8GB", "warmup_single_split_max_allocation": "1GB"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            searcher_config.warmup_single_split_max_allocation,
+            Some(ByteSize::gb(1))
+        );
+        assert_eq!(
+            searcher_config.effective_warmup_single_split_max_allocation(),
+            ByteSize::gb(1)
+        );
+        searcher_config.validate().unwrap();
+    }
+
+    #[test]
+    fn test_searcher_config_warmup_single_split_max_allocation_validation() {
+        let above_budget_config = SearcherConfig {
+            warmup_memory_budget: ByteSize::gb(8),
+            warmup_single_split_max_allocation: Some(ByteSize::gb(9)),
+            ..Default::default()
+        };
+        assert_eq!(
+            above_budget_config.validate().unwrap_err().to_string(),
+            format!(
+                "warmup_single_split_max_allocation ({}) must be lower or equal to \
+                 warmup_memory_budget ({})",
+                ByteSize::gb(9),
+                ByteSize::gb(8)
+            )
+        );
+
+        // Checked even without a split cache.
+        let initial_above_budget_config = SearcherConfig {
+            warmup_memory_budget: ByteSize::mb(100),
+            ..Default::default()
+        };
+        assert!(initial_above_budget_config.split_cache.is_none());
+        assert_eq!(
+            initial_above_budget_config
+                .validate()
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "warmup_single_split_initial_allocation ({}) must be lower or equal to \
+                 warmup_memory_budget ({})",
+                ByteSize::mb(300),
+                ByteSize::mb(100)
+            )
+        );
+
+        let max_below_initial_config = SearcherConfig {
+            warmup_memory_budget: ByteSize::gb(8),
+            warmup_single_split_max_allocation: Some(ByteSize::mb(200)),
+            ..Default::default()
+        };
+        assert_eq!(
+            max_below_initial_config.validate().unwrap_err().to_string(),
+            format!(
+                "warmup_single_split_initial_allocation ({}) must be lower or equal to \
+                 warmup_single_split_max_allocation ({})",
+                ByteSize::mb(300),
+                ByteSize::mb(200)
+            )
+        );
     }
 
     #[test]

@@ -66,6 +66,6 @@ That error is marked as not retryable and will fail sibling search request as we
 This logic in itself is sufficient to bound the warm up cache memory usage to our initial budget.
 However, this gives us no control on which leaf request will get OOMed.
 
-For this reason, we also have a warmup_max_split_initial_allocation that will fail the request if the 
-single split allocation is greater than a given amount; hence increasing the chance that the faulty query is the one that
-will be OOMed first.
+For this reason, we also have a `warmup_single_split_max_allocation` that will fail the request if the
+single split allocation would be greater than a given amount (by default, `max(warmup_single_split_initial_allocation, warmup_memory_budget / 4)`); hence increasing
+the chance that the faulty query is the one that will be OOMed first.

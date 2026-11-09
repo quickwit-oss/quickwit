@@ -465,9 +465,10 @@ impl SearcherContext {
             &searcher_config.split_footer_cache,
             &quickwit_storage::metrics::SPLIT_FOOTER_CACHE,
         );
-        let leaf_search_split_semaphore = SearchPermitProvider::new(
+        let leaf_search_split_semaphore = SearchPermitProvider::with_split_max_allocation(
             searcher_config.max_num_concurrent_split_searches,
             searcher_config.warmup_memory_budget,
+            searcher_config.effective_warmup_single_split_max_allocation(),
         );
         let storage_long_term_cache =
             Arc::new(QuickwitCache::new(&searcher_config.fast_field_cache));

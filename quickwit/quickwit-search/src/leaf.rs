@@ -1985,9 +1985,14 @@ async fn schedule_search_tasks(
                     .searcher_config
                     .warmup_single_split_initial_allocation,
             );
-            // A reservation above the total budget could never acquire a permit.
+            // A split search can never reserve more than the per-split limit, which is also lower
+            // or equal to the total budget (a reservation above it could never acquire a permit).
             let memory_allocation = ByteSize(memory_allocation.as_u64() * warmup_memory_factor)
-                .min(searcher_context.searcher_config.warmup_memory_budget);
+                .min(
+                    searcher_context
+                        .searcher_config
+                        .effective_warmup_single_split_max_allocation(),
+                );
             let job_cost = compute_split_query_cost(split.num_docs, query_complexity_factor);
             crate::search_permit_provider::SplitSearchTaskMetadata {
                 memory_allocation,
@@ -3170,12 +3175,44 @@ mod tests {
                     expected.min(
                         searcher_context
                             .searcher_config
-                            .warmup_memory_budget
+                            .effective_warmup_single_split_max_allocation()
                             .as_u64()
                     )
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn test_schedule_search_tasks_clamps_to_split_max_allocation() {
+        let mut config = SearcherConfig::default();
+        config.warmup_single_split_max_allocation = Some(ByteSize::mb(50));
+        let searcher_context = SearcherContext::new(config, None, None::<DummyInvoker>);
+        // A large split with a leading wildcard asks for 10 x 300MB: it gets the per-split limit.
+        let split = SplitIdAndFooterOffsets {
+            num_docs: 10_000_000,
+            split_footer_start: 1_000_000_000,
+            ..Default::default()
+        };
+        let request = SearchRequest {
+            query_ast: serde_json::json!({
+                "type": "wildcard", "field": "message", "value": "*error",
+                "lenient": false, "case_insensitive": false
+            })
+            .to_string(),
+            ..Default::default()
+        };
+        let cost = compute_query_cost(&request).unwrap();
+        let result = super::schedule_search_tasks(
+            vec![(split, request)],
+            &searcher_context,
+            cost.complexity_factor,
+            cost.warmup_memory_factor,
+        )
+        .await;
+        let task = result.local_search_tasks.into_iter().next().unwrap();
+        let permit = task.search_permit_future.await;
+        assert_eq!(permit.memory_allocation(), ByteSize::mb(50));
     }
 
     struct DummyInvoker;
