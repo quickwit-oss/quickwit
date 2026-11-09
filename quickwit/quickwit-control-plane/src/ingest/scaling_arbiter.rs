@@ -16,9 +16,79 @@ use std::num::NonZeroUsize;
 
 use crate::model::{ScalingMode, ShardStats};
 
+const DEFAULT_SCALE_UP_SHORT_TERM_FACTOR: f32 = 0.8;
+
+const DEFAULT_SCALE_UP_LONG_TERM_FACTOR: f32 = 0.3;
+
+const DEFAULT_SCALE_DOWN_FACTOR: f32 = 0.2;
+
+#[derive(Debug, Clone, Copy)]
+struct ScalingFactors {
+    scale_up_short_term: f32,
+    scale_up_long_term: f32,
+    scale_down: f32,
+}
+
+impl ScalingFactors {
+    fn from_env() -> ScalingFactors {
+        let scaling_factors = ScalingFactors {
+            scale_up_short_term: quickwit_common::get_from_env_cached!(
+                f32,
+                "QW_SHARD_SCALE_UP_SHORT_TERM_FACTOR",
+                DEFAULT_SCALE_UP_SHORT_TERM_FACTOR,
+                false
+            ),
+            scale_up_long_term: quickwit_common::get_from_env_cached!(
+                f32,
+                "QW_SHARD_SCALE_UP_LONG_TERM_FACTOR",
+                DEFAULT_SCALE_UP_LONG_TERM_FACTOR,
+                false
+            ),
+            scale_down: quickwit_common::get_from_env_cached!(
+                f32,
+                "QW_SHARD_SCALE_DOWN_FACTOR",
+                DEFAULT_SCALE_DOWN_FACTOR,
+                false
+            ),
+        };
+        scaling_factors.validate();
+        scaling_factors
+    }
+
+    fn validate(&self) {
+        assert!(
+            0.0 < self.scale_down
+                && self.scale_down < self.scale_up_long_term
+                && self.scale_up_long_term < self.scale_up_short_term,
+            "shard scaling factors must satisfy 0 < QW_SHARD_SCALE_DOWN_FACTOR ({}) < \
+             QW_SHARD_SCALE_UP_LONG_TERM_FACTOR ({}) < QW_SHARD_SCALE_UP_SHORT_TERM_FACTOR ({})",
+            self.scale_down,
+            self.scale_up_long_term,
+            self.scale_up_short_term,
+        );
+    }
+}
+
+const DEFAULT_SCALE_DOWN_STEP: usize = 1;
+
+fn scale_down_step_from_env() -> usize {
+    let scale_down_step = quickwit_common::get_from_env_cached!(
+        usize,
+        "QW_SHARD_SCALE_DOWN_STEP",
+        DEFAULT_SCALE_DOWN_STEP,
+        false
+    );
+    assert!(
+        scale_down_step >= 1,
+        "QW_SHARD_SCALE_DOWN_STEP ({scale_down_step}) must be at least 1"
+    );
+    scale_down_step
+}
+
 pub(crate) struct ScalingArbiter {
     // Threshold in MiB/s below which we decrease the number of shards.
     scale_down_shards_threshold_mib_per_sec: f32,
+    scale_down_step: usize,
 
     // Per shard threshold in MiB/s above which we increase the number of shards.
     //
@@ -41,14 +111,42 @@ impl ScalingArbiter {
         max_shard_throughput_mib_per_sec: f32,
         shard_scale_up_factor: f32,
     ) -> ScalingArbiter {
+        let scaling_factors = ScalingFactors::from_env();
         ScalingArbiter {
             scale_up_shards_short_term_threshold_mib_per_sec: max_shard_throughput_mib_per_sec
-                * 0.8f32,
+                * scaling_factors.scale_up_short_term,
             scale_up_shards_long_term_threshold_mib_per_sec: max_shard_throughput_mib_per_sec
-                * 0.3f32,
-            scale_down_shards_threshold_mib_per_sec: max_shard_throughput_mib_per_sec * 0.2f32,
+                * scaling_factors.scale_up_long_term,
+            scale_down_shards_threshold_mib_per_sec: max_shard_throughput_mib_per_sec
+                * scaling_factors.scale_down,
+            scale_down_step: scale_down_step_from_env(),
             shard_scale_up_factor,
         }
+    }
+
+    fn long_term_scale_down_target_shards(&self, shard_stats: ShardStats) -> usize {
+        (shard_stats.avg_long_term_ingestion_rate * shard_stats.num_open_shards as f32
+            / self.scale_up_shards_long_term_threshold_mib_per_sec)
+            .ceil() as usize
+    }
+
+    pub(crate) fn num_shards_to_close(
+        &self,
+        shard_stats: ShardStats,
+        min_shards: NonZeroUsize,
+    ) -> usize {
+        let target_num_shards =
+            usize::max(min_shards.get(), self.long_term_scale_down_target_shards(shard_stats));
+        let num_shards_above_target = shard_stats
+            .num_open_shards
+            .saturating_sub(target_num_shards)
+            .max(1);
+        let num_shards_above_min = shard_stats
+            .num_open_shards
+            .saturating_sub(min_shards.get());
+        num_shards_above_target
+            .min(self.scale_down_step)
+            .min(num_shards_above_min)
     }
 
     /// Computes the maximum number of shards we can have without going below

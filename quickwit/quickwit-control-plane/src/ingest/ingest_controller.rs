@@ -997,38 +997,47 @@ impl IngestController {
         {
             return Ok(());
         }
-        let new_num_open_shards = shard_stats.num_open_shards - 1;
+        let num_shards_to_close = self
+            .scaling_arbiter
+            .num_shards_to_close(shard_stats, min_shards);
+        let new_num_open_shards = shard_stats.num_open_shards - num_shards_to_close;
 
         info!(
             index_id=%source_uid.index_uid.index_id,
             source_id=%source_uid.source_id,
             "scaling down number of shards to {new_num_open_shards}"
         );
-        let Some((ingester_id, shard_id)) = find_scale_down_candidate(&source_uid, model) else {
-            model.release_scaling_permits(&source_uid, ScalingMode::Down);
-            return Ok(());
-        };
-        info!("scaling down shard {shard_id} from {ingester_id}");
-        let Some(ingester) = self.ingester_pool.get(&ingester_id) else {
-            model.release_scaling_permits(&source_uid, ScalingMode::Down);
-            return Ok(());
-        };
-        let shard_pkeys = vec![ShardPKey {
-            index_uid: Some(source_uid.index_uid.clone()),
-            source_id: source_uid.source_id.clone(),
-            shard_id: Some(shard_id.clone()),
-        }];
-        let close_shards_request = CloseShardsRequest { shard_pkeys };
+        let mut num_closed_shards = 0;
 
-        if let Err(error) = progress
-            .protect_future(ingester.client.close_shards(close_shards_request))
-            .await
-        {
-            warn!("failed to scale down number of shards: {error}");
-            model.release_scaling_permits(&source_uid, ScalingMode::Down);
-            return Ok(());
+        for _ in 0..num_shards_to_close {
+            let Some((ingester_id, shard_id)) = find_scale_down_candidate(&source_uid, model)
+            else {
+                break;
+            };
+            info!("scaling down shard {shard_id} from {ingester_id}");
+            let Some(ingester) = self.ingester_pool.get(&ingester_id) else {
+                break;
+            };
+            let shard_pkeys = vec![ShardPKey {
+                index_uid: Some(source_uid.index_uid.clone()),
+                source_id: source_uid.source_id.clone(),
+                shard_id: Some(shard_id.clone()),
+            }];
+            let close_shards_request = CloseShardsRequest { shard_pkeys };
+
+            if let Err(error) = progress
+                .protect_future(ingester.client.close_shards(close_shards_request))
+                .await
+            {
+                warn!("failed to scale down number of shards: {error}");
+                break;
+            }
+            model.close_shards(&source_uid, &[shard_id]);
+            num_closed_shards += 1;
         }
-        model.close_shards(&source_uid, &[shard_id]);
+        if num_closed_shards == 0 {
+            model.release_scaling_permits(&source_uid, ScalingMode::Down);
+        }
         Ok(())
     }
 
