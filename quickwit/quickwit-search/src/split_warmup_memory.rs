@@ -18,8 +18,35 @@ use std::sync::{Mutex, MutexGuard};
 
 use quickwit_directories::{MemoryReserver, OutOfMemoryError};
 
-use crate::metrics::LEAF_SEARCH_SPLIT_WARMUP_OUT_OF_MEMORY_TOTAL;
+use crate::metrics::{
+    LEAF_SEARCH_SPLIT_WARMUP_OUT_OF_MEMORY_GLOBAL_BUDGET_TOTAL,
+    LEAF_SEARCH_SPLIT_WARMUP_OUT_OF_MEMORY_SPLIT_BUDGET_TOTAL,
+};
 use crate::warmup_memory::WarmupMemoryGuard;
+
+/// Counts the split search as out of memory and logs a warning. Called once per split search.
+fn record_out_of_memory(
+    out_of_memory_error: OutOfMemoryError,
+    allocated_num_bytes: u64,
+    needed_num_bytes: u64,
+    split_max_num_bytes: u64,
+) {
+    match out_of_memory_error {
+        OutOfMemoryError::SplitBudgetExceeded => {
+            LEAF_SEARCH_SPLIT_WARMUP_OUT_OF_MEMORY_SPLIT_BUDGET_TOTAL.inc();
+        }
+        OutOfMemoryError::GlobalBudgetExceeded => {
+            LEAF_SEARCH_SPLIT_WARMUP_OUT_OF_MEMORY_GLOBAL_BUDGET_TOTAL.inc();
+        }
+    }
+    quickwit_common::rate_limited_warn!(
+        limit_per_min = 10,
+        allocated_num_bytes,
+        needed_num_bytes,
+        split_max_num_bytes,
+        "split search ran out of warmup memory: {out_of_memory_error}"
+    );
+}
 
 /// Growth factor of a split's memory reservation, as `GROWTH_NUMERATOR / GROWTH_DENOMINATOR`.
 ///
@@ -50,7 +77,7 @@ struct SplitWarmupMemoryState {
     /// The initial reservation is expected to be lower or equal: the permit size is clamped to it.
     max_num_bytes: u64,
     /// Set the first time the reservation fails to grow.
-    /// The point is to avoid double counting in LEAF_SEARCH_SPLIT_WARMUP_OUT_OF_MEMORY_TOTAL.
+    /// The point is to count each split search only once in the out of memory metric.
     out_of_memory: bool,
 }
 
@@ -128,11 +155,19 @@ impl SplitWarmupMemoryState {
             return Ok(());
         }
         let grow_res = self.try_grow_reservation(allocated_num_bytes, needed_num_bytes);
-        if grow_res.is_err() && !self.out_of_memory {
+        let Err(out_of_memory_error) = grow_res else {
+            return Ok(());
+        };
+        if !self.out_of_memory {
             self.out_of_memory = true;
-            LEAF_SEARCH_SPLIT_WARMUP_OUT_OF_MEMORY_TOTAL.inc();
+            record_out_of_memory(
+                out_of_memory_error,
+                allocated_num_bytes,
+                needed_num_bytes,
+                self.max_num_bytes,
+            );
         }
-        grow_res
+        Err(out_of_memory_error)
     }
 
     /// Fails right away if `needed_num_bytes` is above the per-split limit.
@@ -146,7 +181,7 @@ impl SplitWarmupMemoryState {
         needed_num_bytes: u64,
     ) -> Result<(), OutOfMemoryError> {
         if needed_num_bytes > self.max_num_bytes {
-            return Err(OutOfMemoryError);
+            return Err(OutOfMemoryError::SplitBudgetExceeded);
         }
         let exponential_num_bytes = allocated_num_bytes
             .saturating_mul(GROWTH_NUMERATOR)
@@ -227,7 +262,7 @@ mod tests {
         // 91MB + 10MB for the other reservation would go over the limit.
         assert_eq!(
             split_memory.try_reserve_memory(91 * MB).err(),
-            Some(OutOfMemoryError)
+            Some(OutOfMemoryError::GlobalBudgetExceeded)
         );
         assert!(split_memory.has_run_out_of_memory());
         // A failed reservation changes neither the reservation nor the memory in use.
@@ -244,7 +279,7 @@ mod tests {
         // The global warmup memory has room left, but the per-split limit is 20MB.
         assert_eq!(
             split_memory.try_reserve_memory(21 * MB).err(),
-            Some(OutOfMemoryError)
+            Some(OutOfMemoryError::SplitBudgetExceeded)
         );
         assert!(split_memory.has_run_out_of_memory());
         // Neither the reservation nor the global memory changed.
