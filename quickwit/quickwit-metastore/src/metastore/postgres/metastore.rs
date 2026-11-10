@@ -50,8 +50,8 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::{
     IndexId, IndexUid, Position, PublishToken, ShardId, SourceId, queue_id,
 };
-use sea_query::{Alias, Asterisk, Expr, Func, PostgresQueryBuilder, Query, UnionType};
-use sea_query_binder::SqlxBinder;
+use sea_query::{Alias, Asterisk, Expr, ExprTrait, Func, PostgresQueryBuilder, Query, UnionType};
+use sea_query_sqlx::SqlxBinder;
 use sqlx::{Acquire, Executor, Postgres, Transaction};
 use time::OffsetDateTime;
 use tracing::{debug, info, instrument, warn};

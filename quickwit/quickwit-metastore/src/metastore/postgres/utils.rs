@@ -20,7 +20,7 @@ use std::time::Duration;
 use quickwit_common::uri::Uri;
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
 use quickwit_proto::types::SplitId;
-use sea_query::{ArrayType, Expr, Func, Order, SelectStatement, Value, any};
+use sea_query::{ArrayType, Expr, ExprTrait, Func, Order, SelectStatement, Value, any};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{ConnectOptions, Postgres};
 use tracing::error;
@@ -207,14 +207,9 @@ pub(super) fn append_query_filters_and_order_by(sql: &mut SelectStatement, query
 
     if let Some((index_uid, split_id)) = &query.after_split {
         sql.cond_where(
-            Expr::tuple([
-                Expr::col(Splits::IndexUid).into(),
-                Expr::col(Splits::SplitId).into(),
-            ])
-            .gt(Expr::tuple([
-                Expr::value(index_uid),
-                Expr::value(split_id.as_str()),
-            ])),
+            Expr::tuple([Expr::col(Splits::IndexUid), Expr::col(Splits::SplitId)]).gt(Expr::tuple(
+                [Expr::value(index_uid), Expr::value(split_id.as_str())],
+            )),
         );
     }
 
@@ -272,7 +267,7 @@ fn split_ids_to_array(split_ids: impl IntoIterator<Item = SplitId>) -> Value {
     split_ids.sort_unstable();
     let split_ids: Vec<Value> = split_ids
         .into_iter()
-        .map(|split_id| Value::String(Some(Box::new(split_id))))
+        .map(|split_id| Value::String(Some(split_id)))
         .collect();
     Value::Array(ArrayType::String, Some(Box::new(split_ids)))
 }
