@@ -37,6 +37,8 @@ use crate::doc_mapper::field_mapping_entry::{
 use crate::doc_mapper::{FieldMappingType, QuickwitJsonOptions};
 use crate::{Cardinality, DocParsingError, FieldMappingEntry, ModeType};
 
+mod borrowed_doc;
+
 #[derive(Clone, Debug)]
 pub enum LeafType {
     Bool(QuickwitBoolOptions),
