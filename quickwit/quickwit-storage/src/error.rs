@@ -81,6 +81,12 @@ impl From<StorageError> for io::Error {
     fn from(storage_err: StorageError) -> Self {
         let io_error_kind = match storage_err.kind() {
             StorageErrorKind::NotFound => io::ErrorKind::NotFound,
+            // Streaming readers cross the storage boundary before reaching a directory.
+            StorageErrorKind::Io => storage_err
+                .source
+                .downcast_ref::<io::Error>()
+                .map(io::Error::kind)
+                .unwrap_or(io::ErrorKind::Other),
             _ => io::ErrorKind::Other,
         };
         // TODO: This is swallowing the context of the source error.

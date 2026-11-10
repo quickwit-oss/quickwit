@@ -95,6 +95,40 @@ impl FileHandle for CachingFileHandle {
         self.cache.put_slice(byte_range, read_bytes.clone());
         Ok(read_bytes)
     }
+
+    async fn read_bytes_batch_async(
+        &self,
+        byte_ranges: Vec<Range<usize>>,
+    ) -> io::Result<Vec<OwnedBytes>> {
+        let mut results = vec![OwnedBytes::empty(); byte_ranges.len()];
+        let mut misses = Vec::new();
+        for (index, byte_range) in byte_ranges.into_iter().enumerate() {
+            if let Some(bytes) = self.cache.get_slice(byte_range.clone()) {
+                results[index] = bytes;
+            } else {
+                misses.push((index, byte_range));
+            }
+        }
+        if misses.is_empty() {
+            return Ok(results);
+        }
+        let ranges = misses.iter().map(|(_, range)| range.clone()).collect();
+        let payloads = self
+            .underlying_filehandle
+            .read_bytes_batch_async(ranges)
+            .await?;
+        if payloads.len() != misses.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "batch read returned an unexpected number of buffers",
+            ));
+        }
+        for ((index, byte_range), bytes) in misses.into_iter().zip(payloads) {
+            self.cache.put_slice(byte_range, bytes.clone());
+            results[index] = bytes;
+        }
+        Ok(results)
+    }
 }
 
 impl HasLen for CachingFileHandle {

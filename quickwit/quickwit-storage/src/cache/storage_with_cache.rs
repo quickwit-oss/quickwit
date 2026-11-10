@@ -18,6 +18,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use futures::{StreamExt, stream};
 use quickwit_common::uri::Uri;
 use tokio::io::AsyncRead;
 
@@ -65,6 +66,48 @@ impl Storage for StorageWithCache {
                 .await;
             Ok(bytes)
         }
+    }
+
+    async fn get_slices(
+        &self,
+        path: &Path,
+        ranges: Vec<Range<usize>>,
+    ) -> StorageResult<Vec<OwnedBytes>> {
+        crate::storage::validate_byte_ranges(&ranges)?;
+        let mut buffers = vec![OwnedBytes::empty(); ranges.len()];
+        let mut misses = Vec::new();
+        let mut buffer_indices = Vec::new();
+        // Limit cache lookups, while retaining all misses for one storage batch.
+        let mut lookups = stream::iter(
+            ranges
+                .iter()
+                .cloned()
+                .enumerate()
+                .filter(|(_, range)| !range.is_empty()),
+        )
+        .map(|(index, range)| async move { (index, self.cache.get(path, range).await) })
+        .buffered(5);
+        while let Some((index, bytes)) = lookups.next().await {
+            if let Some(bytes) = bytes {
+                buffers[index] = bytes;
+            } else {
+                misses.push(ranges[index].clone());
+                buffer_indices.push(index);
+            }
+        }
+        if misses.is_empty() {
+            return Ok(buffers);
+        }
+        // Forward all misses together, and publish only after the whole batch succeeds.
+        let downloaded = self.storage.get_slices(path, misses).await?;
+        assert_eq!(downloaded.len(), buffer_indices.len());
+        for (index, bytes) in buffer_indices.into_iter().zip(downloaded) {
+            self.cache
+                .put(path.to_owned(), ranges[index].clone(), bytes.clone())
+                .await;
+            buffers[index] = bytes;
+        }
+        Ok(buffers)
     }
 
     async fn get_slice_stream(
@@ -121,6 +164,64 @@ mod tests {
 
     use super::*;
     use crate::{MockStorage, MockStorageCache, OwnedBytes};
+
+    #[tokio::test(start_paused = true)]
+    async fn test_cache_lookups_overlap_and_forward_all_misses_together() {
+        use std::time::Duration;
+
+        struct DelayedCache;
+
+        #[async_trait]
+        impl StorageCache for DelayedCache {
+            async fn get(&self, _: &Path, range: Range<usize>) -> Option<OwnedBytes> {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                range
+                    .start
+                    .is_multiple_of(2)
+                    .then(|| OwnedBytes::new(vec![range.start as u8]))
+            }
+
+            async fn put(&self, _: PathBuf, range: Range<usize>, bytes: OwnedBytes) {
+                assert_eq!(range.start % 2, 1);
+                assert_eq!(bytes.as_slice(), &[range.start as u8]);
+            }
+
+            async fn get_all(&self, _: &Path) -> Option<OwnedBytes> {
+                unreachable!()
+            }
+
+            async fn put_all(&self, _: PathBuf, _: OwnedBytes) {
+                unreachable!()
+            }
+        }
+
+        let mut backend = MockStorage::default();
+        backend.expect_get_slices().times(1).returning(|_, ranges| {
+            assert_eq!(ranges, vec![1..2, 3..4, 5..6, 7..8, 9..10]);
+            Ok(ranges
+                .into_iter()
+                .map(|range| OwnedBytes::new(vec![range.start as u8]))
+                .collect())
+        });
+        let storage = StorageWithCache {
+            storage: Arc::new(backend),
+            cache: Arc::new(DelayedCache),
+        };
+        let start = tokio::time::Instant::now();
+        let buffers = storage
+            .get_slices(
+                Path::new("file"),
+                (0..10).map(|index| index..index + 1).collect(),
+            )
+            .await
+            .unwrap();
+        // Ten delayed lookups run in two waves of five, then all misses are forwarded together.
+        assert_eq!(start.elapsed(), Duration::from_millis(20));
+        assert_eq!(buffers.len(), 10);
+        for (index, buffer) in buffers.iter().enumerate() {
+            assert_eq!(buffer.as_slice(), &[index as u8]);
+        }
+    }
 
     #[tokio::test]
     async fn put_in_cache_test() {
