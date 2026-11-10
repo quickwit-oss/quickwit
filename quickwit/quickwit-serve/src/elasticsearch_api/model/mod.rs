@@ -32,7 +32,7 @@ pub use cat_indices::{
     CatIndexQueryParams, ElasticsearchCatIndexResponse, ElasticsearchResolveIndexEntryResponse,
     ElasticsearchResolveIndexResponse,
 };
-pub use error::{ElasticException, ElasticsearchError};
+pub use error::{ElasticException, ElasticsearchError, ElasticsearchErrorCause};
 pub use field_capability::{
     FieldCapabilityQueryParams, FieldCapabilityRequestBody, FieldCapabilityResponse,
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,

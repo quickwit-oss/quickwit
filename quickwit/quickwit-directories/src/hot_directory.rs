@@ -408,7 +408,7 @@ impl FileHandle for FileSliceWithCache {
 
 impl fmt::Debug for FileSliceWithCache {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "FileSliceWithCache({:?})", &self.underlying)
+        write!(f, "FileSliceWithCache({:?})", self.underlying)
     }
 }
 

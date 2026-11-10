@@ -100,7 +100,7 @@ pub fn should_log<F: Fn() -> Instant>(
     let mut update_time = false;
 
     let update_res =
-        count_atomic.fetch_update(Ordering::Release, Ordering::Acquire, |current_count| {
+        count_atomic.try_update(Ordering::Release, Ordering::Acquire, |current_count| {
             let mut current_count: LogSiteMetadata = current_count.into();
             if generation == current_count.generation {
                 // we can update generation&time, so we can definitely log

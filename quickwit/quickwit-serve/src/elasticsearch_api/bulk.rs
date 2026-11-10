@@ -555,7 +555,7 @@ mod tests {
         let es_error: ElasticsearchError = serde_json::from_slice(resp.body()).unwrap();
         assert_eq!(es_error.status, StatusCode::BAD_REQUEST);
         assert_eq!(
-            es_error.error.reason.unwrap(),
+            es_error.error.reason,
             "Malformed action/metadata line [#0]. Details: `expected value at line 1 column 57`"
         );
     }

@@ -248,8 +248,6 @@ impl FetchStreamTask {
 
 #[derive(Debug)]
 pub struct FetchStreamError {
-    pub index_uid: IndexUid,
-    pub source_id: SourceId,
     pub shard_id: ShardId,
     pub ingest_error: IngestV2Error,
 }
@@ -430,8 +428,6 @@ async fn fetch_stream_once(
             "ingester `{ingester_id}` is unavailable: closing fetch stream"
         ));
         let fetch_stream_error = FetchStreamError {
-            index_uid,
-            source_id,
             shard_id,
             ingest_error,
         };
@@ -473,8 +469,6 @@ async fn fetch_stream_once(
                 );
             }
             let fetch_stream_error = FetchStreamError {
-                index_uid,
-                source_id,
                 shard_id,
                 ingest_error,
             };
@@ -532,8 +526,6 @@ async fn fetch_stream_once(
                     "failed to fetch records from ingester `{ingester_id}`: closing fetch stream"
                 );
                 let fetch_stream_error = FetchStreamError {
-                    index_uid,
-                    source_id,
                     shard_id,
                     ingest_error,
                 };

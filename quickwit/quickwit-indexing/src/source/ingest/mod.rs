@@ -1630,8 +1630,6 @@ mod tests {
 
         fetch_message_tx
             .send(Err(FetchStreamError {
-                index_uid: IndexUid::for_test("test-index", 0),
-                source_id: "test-source".into(),
                 shard_id: ShardId::from(1),
                 ingest_error: IngestV2Error::Internal("test-error".to_string()),
             }))

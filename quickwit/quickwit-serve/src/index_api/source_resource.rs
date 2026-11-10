@@ -51,7 +51,6 @@ pub fn create_source_handler(
         .boxed()
 }
 
-#[allow(clippy::result_large_err)]
 fn check_source_type(source_params: &SourceParams) -> Result<(), IndexServiceError> {
     // Note: This check is performed here instead of the source config serde
     // because many tests use the file source, and can't store that config in

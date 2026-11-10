@@ -63,7 +63,7 @@ impl UserInputQuery {
             .map(|search_fields| &search_fields[..])
             .unwrap_or(default_search_fields);
         let user_input_ast = tantivy::query_grammar::parse_query(&self.user_text)
-            .map_err(|_| anyhow::anyhow!("failed to parse query: `{}`", &self.user_text))?;
+            .map_err(|_| anyhow::anyhow!("failed to parse query: `{}`", self.user_text))?;
         let default_occur = match self.default_operator {
             BooleanOperand::And => Occur::Must,
             BooleanOperand::Or => Occur::Should,
