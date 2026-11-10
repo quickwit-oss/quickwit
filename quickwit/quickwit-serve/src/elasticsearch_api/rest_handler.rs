@@ -471,7 +471,6 @@ pub fn es_compat_delete_scroll_handler()
         .boxed()
 }
 
-#[allow(clippy::result_large_err)]
 fn build_request_for_es_api(
     index_id_patterns: Vec<String>,
     search_params: SearchQueryParams,
@@ -592,7 +591,6 @@ fn is_doc_field(field: &quickwit_proto::search::SortField) -> bool {
     field.field_name == "_shard_doc" || field.field_name == "_doc"
 }
 
-#[allow(clippy::result_large_err)]
 fn partial_hit_from_search_after_param(
     search_after: Vec<serde_json::Value>,
     sort_order: &[quickwit_proto::search::SortField],
@@ -1168,7 +1166,6 @@ fn convert_to_es_stats_response(
     ElasticsearchStatsResponse { _all, indices }
 }
 
-#[allow(clippy::result_large_err)]
 fn convert_to_es_search_response(
     resp: SearchResponse,
     append_shard_doc: bool,
@@ -1247,7 +1244,7 @@ mod tests {
         let error = partial_hit_from_search_after_param(search_after, sort_order).unwrap_err();
         assert_eq!(error.status, StatusCode::BAD_REQUEST);
         assert_eq!(
-            error.error.reason.unwrap(),
+            error.error.reason,
             "sort and search_after are of different length"
         );
     }
@@ -1263,7 +1260,7 @@ mod tests {
         let error = partial_hit_from_search_after_param(search_after, sort_order).unwrap_err();
         assert_eq!(error.status, StatusCode::BAD_REQUEST);
         assert_eq!(
-            error.error.reason.unwrap(),
+            error.error.reason,
             "invalid search_after field value, expect bool, number or string"
         );
     }
@@ -1279,7 +1276,7 @@ mod tests {
         let error = partial_hit_from_search_after_param(search_after, sort_order).unwrap_err();
         assert_eq!(error.status, StatusCode::BAD_REQUEST);
         assert_eq!(
-            error.error.reason.unwrap(),
+            error.error.reason,
             "invalid search_after doc id, must be of form `{split_id}:{segment_id: u32}:{doc_id: \
              u32}`"
         );

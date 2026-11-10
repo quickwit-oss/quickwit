@@ -82,7 +82,7 @@ impl GlobalWarmupMemory {
         let previous_allocated = self
             .inner
             .allocated
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |allocated| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |allocated| {
                 let new_allocated = allocated.checked_add(num_bytes)?;
                 if new_allocated > limit {
                     return None;
