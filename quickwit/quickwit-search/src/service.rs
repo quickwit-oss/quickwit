@@ -29,7 +29,7 @@ use quickwit_proto::search::{
     SearchPlanResponse, SearchRequest, SearchResponse, SnippetRequest,
 };
 use quickwit_storage::{
-    MemorySizedCache, QuickwitCache, SearchSplitCache, StorageCache, StorageResolver,
+    SearchSplitCache, StorageResolver, attach_storage_cache_access_trace, open_storage_cache,
 };
 use tantivy::aggregation::AggregationLimitsGuard;
 
@@ -406,18 +406,16 @@ pub(crate) async fn scroll(
 pub struct SearcherContext {
     /// Searcher config.
     pub searcher_config: SearcherConfig,
-    /// Fast fields cache.
-    pub fast_fields_cache: Arc<dyn StorageCache>,
     /// Counting semaphore to limit concurrent leaf search split requests.
     pub search_permit_provider: SearchPermitProvider,
-    /// Split footer cache.
-    pub split_footer_cache: MemorySizedCache<String>,
     /// Per-split and per-query cache.
     pub leaf_search_cache: LeafSearchCache,
     /// Per-split and per-predicate cache.
     pub predicate_cache: Arc<PredicateCacheImpl>,
     /// Search split cache. `None` if no split cache is configured.
     pub split_cache_opt: Option<Arc<SearchSplitCache>>,
+    /// Cache for split byte ranges, with optional disk storage.
+    pub storage_cache_opt: Option<feuer::Cache>,
     /// List fields cache. Caches the raw fields-metadata blob for a given split.
     pub list_fields_cache: ListFieldsCache,
     /// The aggregation limits are passed to limit the memory usage.
@@ -461,16 +459,19 @@ impl SearcherContext {
         split_cache_opt: Option<Arc<SearchSplitCache>>,
         lambda_invoker: Option<impl LambdaLeafSearchInvoker + 'static>,
     ) -> Self {
-        let global_split_footer_cache = MemorySizedCache::from_config(
-            &searcher_config.split_footer_cache,
-            &quickwit_storage::metrics::SPLIT_FOOTER_CACHE,
-        );
         let leaf_search_split_semaphore = SearchPermitProvider::new(
             searcher_config.max_num_concurrent_split_searches,
             searcher_config.warmup_memory_budget,
         );
-        let storage_long_term_cache =
-            Arc::new(QuickwitCache::new(&searcher_config.fast_field_cache));
+        let storage_cache_opt = searcher_config
+            .resolved_storage_cache()
+            .expect("invalid storage_cache config")
+            .filter(|config| config.disk_capacity.as_u64() == 0)
+            .map(|config| {
+                // Standalone and Lambda searchers do not run storage-cache initialization.
+                open_storage_cache(&config, &quickwit_storage::FeuerIoQueues::default())
+                    .expect("failed to initialize memory-only storage_cache")
+            });
         let leaf_search_cache = LeafSearchCache::new(&searcher_config.partial_request_cache);
         let predicate_cache = PredicateCacheImpl::new(&searcher_config.predicate_cache);
         let list_fields_cache = ListFieldsCache::new(&searcher_config.partial_request_cache);
@@ -484,20 +485,154 @@ impl SearcherContext {
 
         Self {
             searcher_config,
-            fast_fields_cache: storage_long_term_cache,
             predicate_cache: predicate_cache.into(),
             search_permit_provider: leaf_search_split_semaphore,
-            split_footer_cache: global_split_footer_cache,
             leaf_search_cache,
             list_fields_cache,
             split_cache_opt,
+            storage_cache_opt,
             aggregation_limit,
             lambda_invoker,
         }
     }
 
+    /// Open separate storage, partial-response, and predicate caches with shared disk I/O
+    /// queues. Must complete before publishing this context to search tasks. Disk initialization
+    /// failures fall back to memory only. Configuration and access-trace errors remain fatal.
+    pub async fn initialize_storage_caches(
+        &mut self,
+        resolver: &StorageResolver,
+    ) -> anyhow::Result<()> {
+        let config = &self.searcher_config;
+        let directory = config.storage_cache_directory.as_deref();
+        let storage_cache_config = config.resolved_storage_cache()?;
+        let partial_request_cache_config = config.partial_request_cache.storage_cache(directory)?;
+        let predicate_cache_config = config.predicate_cache.storage_cache(directory)?;
+        // Keep synchronous disk initialization off the async executor.
+        let (storage_cache, partial_request_cache, predicate_cache) =
+            tokio::task::spawn_blocking(move || {
+                let queues = quickwit_storage::FeuerIoQueues::default();
+                let storage_cache = match storage_cache_config {
+                    Some(config) => Some((open_storage_cache(&config, &queues)?, config)),
+                    None => None,
+                };
+                let partial_request_cache = match partial_request_cache_config {
+                    Some(config) => Some(quickwit_storage::FeuerCache::open(
+                        &config,
+                        &queues,
+                        "partial_response_cache",
+                        "partial_request",
+                    )?),
+                    None => None,
+                };
+                let predicate_cache = match predicate_cache_config {
+                    Some(config) => Some(quickwit_storage::FeuerCache::open(
+                        &config,
+                        &queues,
+                        "predicate_cache",
+                        "predicate",
+                    )?),
+                    None => None,
+                };
+                anyhow::Ok((storage_cache, partial_request_cache, predicate_cache))
+            })
+            .await??;
+        if let Some((cache, config)) = storage_cache {
+            self.storage_cache_opt =
+                Some(attach_storage_cache_access_trace(cache, &config, resolver).await?);
+        }
+        if let Some(cache) = partial_request_cache {
+            self.leaf_search_cache = LeafSearchCache::with_feuer_cache(cache);
+        }
+        if let Some(cache) = predicate_cache {
+            self.predicate_cache = Arc::new(PredicateCacheImpl::with_feuer_cache(cache));
+        }
+        Ok(())
+    }
+
     /// Returns the shared instance to track the aggregation memory usage.
     pub fn get_aggregation_limits(&self) -> AggregationLimitsGuard {
         self.aggregation_limit.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use quickwit_config::SearcherConfig;
+    use quickwit_storage::StorageResolver;
+
+    use super::SearcherContext;
+
+    #[tokio::test]
+    async fn test_memory_caches_need_no_directory() {
+        let explicit: SearcherConfig = serde_json::from_value(serde_json::json!({
+            "storage_cache": {"disk_capacity": 0, "memory_capacity": "1MiB"},
+            "partial_request_cache": {"disk_capacity": 0, "memory_capacity": "1MiB"},
+            "predicate_cache": {"disk_capacity": 0, "memory_capacity": "1MiB"},
+        }))
+        .unwrap();
+        let disabled: SearcherConfig = serde_json::from_value(serde_json::json!({
+            "storage_cache": {"disk_capacity": 0, "memory_capacity": 0},
+            "partial_request_cache": {"disk_capacity": 0, "memory_capacity": 0},
+            "predicate_cache": {"disk_capacity": 0, "memory_capacity": 0},
+        }))
+        .unwrap();
+        for (config, enabled) in [
+            (SearcherConfig::default(), true),
+            (explicit, true),
+            (disabled, false),
+        ] {
+            let mut context = SearcherContext::new_without_invoker(config, None);
+            assert_eq!(context.storage_cache_opt.is_some(), enabled);
+            context
+                .initialize_storage_caches(&StorageResolver::unconfigured())
+                .await
+                .unwrap();
+            assert_eq!(context.storage_cache_opt.is_some(), enabled);
+            assert_eq!(context.predicate_cache.is_enabled(), enabled);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_disk_cache_failures_allow_searcher_startup() {
+        let directory = tempfile::tempdir().unwrap();
+        let blocked = directory.path().join("file");
+        std::fs::write(&blocked, b"not a directory").unwrap();
+        let config: SearcherConfig = serde_json::from_value(serde_json::json!({
+            "storage_cache_directory": blocked,
+            "storage_cache": {"disk_capacity": "8MiB", "memory_capacity": "1MiB"},
+            "partial_request_cache": {"disk_capacity": "8MiB", "memory_capacity": "2MiB"},
+            "predicate_cache": {"disk_capacity": "8MiB", "memory_capacity": "3MiB"},
+        }))
+        .unwrap();
+        let mut context = SearcherContext::new_without_invoker(config, None);
+        context
+            .initialize_storage_caches(&StorageResolver::unconfigured())
+            .await
+            .unwrap();
+        let storage_cache = context.storage_cache_opt.as_ref().unwrap();
+        assert_eq!(storage_cache.config().disk_capacity(), 0);
+        assert_eq!(storage_cache.config().memory_capacity(), 1024 * 1024);
+        assert!(context.predicate_cache.is_enabled());
+    }
+
+    #[tokio::test]
+    async fn test_disk_predicate_cache_requires_a_directory() {
+        let mut config = SearcherConfig::default();
+        config.predicate_cache = serde_json::from_value(serde_json::json!({
+            "memory_capacity": "1MiB",
+            "disk_capacity": "8MiB",
+        }))
+        .unwrap();
+        let mut context = SearcherContext::new_without_invoker(config, None);
+        let error = context
+            .initialize_storage_caches(&StorageResolver::unconfigured())
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("storage_cache_directory must be set")
+        );
     }
 }

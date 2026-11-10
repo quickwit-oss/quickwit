@@ -470,6 +470,55 @@ impl Storage for AzureBlobStorage {
             })
     }
 
+    #[instrument(name = "storage.azure.get_slice_into", level = "debug", skip(self, range, buffer), fields(range.start = range.start, range.end = range.end))]
+    async fn get_slice_into(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        buffer: &mut [u8],
+    ) -> StorageResult<()> {
+        if buffer.is_empty() {
+            return Ok(());
+        }
+        let num_bytes = buffer.len();
+        let name = self.blob_name(path);
+        // The retry callback is Fn. Each attempt exclusively borrows the same output buffer.
+        let buffer = tokio::sync::Mutex::new(buffer);
+        retry(&self.retry_params, || async {
+            let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
+            let _in_flight_guards = object_storage_get_slice_in_flight_guards(num_bytes);
+            let mut buffer = buffer.lock().await;
+            let mut remaining = &mut **buffer;
+            // Keep Azure errors intact so HTTP failures retain their retry classification.
+            let mut chunks = self
+                .container_client
+                .blob_client(&name)
+                .get()
+                .range(range.clone())
+                .into_stream()
+                .map_ok(|page| page.data)
+                .try_flatten();
+            while let Some(chunk) = chunks.next().await {
+                let chunk = chunk?;
+                if chunk.len() > remaining.len() {
+                    return Err(AzureError::message(
+                        ErrorKind::Other,
+                        "range download returned too many bytes",
+                    )
+                    .into());
+                }
+                io::Write::write_all(&mut remaining, &chunk)?;
+            }
+            if !remaining.is_empty() {
+                return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
+            }
+            Ok::<_, AzureErrorWrapper>(())
+        })
+        .await?;
+        crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes as u64);
+        Ok(())
+    }
+
     #[instrument(name = "storage.azure.get_slice_stream", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice_stream(
         &self,
@@ -485,17 +534,19 @@ impl Storage for AzureBlobStorage {
                 .get()
                 .range(range)
                 .into_stream();
-            let mut bytes_stream = page_stream
-                .map(|page_res| page_res.map(|page| page.data).map_err(FutureError::other))
-                .try_flatten()
-                .map(|bytes_res| bytes_res.map_err(FutureError::other));
+            let mut bytes_stream = page_stream.map_ok(|page| page.data).try_flatten();
             // Peek into the stream so that any early error can be retried
             let first_chunk = bytes_stream.next().await;
             let reader: Box<dyn AsyncRead + Send + Unpin> = if let Some(res) = first_chunk {
                 let first_chunk = res.map_err(AzureErrorWrapper::from)?;
                 let reconstructed_stream =
                     Box::pin(futures::stream::once(async { Ok(first_chunk) }).chain(bytes_stream));
-                Box::new(StreamReader::new(reconstructed_stream))
+                Box::new(StreamReader::new(
+                    reconstructed_stream
+                        .map_err(AzureErrorWrapper::from)
+                        .map_err(StorageError::from)
+                        .map_err(io::Error::from),
+                ))
             } else {
                 Box::new(tokio::io::empty())
             };
@@ -669,7 +720,9 @@ impl From<AzureError> for AzureErrorWrapper {
 impl From<io::Error> for AzureErrorWrapper {
     fn from(err: io::Error) -> Self {
         AzureErrorWrapper {
-            inner: AzureError::new(ErrorKind::Io, err),
+            inner: err
+                .downcast::<AzureError>()
+                .unwrap_or_else(|err| AzureError::new(ErrorKind::Io, err)),
         }
     }
 }
@@ -693,6 +746,137 @@ mod tests {
     use quickwit_common::uri::Uri;
 
     use crate::object_storage::azure_blob_storage::parse_azure_uri;
+
+    #[tokio::test]
+    async fn test_get_slice_into_retries_body_and_preserves_errors() {
+        use std::collections::VecDeque;
+        use std::sync::Mutex;
+
+        use azure_core::StatusCode::{NotFound, PartialContent};
+        use azure_core::headers::Headers;
+        use azure_core::{
+            ClientOptions, HttpClient, Request, Response, RetryOptions, TransportOptions,
+        };
+
+        use super::*;
+
+        #[derive(Debug)]
+        struct Client(Mutex<VecDeque<Response>>);
+        #[async_trait]
+        impl HttpClient for Client {
+            async fn execute_request(&self, request: &Request) -> azure_core::Result<Response> {
+                assert_eq!(
+                    request
+                        .headers()
+                        .get_str(&azure_core::headers::HeaderName::from_static("x-ms-range"))
+                        .unwrap(),
+                    "bytes=2-6"
+                );
+                Ok(self
+                    .0
+                    .lock()
+                    .unwrap()
+                    .pop_front()
+                    .expect("unexpected retry"))
+            }
+        }
+        fn response(status: StatusCode, chunks: Vec<azure_core::Result<Bytes>>) -> Response {
+            let mut headers = Headers::new();
+            for (name, value) in [
+                ("x-ms-request-id", "1686a000-d4f7-a919-39d0-e71df1646d7a"),
+                ("date", "Wed, 01 Jan 2025 00:00:00 GMT"),
+                ("last-modified", "Wed, 01 Jan 2025 00:00:00 GMT"),
+                ("x-ms-creation-time", "Wed, 01 Jan 2025 00:00:00 GMT"),
+                ("etag", "\"test\""),
+                ("x-ms-blob-type", "BlockBlob"),
+                ("x-ms-server-encrypted", "true"),
+                ("content-length", "5"),
+                ("content-range", "bytes 2-6/7"),
+            ] {
+                headers.insert(name, value);
+            }
+            Response::new(status, headers, Box::pin(futures::stream::iter(chunks)))
+        }
+        let success = || response(PartialContent, vec![Ok("world".into())]);
+        let short = || response(PartialContent, vec![Ok("ab".into())]);
+        for (responses, error_kind) in [
+            (vec![success()], None),
+            (
+                vec![
+                    response(
+                        PartialContent,
+                        vec![
+                            Ok("xx".into()),
+                            Err(AzureError::message(ErrorKind::Io, "connection reset")),
+                        ],
+                    ),
+                    success(),
+                ],
+                None,
+            ),
+            (
+                vec![response(NotFound, vec![])],
+                Some(StorageErrorKind::NotFound),
+            ),
+            (vec![short(), short(), short()], Some(StorageErrorKind::Io)),
+            (
+                vec![response(PartialContent, vec![Ok("toolong".into())])],
+                Some(StorageErrorKind::Internal),
+            ),
+        ] {
+            let attempts = responses.len();
+            let client = Arc::new(Client(Mutex::new(responses.into())));
+            let options = ClientOptions::new(TransportOptions::new(client.clone()))
+                .retry(RetryOptions::none());
+            let storage = AzureBlobStorage {
+                container_client: ClientBuilder::new("account", StorageCredentials::anonymous())
+                    .client_options(options)
+                    .container_client("container"),
+                uri: Uri::for_test("azure://container"),
+                prefix: PathBuf::new(),
+                multipart_policy: MultiPartPolicy::default(),
+                retry_params: RetryParams::for_test(),
+            };
+            storage
+                .get_slice_into(Path::new("blob"), 2..2, &mut [])
+                .await
+                .unwrap();
+            assert_eq!(client.0.lock().unwrap().len(), attempts);
+            let mut buffer = [0; 5];
+            let result = storage
+                .get_slice_into(Path::new("blob"), 2..7, &mut buffer)
+                .await;
+            if let Some(kind) = error_kind {
+                assert_eq!(result.unwrap_err().kind(), kind);
+            } else {
+                result.unwrap();
+                assert_eq!(&buffer, b"world");
+            }
+            assert!(client.0.lock().unwrap().is_empty());
+        }
+    }
+
+    #[test]
+    fn test_error_survives_io_adapter() {
+        use super::*;
+
+        for (status, retryable, kind) in [
+            (StatusCode::NotFound, false, StorageErrorKind::NotFound),
+            (StatusCode::TooManyRequests, true, StorageErrorKind::Service),
+        ] {
+            let error = AzureError::message(
+                ErrorKind::HttpResponse {
+                    status,
+                    error_code: None,
+                },
+                "test error",
+            );
+            let error = AzureErrorWrapper::from(io::Error::other(error));
+            assert_eq!(error.is_retryable(), retryable);
+            let error = StorageError::from(io::Error::from(StorageError::from(error)));
+            assert_eq!(error.kind(), kind);
+        }
+    }
 
     #[test]
     fn test_parse_azure_uri() {

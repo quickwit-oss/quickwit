@@ -58,10 +58,19 @@ Searcher nodes:
 - Provision more RAM if you expect many concurrent aggregation requests. By
   default, each request can use up to 500MB of RAM on each node.
 - Avoid instances with less than 4GB of RAM
-<!-- 1GB fast_field_cache_capacity + 0.5GB split_footer_cache_capacity + 0.5GB/req aggregation_memory_limit -->
-- Searcher nodes don't use disk unless the [split
-  cache](../configuration/node-config.md#Searcher-split-cache-configuration) is
-  explicitly enabled
+- Budget for `storage_cache`, which defaults to 1.5GB in memory. Result-cache budgets are additional.
+- Searchers use disk when the [whole-split cache](../configuration/node-config.md#searcher-split-cache-configuration)
+  or a [cache disk tier](../configuration/node-config.md#searcher-cache-configuration)
+  is explicitly enabled. Use a local SSD on the searcher machine for effective disk caching.
+  Account for the independent memory and disk budgets of `storage_cache`,
+  `predicate_cache`, and `partial_request_cache_capacity`.
+
+Disk tiers for storage, partial-request, and predicate caches require Linux with usable
+`io_uring` and a writable directory on a filesystem supporting direct I/O (`O_DIRECT`)
+and reporting its alignment through `STATX_DIOALIGN`. Kernel settings such as
+`kernel.io_uring_disabled` and container seccomp policies must allow the io_uring
+syscalls. Memory-only caching works on every supported platform and requires neither
+a directory nor io_uring.
 
 One strength of Quickwit is that its Searchers are stateless, which makes it
 easy to scale them up and down based on the workload. Scale the number of

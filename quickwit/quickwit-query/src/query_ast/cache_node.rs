@@ -76,21 +76,6 @@ impl CacheNode {
             state: CacheState::Uninitialized,
         }
     }
-
-    pub fn fill_cache_state(&mut self, cache: &Arc<dyn PredicateCache>, split_id: &str) {
-        let Ok(query) = serde_json::to_string(&self.inner) else {
-            return;
-        };
-        if let Some((segment_id, hits)) = cache.get(split_id.to_string(), query.clone()) {
-            self.state = CacheState::CacheHit(CacheEntry { segment_id, hits });
-        } else {
-            self.state = CacheState::CacheMiss(CacheFiller {
-                cache: cache.clone(),
-                split_id: split_id.to_string(),
-                query,
-            });
-        }
-    }
 }
 
 impl BuildTantivyAst for CacheNode {
@@ -242,6 +227,32 @@ impl HitSet {
         };
         this.advance();
         this
+    }
+
+    /// Build a hit set after checking block lengths, markers, and the encoded document count.
+    /// Returns `None` for malformed encodings. Document IDs are assumed to be strictly sorted.
+    pub fn try_from_buffer(buffer: OwnedBytes) -> Option<Self> {
+        let num_docs = u32::from_ne_bytes(buffer.get(..4)?.try_into().ok()?) as usize;
+        let mut remaining = &buffer[4..];
+        for _ in 0..num_docs / BitPacker1x::BLOCK_LEN {
+            let (&num_bits, block) = remaining.split_first()?;
+            if num_bits > 32 {
+                return None;
+            }
+            remaining = block.get(BitPacker1x::compressed_block_size(num_bits)..)?;
+        }
+        let tail_len = num_docs % BitPacker1x::BLOCK_LEN;
+        if tail_len > 0 {
+            let (&marker, tail) = remaining.split_first()?;
+            if marker != INCOMPLETE_BLOCK_MARKER {
+                return None;
+            }
+            remaining = tail.get(tail_len * 4..)?;
+        }
+        if !remaining.is_empty() {
+            return None;
+        }
+        Some(Self::from_buffer(buffer))
     }
 
     /// Return a buffer representing the underlying data.
@@ -465,39 +476,73 @@ impl Weight for CacheFillerWeight {
     }
 }
 
-/// A transformer that goes through a QueryAst, and change the state of all CacheNodes
-/// to Hit/Miss based on the provided cache.
-///
-/// This must be called for any CacheNode inside a QueryAst to do anything (though not calling
-/// it isn't an error, it just means no cache will be used).
+/// Resolves cache nodes asynchronously before synchronous query construction and warmup planning.
+/// Uninitialized nodes execute their inner query without caching.
 pub struct PredicateCacheInjector {
     pub cache: Arc<dyn PredicateCache>,
     pub split_id: String,
 }
 
-impl crate::query_ast::QueryAstTransformer for PredicateCacheInjector {
-    type Err = std::convert::Infallible;
-
-    fn transform_cache_node(
-        &mut self,
-        mut cache_node: CacheNode,
-    ) -> Result<Option<QueryAst>, Self::Err> {
-        cache_node.fill_cache_state(&self.cache, &self.split_id);
-        self.transform(*cache_node.inner).map(|maybe_ast| {
-            maybe_ast.map(|inner| {
-                QueryAst::Cache(CacheNode {
-                    inner: Box::new(inner),
-                    state: cache_node.state,
-                })
-            })
-        })
+impl PredicateCacheInjector {
+    pub async fn resolve(&self, query_ast: &mut QueryAst) {
+        let mut pending = vec![query_ast];
+        let mut lookups = Vec::new();
+        while let Some(query_ast) = pending.pop() {
+            match query_ast {
+                QueryAst::Bool(bool_query) => pending.extend(
+                    bool_query
+                        .must
+                        .iter_mut()
+                        .chain(bool_query.should.iter_mut())
+                        .chain(bool_query.must_not.iter_mut())
+                        .chain(bool_query.filter.iter_mut())
+                        .rev(),
+                ),
+                QueryAst::Boost { underlying, .. } => pending.push(underlying),
+                QueryAst::Cache(cache_node) => {
+                    if let Ok(query) = serde_json::to_string(&cache_node.inner) {
+                        // Borrow only the state so nested cache nodes can be resolved concurrently.
+                        let state = &mut cache_node.state;
+                        lookups.push(async move {
+                            *state = if let Some((segment_id, hits)) =
+                                self.cache.get(self.split_id.clone(), query.clone()).await
+                            {
+                                CacheState::CacheHit(CacheEntry { segment_id, hits })
+                            } else {
+                                CacheState::CacheMiss(CacheFiller {
+                                    cache: self.cache.clone(),
+                                    split_id: self.split_id.clone(),
+                                    query,
+                                })
+                            };
+                        });
+                    }
+                    pending.push(&mut cache_node.inner);
+                }
+                QueryAst::Term(_)
+                | QueryAst::TermSet(_)
+                | QueryAst::FullText(_)
+                | QueryAst::PhrasePrefix(_)
+                | QueryAst::Range(_)
+                | QueryAst::MatchAll
+                | QueryAst::MatchNone
+                | QueryAst::UserInput(_)
+                | QueryAst::FieldPresence(_)
+                | QueryAst::Wildcard(_)
+                | QueryAst::Regex(_)
+                | QueryAst::CalcField(_) => {}
+            }
+        }
+        futures::future::join_all(lookups).await;
     }
 }
 
 // we use a trait to dodge circular dependancies with quickwit-storage
+#[async_trait::async_trait]
 pub trait PredicateCache: Send + Sync + 'static {
-    fn get(&self, split_id: String, query_ast_json: String) -> Option<(SegmentId, HitSet)>;
+    async fn get(&self, split_id: String, query_ast_json: String) -> Option<(SegmentId, HitSet)>;
 
+    // Called during synchronous query execution on a CPU thread.
     fn put(&self, split_id: String, query_ast_json: String, segment: SegmentId, results: HitSet);
 }
 
@@ -512,11 +557,18 @@ mod tests {
 
     use super::*;
     use crate::query_ast::{
-        BuildTantivyAstContext, QueryAstTransformer, QueryAstVisitor, TermQuery,
+        BoolQuery, BuildTantivyAstContext, QueryAstTransformer, QueryAstVisitor, TermQuery,
     };
 
+    #[async_trait::async_trait]
     impl PredicateCache for Mutex<HashMap<(String, String), (SegmentId, HitSet)>> {
-        fn get(&self, split_id: String, query_ast_json: String) -> Option<(SegmentId, HitSet)> {
+        async fn get(
+            &self,
+            split_id: String,
+            query_ast_json: String,
+        ) -> Option<(SegmentId, HitSet)> {
+            // Exercise preparation with a lookup that yields before returning.
+            tokio::task::yield_now().await;
             self.lock()
                 .unwrap()
                 .get(&(split_id, query_ast_json))
@@ -542,7 +594,7 @@ mod tests {
         for i in iter.clone() {
             hitset_builder.insert(i);
         }
-        let mut hitset = hitset_builder.build();
+        let mut hitset = HitSet::try_from_buffer(hitset_builder.build().into_buffer()).unwrap();
 
         for val in iter {
             assert_eq!(hitset.doc(), val);
@@ -555,7 +607,38 @@ mod tests {
     }
 
     #[test]
+    fn test_hit_set_rejects_malformed_encodings() {
+        for len in 0..4 {
+            assert!(HitSet::try_from_buffer(OwnedBytes::new(vec![0; len])).is_none());
+        }
+        for (num_docs, blocks) in [
+            // Trailing data in an empty hit set.
+            (0u32, vec![0]),
+            // Partial blocks: missing data, wrong marker, truncated ID, or extra bytes.
+            (1, vec![]),
+            (1, vec![0]),
+            (1, vec![INCOMPLETE_BLOCK_MARKER, 0, 0, 0]),
+            (1, vec![INCOMPLETE_BLOCK_MARKER, 0, 0, 0, 0, 0]),
+            (1, [vec![INCOMPLETE_BLOCK_MARKER], vec![0; 132]].concat()),
+            // Full blocks: invalid bit width, wrong marker, or truncated packed data.
+            (32, vec![33]),
+            (32, vec![INCOMPLETE_BLOCK_MARKER]),
+            (32, vec![1, 0, 0, 0]),
+            // Corruption after a valid first block.
+            (33, vec![0, INCOMPLETE_BLOCK_MARKER]),
+            (64, vec![0]),
+            (64, vec![0, 33]),
+        ] {
+            let mut buffer = num_docs.to_ne_bytes().to_vec();
+            buffer.extend(blocks);
+            assert!(HitSet::try_from_buffer(OwnedBytes::new(buffer)).is_none());
+        }
+    }
+
+    #[test]
     fn test_hit_set_roundtrip() {
+        test_hit_set_roundtrip_helper(0..64);
+        test_hit_set_roundtrip_helper((u32::MAX - 64)..u32::MAX);
         // this generate a pseurorandom strictrly increasing sequence
         let generator = std::iter::successors(Some(0u32), |x| Some(x + x.trailing_ones() + 1));
 
@@ -728,8 +811,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_cache_filler_preserves_required_terms() {
+    #[tokio::test]
+    async fn test_cache_filler_preserves_required_terms() {
         let mut schema_builder = Schema::builder();
         let body_field = schema_builder.add_text_field("body", TEXT);
         let schema = schema_builder.build();
@@ -744,13 +827,13 @@ mod tests {
         let ast: QueryAst = cache_node.into();
         let cache = Arc::new(Mutex::new(HashMap::new()));
 
-        let cache_miss_ast = PredicateCacheInjector {
+        let mut cache_miss_ast = ast.clone();
+        PredicateCacheInjector {
             cache: cache.clone(),
             split_id: "split".to_string(),
         }
-        .transform(ast.clone())
-        .unwrap()
-        .unwrap();
+        .resolve(&mut cache_miss_ast)
+        .await;
         let (_query, required_terms) = cache_miss_ast
             .build_tantivy_query_and_required_terms(&context)
             .unwrap();
@@ -765,21 +848,21 @@ mod tests {
             SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap(),
             HitSet::empty(),
         );
-        let cache_hit_ast = PredicateCacheInjector {
+        let mut cache_hit_ast = ast;
+        PredicateCacheInjector {
             cache,
             split_id: "split".to_string(),
         }
-        .transform(ast)
-        .unwrap()
-        .unwrap();
+        .resolve(&mut cache_hit_ast)
+        .await;
         let (_query, required_terms) = cache_hit_ast
             .build_tantivy_query_and_required_terms(&context)
             .unwrap();
         assert!(required_terms.is_empty());
     }
 
-    #[test]
-    fn test_cache_preigniter_fills_cache() {
+    #[tokio::test]
+    async fn test_cache_injector_resolves_hits_and_misses() {
         let term_query: QueryAst = TermQuery {
             field: "body".to_string(),
             value: "val".to_string(),
@@ -800,11 +883,13 @@ mod tests {
         );
 
         {
-            let mut pre_igniter = PredicateCacheInjector {
+            let mut filled = ast.clone();
+            PredicateCacheInjector {
                 cache: cache.clone(),
                 split_id: "split_1".to_string(),
-            };
-            let filled = pre_igniter.transform(ast.clone()).unwrap().unwrap();
+            }
+            .resolve(&mut filled)
+            .await;
             assert!(matches!(
                 filled,
                 QueryAst::Cache(CacheNode {
@@ -815,11 +900,13 @@ mod tests {
         }
 
         {
-            let mut pre_igniter = PredicateCacheInjector {
+            let mut filled = ast.clone();
+            PredicateCacheInjector {
                 cache: cache.clone(),
                 split_id: "split_2".to_string(),
-            };
-            let filled = pre_igniter.transform(ast.clone()).unwrap().unwrap();
+            }
+            .resolve(&mut filled)
+            .await;
             assert!(matches!(
                 filled,
                 QueryAst::Cache(CacheNode {
@@ -828,6 +915,86 @@ mod tests {
                 })
             ));
         }
+    }
+
+    #[async_trait::async_trait]
+    impl PredicateCache for tokio::sync::Barrier {
+        async fn get(&self, _: String, _: String) -> Option<(SegmentId, HitSet)> {
+            self.wait().await;
+            None
+        }
+
+        fn put(&self, _: String, _: String, _: SegmentId, _: HitSet) {
+            unreachable!("preparation only reads the cache");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cache_injector_resolves_concurrently() {
+        let cached_all = QueryAst::from(CacheNode::new(QueryAst::MatchAll));
+        let mut ast = QueryAst::from(BoolQuery {
+            must: vec![CacheNode::new(cached_all.clone()).into(), cached_all],
+            ..Default::default()
+        });
+        let injector = PredicateCacheInjector {
+            cache: Arc::new(tokio::sync::Barrier::new(3)),
+            split_id: "split".to_string(),
+        };
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            injector.resolve(&mut ast),
+        )
+        .await
+        .expect("sibling and nested lookups must run concurrently");
+    }
+
+    #[tokio::test]
+    async fn test_cache_injector_resolves_nested_nodes() {
+        let cached_all = QueryAst::from(CacheNode::new(QueryAst::MatchAll));
+        let mut ast = QueryAst::from(BoolQuery {
+            must: vec![CacheNode::new(cached_all.clone()).into()],
+            should: vec![cached_all.clone().boost(Some(2.0f32.try_into().unwrap()))],
+            must_not: vec![cached_all.clone()],
+            filter: vec![cached_all],
+            ..Default::default()
+        });
+        let query_json = serde_json::to_string(&ast).unwrap();
+        let cache = Arc::new(Mutex::new(HashMap::new()));
+        cache.put(
+            "split".to_string(),
+            serde_json::to_string(&QueryAst::MatchAll).unwrap(),
+            SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap(),
+            HitSet::empty(),
+        );
+        PredicateCacheInjector {
+            cache,
+            split_id: "split".to_string(),
+        }
+        .resolve(&mut ast)
+        .await;
+        assert_eq!(serde_json::to_string(&ast).unwrap(), query_json);
+
+        #[derive(Default)]
+        struct CacheStates {
+            hits: usize,
+            misses: usize,
+        }
+        impl<'a> QueryAstVisitor<'a> for CacheStates {
+            type Err = std::convert::Infallible;
+
+            fn visit_cache_node(&mut self, node: &'a CacheNode) -> Result<(), Self::Err> {
+                match node.state {
+                    CacheState::CacheHit(_) => self.hits += 1,
+                    CacheState::CacheMiss(_) => self.misses += 1,
+                    CacheState::Uninitialized => panic!("cache node was not resolved"),
+                }
+                self.visit(&node.inner)
+            }
+        }
+        let mut states = CacheStates::default();
+        states.visit(&ast).unwrap();
+        assert_eq!(states.hits, 4);
+        assert_eq!(states.misses, 1);
     }
 
     #[test]
@@ -881,8 +1048,8 @@ mod tests {
         assert_eq!(cache_hit_query.count(&searcher).unwrap(), 500);
     }
 
-    #[test]
-    fn test_cache_miss_returns_correct_docs_and_fill_cache() {
+    #[tokio::test]
+    async fn test_cache_miss_returns_correct_docs_and_fill_cache() {
         let mut schema_builder = Schema::builder();
         let host_field = schema_builder.add_text_field("host", TEXT);
         let schema = schema_builder.build();
@@ -925,6 +1092,7 @@ mod tests {
         assert_eq!(cache_hit_query.count(&searcher).unwrap(), 11);
         let mut cache_entry = cache
             .get("split_id".to_string(), "{some_query}".to_string())
+            .await
             .unwrap();
         assert_eq!(cache_entry.0, segment_id);
         let expected = (10 * 11 / 2)..(11 * 12 / 2);

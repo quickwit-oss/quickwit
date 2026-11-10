@@ -67,6 +67,21 @@ impl Storage for StorageWithCache {
         }
     }
 
+    async fn get_slice_into(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        buffer: &mut [u8],
+    ) -> StorageResult<()> {
+        if buffer.is_empty() {
+            return Ok(());
+        }
+        // Read through the cache. Streaming would bypass it.
+        let bytes = self.get_slice(path, range).await?;
+        buffer.copy_from_slice(&bytes);
+        Ok(())
+    }
+
     async fn get_slice_stream(
         &self,
         path: &Path,

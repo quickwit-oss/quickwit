@@ -519,6 +519,26 @@ impl Storage for BundleStorage {
             .await
     }
 
+    async fn get_slice_into(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        buffer: &mut [u8],
+    ) -> StorageResult<()> {
+        if buffer.is_empty() {
+            return Ok(());
+        }
+        let file_range = self.file_ranges.get(path).ok_or_else(|| {
+            crate::StorageErrorKind::NotFound
+                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
+        })?;
+        let new_range =
+            file_range.start as usize + range.start..file_range.start as usize + range.end;
+        self.storage
+            .get_slice_into(&self.bundle_filepath, new_range, buffer)
+            .await
+    }
+
     async fn get_slice_stream(
         &self,
         path: &Path,

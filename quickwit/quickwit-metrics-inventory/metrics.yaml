@@ -1,3 +1,119 @@
+feuer_disk_batch_bytes_total:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: counter
+  description: Payload and payload-chunk bytes in successfully written regions before publication
+feuer_disk_chunks:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: gauge
+  description: 1-MiB chunks by state. Allocated includes payloads, metadata, and unfinished writes
+feuer_disk_entries:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: gauge
+  description: Indexed disk range entries
+feuer_disk_eviction_triggering_insertions_total:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: counter
+  description: Terminal insertion attempts that evicted at least one entry under capacity pressure
+feuer_disk_io_bytes_total:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: counter
+  description: Bytes completed by Feuer data-file operations
+feuer_disk_io_duration_seconds:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: histogram
+  description: Successful Feuer data-file operation duration in seconds
+feuer_disk_io_total:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: counter
+  description: Completed Feuer data-file operations
+feuer_disk_lookup_duration_seconds:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: histogram
+  description: Completed disk-tier hit duration, including buffered copies or verified reads
+feuer_disk_lookup_total:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: counter
+  description: Completed disk-tier lookups, including buffered entries. Errors become misses
+feuer_disk_payload_bytes:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: gauge
+  description: Payload bytes in indexed disk entries, excluding metadata and padding
+feuer_disk_read_queue_wait_duration_seconds:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: histogram
+  description: Read-piece channel-capacity waits ending in admission, cancellation or queue closure
+feuer_disk_read_queue_waiters:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: gauge
+  description: Read-piece requests waiting for I/O channel capacity, excluding admitted and active requests
+feuer_disk_read_size_bytes:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: histogram
+  description: Requested bytes per successful Feuer data-file read, excluding alignment padding
+feuer_disk_recovered_chunks:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: gauge
+  description: Currently allocated chunks restored by recovery, excluding temporary scan reservations
+feuer_disk_write_entries_total:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: counter
+  description: Terminal outcomes of entries handled by the disk writer
+feuer_disk_write_pending_bytes:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: gauge
+  description: Logical payload bytes queued, prepared, or being written
+feuer_disk_write_queue_duration_seconds:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: histogram
+  description: Time from queue admission to dequeue
+feuer_disk_write_queue_total:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: counter
+  description: Disk-write queue admissions, rejections and pre-write discards. The queued outcome measures admission
+feuer_disk_write_queued_entries:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: gauge
+  description: Entries waiting to start disk writes
+feuer_disk_written_entries_total:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: counter
+  description: Entries in successfully written payload regions, whether published or discarded
+feuer_io_buffer_pool_bytes:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: gauge
+  description: Aligned buffer allocation bytes by size and status
+feuer_lookup_bytes_total:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: counter
+  description: Object payload bytes returned by successful Feuer lookups
+feuer_lookup_duration_seconds:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: histogram
+  description: Successful Feuer lookup duration after a memory miss, including callback work
+feuer_lookup_total:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: counter
+  description: Completed Feuer lookups
+feuer_memory_capacity_bytes:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: gauge
+  description: Shared capacity of live memory caches and their buffer pools
+feuer_memory_entries:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: gauge
+  description: Object entries in Feuer's memory tier
+feuer_memory_eviction_triggering_insertions_total:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: counter
+  description: Completed insertion attempts that evicted at least one entry under capacity pressure
+feuer_memory_operations_total:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: counter
+  description: Operations completed by Feuer's in-memory object tier
+feuer_memory_used_bytes:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: gauge
+  description: Cached allocation charges plus idle buffer capacity
 quickwit_actor_inboxes_count:
   module: quickwit_actors::mailbox
   kind: gauge
@@ -598,6 +714,10 @@ quickwit_search_split_search_outcome:
   module: quickwit_search::metrics
   kind: counter
   description: Count the state in which each leaf search split ended. Errors are classified by the error label
+quickwit_storage_disk_cache_startup_fallback:
+  module: quickwit_storage::feuer_cache
+  kind: gauge
+  description: Whether a cache is using memory only after disk initialization failed (1) or not (0).
 quickwit_storage_get_slice_timeout_outcome:
   module: quickwit_storage::metrics
   kind: counter

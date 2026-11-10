@@ -113,6 +113,15 @@ impl Storage for RamStorage {
         Ok(payload_bytes.slice(range.start..range.end))
     }
 
+    async fn get_slice_into(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        buffer: &mut [u8],
+    ) -> StorageResult<()> {
+        crate::default_get_slice_into(self, path, range, buffer).await
+    }
+
     async fn get_slice_stream(
         &self,
         path: &Path,

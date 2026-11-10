@@ -199,9 +199,10 @@ indexer:
 #   # service. Searchers require at least one `metastore_read_replica` node at
 #   # startup and do not fall back to the primary metastore.
 #   use_metastore_read_replica: false
-#   fast_field_cache_capacity: 1G
-#   split_footer_cache_capacity: 500M
+#   # Partial-request and predicate caches.
+#   # Set to zero to disable. Add disk settings as shown below for a disk tier.
 #   partial_request_cache_capacity: 64M
+#   predicate_cache: 256M
 #   max_num_concurrent_split_streams: 100
 #   max_num_concurrent_split_searches: 100
 #   aggregation_memory_limit: 500M
@@ -210,6 +211,28 @@ indexer:
 #      max_num_bytes: 1G
 #      max_num_splits: 10000
 #      num_concurrent_downloads: 1
+#   # Legacy budgets: summed into storage cache
+#   # Explicit storage_cache settings override these budgets.
+#   # fast_field_cache_capacity: 1G    # Deprecated: use storage_cache.
+#   # split_footer_cache_capacity: 500M # Deprecated: use storage_cache.
+#   # Cache for split footer and body ranges. Defaults to memory-only caching with 1500M.
+#   # Positive disk_capacity requires Linux with usable io_uring and a writable directory
+#   # on a filesystem supporting O_DIRECT and STATX_DIOALIGN. Kernel settings and container
+#   # seccomp policies must allow the io_uring syscalls.
+#   # For effective disk caching, use a local SSD on the searcher machine.
+#   # disk_capacity: 0 uses memory only on every supported platform. No directory is required.
+#   # Set both memory_capacity and disk_capacity to 0 to disable the cache.
+#   storage_cache_directory: /quickwit/qwdata/feuer-v1
+#   storage_cache:
+#     disk_capacity: 1500GiB
+#     memory_capacity: 15GiB
+#   # Alternatively, replace the scalar result-cache settings above with:
+#   partial_request_cache_capacity:
+#     memory_capacity: 64MiB
+#     disk_capacity: 20GiB
+#   predicate_cache:
+#     memory_capacity: 256MiB
+#     disk_capacity: 100GiB
 # -------------------------------- Jaeger settings --------------------------------
 
 jaeger:

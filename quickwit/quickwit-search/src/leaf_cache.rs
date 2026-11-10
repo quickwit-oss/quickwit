@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::hash::Hash;
 use std::ops::{Bound, RangeBounds};
 
 use prost::Message;
@@ -20,47 +19,15 @@ use quickwit_config::CacheConfig;
 use quickwit_proto::search::{
     CountHits, LeafResourceStats, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
 };
-use quickwit_storage::{MemorySizedCache, OwnedBytes};
-use siphasher::sip128::{Hasher128, SipHasher13};
+use quickwit_query::query_ast::{HitSet, PredicateCache};
+use quickwit_storage::metrics::{CacheMetrics, PARTIAL_REQUEST_CACHE, PREDICATE_CACHE};
+use quickwit_storage::{FeuerCache, OwnedBytes};
 use tantivy::index::SegmentId;
-
-/// A keyed 128-bit digest stored in place of a potentially large cache key.
-///
-/// The original key is discarded. The 128-bit output makes accidental collisions negligible.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct CacheKeyHash(u128);
-
-#[derive(Clone, Copy)]
-struct CacheKeyHasher {
-    key0: u64,
-    key1: u64,
-}
-
-impl CacheKeyHasher {
-    fn random() -> Self {
-        // Seed SipHash from a cryptographically secure thread-local RNG initialized from OS
-        // entropy. This makes the process-local hash function unpredictable and prevents
-        // deliberately crafted collisions.
-        let (key0, key1) = rand::random();
-        Self { key0, key1 }
-    }
-
-    #[cfg(test)]
-    fn with_keys(key0: u64, key1: u64) -> Self {
-        Self { key0, key1 }
-    }
-
-    fn hash<K: Hash + ?Sized>(&self, key: &K) -> CacheKeyHash {
-        let mut hasher = SipHasher13::new_with_keys(self.key0, self.key1);
-        key.hash(&mut hasher);
-        CacheKeyHash(hasher.finish128().as_u128())
-    }
-}
 
 /// A cache to memoize `leaf_search_single_split` results.
 pub struct LeafSearchCache {
-    content: MemorySizedCache<CacheKeyHash>,
-    key_hasher: CacheKeyHasher,
+    cache: FeuerCache,
+    lookup_metrics: Option<&'static CacheMetrics>,
 }
 
 // TODO we could be smarter about search_after. If we have a cached request with a search_after
@@ -80,23 +47,44 @@ pub struct LeafSearchCache {
 
 impl LeafSearchCache {
     pub fn new(config: &CacheConfig) -> LeafSearchCache {
+        let memory_capacity = config.memory_capacity().as_u64();
         LeafSearchCache {
-            content: MemorySizedCache::from_config(
-                config,
-                &quickwit_storage::metrics::PARTIAL_REQUEST_CACHE,
-            ),
-            key_hasher: CacheKeyHasher::random(),
+            cache: FeuerCache::memory(memory_capacity, "partial_request")
+                .expect("invalid Feuer memory cache configuration"),
+            lookup_metrics: (memory_capacity > 0).then_some(&PARTIAL_REQUEST_CACHE),
         }
     }
-    pub fn get(
+
+    /// Use a supplied Feuer cache.
+    pub fn with_feuer_cache(cache: FeuerCache) -> Self {
+        Self {
+            cache,
+            lookup_metrics: Some(&PARTIAL_REQUEST_CACHE),
+        }
+    }
+
+    pub async fn get_async(
         &self,
         split_info: SplitIdAndFooterOffsets,
         search_request: SearchRequest,
     ) -> Option<LeafSearchResponse> {
         let key = CacheKey::from_split_meta_and_request(split_info, search_request);
-        let encoded_result = self.content.get(&self.key_hasher.hash(&key))?;
-        // this should never fail
-        LeafSearchResponse::decode(&*encoded_result).ok()
+        let bytes = self.cache.get(&key).await;
+        if let Some(metrics) = self.lookup_metrics {
+            metrics.record_get(bytes.as_ref().map(|bytes| bytes.len()));
+        }
+        let encoded_result = bytes?;
+        match LeafSearchResponse::decode(&*encoded_result) {
+            Ok(response) => Some(response),
+            Err(error) => {
+                quickwit_common::rate_limited_warn!(
+                    limit_per_min = 10,
+                    error = ?error,
+                    "error when deserializing leaf response from cache"
+                );
+                None
+            }
+        }
     }
 
     pub fn put(
@@ -114,8 +102,7 @@ impl LeafSearchCache {
         });
         let key = CacheKey::from_split_meta_and_request(split_info, search_request);
         let encoded_result = result.encode_to_vec();
-        self.content
-            .put(self.key_hasher.hash(&key), OwnedBytes::new(encoded_result));
+        self.cache.put(&key, OwnedBytes::new(encoded_result));
     }
 }
 
@@ -235,20 +222,28 @@ impl RangeBounds<i64> for HalfOpenRange {
 }
 
 pub struct PredicateCacheImpl {
-    content: MemorySizedCache<CacheKeyHash>,
-    key_hasher: CacheKeyHasher,
+    cache: FeuerCache,
+    lookup_metrics: Option<&'static CacheMetrics>,
     enabled: bool,
 }
 
 impl PredicateCacheImpl {
     pub fn new(config: &CacheConfig) -> Self {
+        let memory_capacity = config.memory_capacity().as_u64();
         PredicateCacheImpl {
-            content: MemorySizedCache::from_config(
-                config,
-                &quickwit_storage::metrics::PREDICATE_CACHE,
-            ),
-            key_hasher: CacheKeyHasher::random(),
-            enabled: config.capacity().as_u64() > 0,
+            cache: FeuerCache::memory(memory_capacity, "predicate")
+                .expect("invalid Feuer memory cache configuration"),
+            lookup_metrics: (memory_capacity > 0).then_some(&PREDICATE_CACHE),
+            enabled: memory_capacity > 0,
+        }
+    }
+
+    /// Use a supplied Feuer cache.
+    pub fn with_feuer_cache(cache: FeuerCache) -> Self {
+        Self {
+            cache,
+            lookup_metrics: Some(&PREDICATE_CACHE),
+            enabled: true,
         }
     }
 
@@ -257,33 +252,37 @@ impl PredicateCacheImpl {
     }
 }
 
-impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
-    fn get(
-        &self,
-        split_id: String,
-        query_ast_json: String,
-    ) -> Option<(SegmentId, quickwit_query::query_ast::HitSet)> {
+fn decode_predicate_entry(encoded_result: OwnedBytes) -> Option<(SegmentId, HitSet)> {
+    let segment_id_str = str::from_utf8(encoded_result.get(..32)?).ok()?;
+    let segment_id = SegmentId::from_uuid_string(segment_id_str).ok()?;
+    let hits = HitSet::try_from_buffer(encoded_result.slice(32..encoded_result.len()))?;
+    Some((segment_id, hits))
+}
+
+#[async_trait::async_trait]
+impl PredicateCache for PredicateCacheImpl {
+    async fn get(&self, split_id: String, query_ast_json: String) -> Option<(SegmentId, HitSet)> {
         if !self.enabled {
             return None;
         }
-        let key = self
-            .key_hasher
-            .hash(&(split_id.as_str(), query_ast_json.as_str()));
-        let encoded_result = self.content.get(&key)?;
-        let (segment_id_bytes, hits_buffer) = encoded_result.split(32);
-        let segment_id =
-            SegmentId::from_uuid_string(str::from_utf8(&segment_id_bytes).ok()?).ok()?;
-        let hits = quickwit_query::query_ast::HitSet::from_buffer(hits_buffer);
-        Some((segment_id, hits))
+        let key = (split_id.as_str(), query_ast_json.as_str());
+        let bytes = self.cache.get(&key).await;
+        if let Some(metrics) = self.lookup_metrics {
+            metrics.record_get(bytes.as_ref().map(|bytes| bytes.len()));
+        }
+        let encoded_result = bytes?;
+        let entry = decode_predicate_entry(encoded_result);
+        if entry.is_none() {
+            quickwit_common::rate_limited_warn!(
+                limit_per_min = 10,
+                split_id,
+                "error when deserializing predicate entry from cache"
+            );
+        }
+        entry
     }
 
-    fn put(
-        &self,
-        split_id: String,
-        query_ast_json: String,
-        segment: SegmentId,
-        hits: quickwit_query::query_ast::HitSet,
-    ) {
+    fn put(&self, split_id: String, query_ast_json: String, segment: SegmentId, hits: HitSet) {
         if !self.enabled {
             return;
         }
@@ -291,32 +290,34 @@ impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
         let mut buffer = Vec::with_capacity(32 + hits_buffer.len());
         buffer.extend_from_slice(segment.uuid_string().as_bytes());
         buffer.extend_from_slice(&hits_buffer);
-        let key = self
-            .key_hasher
-            .hash(&(split_id.as_str(), query_ast_json.as_str()));
-        let entry_num_bytes = buffer.len();
-        if !self.content.put(key, OwnedBytes::new(buffer)) {
-            quickwit_common::rate_limited_warn!(
-                limit_per_min = 10,
-                split_id,
-                entry_num_bytes,
-                "predicate cache rejected an entry"
-            );
-        }
+        let key = (split_id.as_str(), query_ast_json.as_str());
+        self.cache.put(&key, OwnedBytes::new(buffer));
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use bytesize::ByteSize;
+    use quickwit_common::thread_pool::run_cpu_intensive;
     use quickwit_proto::search::{
-        LeafResourceStats, LeafSearchResponse, PartialHit, SearchRequest, SortValue,
+        CountHits, LeafResourceStats, LeafSearchResponse, PartialHit, SearchRequest, SortValue,
         SplitIdAndFooterOffsets,
     };
     use quickwit_query::query_ast::{HitSet, PredicateCache};
     use tantivy::index::SegmentId;
 
-    use super::{CacheKey, CacheKeyHasher, LeafSearchCache, PredicateCacheImpl};
+    use super::{CacheKey, FeuerCache, LeafSearchCache, PredicateCacheImpl};
+
+    // This synchronous test helper is used with memory-only caches.
+    fn get(
+        cache: &LeafSearchCache,
+        split_info: SplitIdAndFooterOffsets,
+        request: SearchRequest,
+    ) -> Option<LeafSearchResponse> {
+        futures::executor::block_on(cache.get_async(split_info, request))
+    }
 
     #[test]
     fn test_leaf_search_cache_no_timestamp() {
@@ -376,7 +377,7 @@ mod tests {
             resource_stats: None,
         };
 
-        assert!(cache.get(split_1.clone(), query_1.clone()).is_none());
+        assert!(get(&cache, split_1.clone(), query_1.clone()).is_none());
 
         // `LeafSearchCache::put` overwrites `resource_stats` with the
         // cache-hit counters; reads always see those, not the original stats.
@@ -390,11 +391,11 @@ mod tests {
         };
         cache.put(split_1.clone(), query_1.clone(), result);
         assert_eq!(
-            cache.get(split_1.clone(), query_1.clone()).unwrap(),
+            get(&cache, split_1.clone(), query_1.clone()).unwrap(),
             expected
         );
-        assert!(cache.get(split_2, query_1).is_none());
-        assert!(cache.get(split_1, query_2).is_none());
+        assert!(get(&cache, split_2, query_1).is_none());
+        assert!(get(&cache, split_1, query_2).is_none());
     }
 
     #[test]
@@ -482,33 +483,32 @@ mod tests {
 
         // for split_1, 1 and 1bis cover different timestamp ranges
         cache.put(split_1.clone(), query_1.clone(), result.clone());
-        assert!(cache.get(split_1.clone(), query_1.clone()).is_some());
-        assert!(cache.get(split_1.clone(), query_1bis.clone()).is_none());
+        assert!(get(&cache, split_1.clone(), query_1.clone()).is_some());
+        assert!(get(&cache, split_1.clone(), query_1bis.clone()).is_none());
 
         // for split_2, both 1 and 1bis cover everything, so it should cache-hit
         cache.put(split_2.clone(), query_1.clone(), result.clone());
-        assert!(cache.get(split_2.clone(), query_1).is_some());
-        assert!(cache.get(split_2.clone(), query_1bis).is_some());
+        assert!(get(&cache, split_2.clone(), query_1).is_some());
+        assert!(get(&cache, split_2.clone(), query_1bis).is_some());
 
         // for split_1, both 1 and 1bis cover everything, so it should cache-hit
         cache.put(split_1.clone(), query_2.clone(), result.clone());
-        assert!(cache.get(split_1.clone(), query_2.clone()).is_some());
-        assert!(cache.get(split_1, query_2bis.clone()).is_some());
+        assert!(get(&cache, split_1.clone(), query_2.clone()).is_some());
+        assert!(get(&cache, split_1, query_2bis.clone()).is_some());
 
         // for split_2, 2 covers everything, but 2bis cover only a subrange
         cache.put(split_2.clone(), query_2.clone(), result.clone());
-        assert!(cache.get(split_2.clone(), query_2.clone()).is_some());
-        assert!(cache.get(split_2, query_2bis.clone()).is_none());
+        assert!(get(&cache, split_2.clone(), query_2.clone()).is_some());
+        assert!(get(&cache, split_2, query_2bis.clone()).is_none());
 
         // same for split_3, but we try caching the bounded request and query for the unbounded one
         cache.put(split_3.clone(), query_2bis.clone(), result);
-        assert!(cache.get(split_3.clone(), query_2).is_none());
-        assert!(cache.get(split_3, query_2bis).is_some());
+        assert!(get(&cache, split_3.clone(), query_2).is_none());
+        assert!(get(&cache, split_3, query_2bis).is_some());
     }
 
     #[test]
-    fn test_cache_key_hash_is_stable() {
-        let key_hasher = CacheKeyHasher::with_keys(1, 2);
+    fn test_cache_key_covers_request_fields() {
         let split = SplitIdAndFooterOffsets {
             split_id: "split_1".to_string(),
             ..Default::default()
@@ -519,34 +519,31 @@ mod tests {
             max_hits: 10,
             ..Default::default()
         };
-        let key = CacheKey::from_split_meta_and_request(split.clone(), request.clone());
-        let same_key = CacheKey::from_split_meta_and_request(split, request);
+        let cache = LeafSearchCache::new(&ByteSize::mb(1).into());
+        cache.put(
+            split.clone(),
+            request.clone(),
+            LeafSearchResponse::default(),
+        );
+        assert!(get(&cache, split.clone(), request.clone()).is_some());
+        for equivalent_request in [
+            SearchRequest {
+                count_hits: CountHits::Underestimate.into(),
+                ..request.clone()
+            },
+            SearchRequest {
+                priority: -10,
+                ..request.clone()
+            },
+            SearchRequest {
+                priority: 10,
+                ..request.clone()
+            },
+        ] {
+            assert!(get(&cache, split.clone(), equivalent_request).is_some());
+        }
 
-        assert_eq!(key_hasher.hash(&key), key_hasher.hash(&same_key));
-    }
-
-    #[test]
-    fn test_cache_key_hash_covers_request_fields() {
-        let key_hasher = CacheKeyHasher::with_keys(1, 2);
-        let split = SplitIdAndFooterOffsets {
-            split_id: "split_1".to_string(),
-            ..Default::default()
-        };
-        let request = SearchRequest {
-            index_id_patterns: vec!["test-idx".to_string()],
-            query_ast: "test".to_string(),
-            max_hits: 10,
-            ..Default::default()
-        };
-        let hash_of = |split: &SplitIdAndFooterOffsets, request: &SearchRequest| {
-            key_hasher.hash(&CacheKey::from_split_meta_and_request(
-                split.clone(),
-                request.clone(),
-            ))
-        };
-        let reference_hash = hash_of(&split, &request);
-
-        // A change anywhere in the request, however nested, must change the hash.
+        // Query, hit-limit, snippet-field, and index-pattern changes must change the key.
         for altered_request in [
             SearchRequest {
                 query_ast: "test2".to_string(),
@@ -565,7 +562,7 @@ mod tests {
                 ..request.clone()
             },
         ] {
-            assert_ne!(reference_hash, hash_of(&split, &altered_request));
+            assert!(get(&cache, split.clone(), altered_request).is_none());
         }
 
         // And so must a change of split.
@@ -573,11 +570,154 @@ mod tests {
             split_id: "split_2".to_string(),
             ..Default::default()
         };
-        assert_ne!(reference_hash, hash_of(&other_split, &request));
+        assert!(get(&cache, other_split, request).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_invalid_leaf_cache_entries_are_misses() {
+        let split = SplitIdAndFooterOffsets::default();
+        let request = SearchRequest::default();
+        let key = CacheKey::from_split_meta_and_request(split.clone(), request.clone());
+        for bytes in [vec![0xff], vec![0x08, 0x80]] {
+            let cache = LeafSearchCache::new(&ByteSize::mb(1).into());
+            cache
+                .cache
+                .put(&key, quickwit_storage::OwnedBytes::new(bytes));
+            assert!(cache.cache.get(&key).await.is_some());
+            // The malformed entry can remain in the cache across lookups.
+            for _ in 0..2 {
+                assert!(
+                    cache
+                        .get_async(split.clone(), request.clone())
+                        .await
+                        .is_none()
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_invalid_predicate_cache_entries_are_misses() {
+        let segment = SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
+        let header = segment.uuid_string().into_bytes();
+        for bytes in [
+            vec![],
+            vec![b'0'; 31],
+            vec![0xff; 36],
+            vec![b'z'; 36],
+            header.clone(),
+            [header.as_slice(), &[0; 3]].concat(),
+            // The first block decodes, but the second has an invalid bit width.
+            [header.as_slice(), &64u32.to_ne_bytes(), &[0, 33]].concat(),
+        ] {
+            let cache = PredicateCacheImpl::new(&ByteSize::mb(1).into());
+            let key = ("split", "query");
+            cache
+                .cache
+                .put(&key, quickwit_storage::OwnedBytes::new(bytes));
+            assert!(cache.cache.get(&key).await.is_some());
+            for _ in 0..2 {
+                assert!(cache.get("split".into(), "query".into()).await.is_none());
+            }
+        }
     }
 
     #[test]
-    fn test_predicate_cache_separates_keys() {
+    fn test_memory_caches_without_tokio_runtime() {
+        // Zero disables caching. Feuer admits values larger than a positive capacity target.
+        for (capacity, supplied) in [(0, false), (1, false), (1_000_000, true)] {
+            let config = ByteSize::b(capacity).into();
+            let split = SplitIdAndFooterOffsets::default();
+            let request = SearchRequest::default();
+            let cache = if supplied {
+                LeafSearchCache::with_feuer_cache(
+                    FeuerCache::memory(capacity, "partial_request").unwrap(),
+                )
+            } else {
+                LeafSearchCache::new(&config)
+            };
+            if capacity > 0 {
+                assert!(std::ptr::eq(
+                    cache.lookup_metrics.unwrap(),
+                    &*super::PARTIAL_REQUEST_CACHE
+                ));
+            }
+            assert!(get(&cache, split.clone(), request.clone()).is_none());
+            cache.put(
+                split.clone(),
+                request.clone(),
+                LeafSearchResponse {
+                    num_hits: 7,
+                    ..Default::default()
+                },
+            );
+            let key = CacheKey::from_split_meta_and_request(split.clone(), request.clone());
+            assert_eq!(
+                futures::executor::block_on(cache.cache.get(&key)).is_some(),
+                capacity > 0
+            );
+            assert_eq!(
+                get(&cache, split, request).map(|response| response.num_hits),
+                (capacity > 0).then_some(7),
+            );
+
+            let cache = if supplied {
+                PredicateCacheImpl::with_feuer_cache(
+                    FeuerCache::memory(capacity, "predicate").unwrap(),
+                )
+            } else {
+                PredicateCacheImpl::new(&config)
+            };
+            if capacity > 0 {
+                assert!(std::ptr::eq(
+                    cache.lookup_metrics.unwrap(),
+                    &*super::PREDICATE_CACHE
+                ));
+            }
+            assert_eq!(cache.is_enabled(), capacity > 0);
+            let segment = SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
+            cache.put("split".into(), "query".into(), segment, HitSet::empty());
+            assert_eq!(
+                futures::executor::block_on(cache.get("split".into(), "query".into())).map(
+                    |(segment, hits)| {
+                        assert!(hits.is_empty());
+                        segment
+                    }
+                ),
+                (capacity > 0).then_some(segment),
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_supplied_leaf_cache_put_in_async_runtime() {
+        let cache = LeafSearchCache::with_feuer_cache(
+            quickwit_storage::FeuerCache::memory(1_000_000, "partial_request").unwrap(),
+        );
+        let split = SplitIdAndFooterOffsets::default();
+        let request = SearchRequest::default();
+        for _ in 0..2 {
+            cache.put(
+                split.clone(),
+                request.clone(),
+                LeafSearchResponse {
+                    num_hits: 7,
+                    ..Default::default()
+                },
+            );
+            assert_eq!(
+                cache
+                    .get_async(split.clone(), request.clone())
+                    .await
+                    .unwrap()
+                    .num_hits,
+                7,
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_predicate_cache_separates_keys() {
         let cache = PredicateCacheImpl::new(&ByteSize::mb(64).into());
         let segment_id = SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
 
@@ -590,44 +730,136 @@ mod tests {
 
         let (cached_segment_id, cached_hits) = cache
             .get("split-1".to_string(), "first-query".to_string())
+            .await
             .unwrap();
         assert_eq!(cached_segment_id, segment_id);
         assert!(cached_hits.is_empty());
-        assert!(
-            cache
-                .get("split-1".to_string(), "second-query".to_string())
-                .is_none()
-        );
-        assert!(
-            cache
-                .get("split-2".to_string(), "first-query".to_string())
-                .is_none()
-        );
+        assert!(cache.cache.get(&("split-1", "first-query")).await.is_some());
+        for (split, query) in [
+            ("split-1", "second-query"),
+            ("split-2", "first-query"),
+            // Same concatenated bytes as the cached pair, with a different field boundary.
+            ("split-1first-", "query"),
+        ] {
+            assert!(
+                cache
+                    .get(split.to_string(), query.to_string())
+                    .await
+                    .is_none()
+            );
+        }
     }
 
-    #[test]
-    fn test_leaf_search_cache_ignores_priority() {
-        let cache = LeafSearchCache::new(&ByteSize::mb(64).into());
+    #[tokio::test]
+    async fn test_supplied_predicate_cache_put_from_async_runtime_and_cpu_pool() {
+        // Calling Handle::block_on for a put would panic inside the async task.
+        let cache = Arc::new(PredicateCacheImpl::with_feuer_cache(
+            quickwit_storage::FeuerCache::memory(1_000_000, "predicate").unwrap(),
+        ));
+        assert!(cache.get("split".into(), "query".into()).await.is_none());
+        let segment = SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
+        cache.put("split".into(), "query".into(), segment, HitSet::empty());
+        let (cached_segment, hits) = cache.get("split".into(), "query".into()).await.unwrap();
+        assert_eq!(cached_segment, segment);
+        assert!(hits.is_empty());
+        let cache_for_write = cache.clone();
+        run_cpu_intensive(move || {
+            cache_for_write.put(
+                "split".into(),
+                "other-query".into(),
+                segment,
+                HitSet::empty(),
+            );
+        })
+        .await
+        .unwrap();
+        let (cached_segment, hits) = cache
+            .get("split".into(), "other-query".into())
+            .await
+            .unwrap();
+        assert_eq!(cached_segment, segment);
+        assert!(hits.is_empty());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn test_result_caches_use_shared_disk_directory() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config: quickwit_config::SearcherConfig =
+            serde_json::from_value(serde_json::json!({
+                "storage_cache": {"disk_capacity": "8MiB", "memory_capacity": "1MiB"},
+                "partial_request_cache": {"disk_capacity": "16MiB", "memory_capacity": "1MiB"},
+                "predicate_cache": {"disk_capacity": "32MiB", "memory_capacity": "2MiB"},
+            }))
+            .unwrap();
+        config.storage_cache_directory = Some(directory.path().to_path_buf());
+        let mut context = crate::SearcherContext::new_without_invoker(config, None);
+        context
+            .initialize_storage_caches(&quickwit_storage::StorageResolver::unconfigured())
+            .await
+            .unwrap();
+        assert!(context.storage_cache_opt.is_some());
+        assert!(context.predicate_cache.is_enabled());
+        for file_name in ["storage_cache", "predicate_cache", "partial_response_cache"] {
+            assert!(directory.path().join(file_name).is_file());
+        }
+
         let split = SplitIdAndFooterOffsets {
-            split_id: "split".to_string(),
+            split_id: "split".into(),
+            num_docs: 42,
             ..Default::default()
         };
-        let high_priority_request = SearchRequest {
-            priority: -10,
-            ..Default::default()
-        };
-        let low_priority_request = SearchRequest {
-            priority: 10,
-            ..Default::default()
-        };
-
-        cache.put(
-            split.clone(),
-            high_priority_request,
-            LeafSearchResponse::default(),
+        let request = SearchRequest::default();
+        assert!(
+            context
+                .leaf_search_cache
+                .get_async(split.clone(), request.clone())
+                .await
+                .is_none()
         );
+        context.leaf_search_cache.put(
+            split.clone(),
+            request.clone(),
+            LeafSearchResponse {
+                num_hits: 7,
+                ..Default::default()
+            },
+        );
+        let cached = context
+            .leaf_search_cache
+            .get_async(split, request)
+            .await
+            .unwrap();
+        assert_eq!(cached.num_hits, 7);
+        let stats = cached.resource_stats.unwrap();
+        assert_eq!(stats.partial_result_cache_num_splits, 1);
+        assert_eq!(stats.partial_result_cache_num_docs, 42);
 
-        // the two requests differ only in priority, so it should be a cache-hit
-        assert!(cache.get(split, low_priority_request).is_some());
+        let predicate = context.predicate_cache;
+        let segment = SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
+        predicate.put("split".into(), "term".into(), segment, HitSet::empty());
+        // Disk-backed reads can run directly on the async task.
+        let (cached_segment, hits) = predicate.get("split".into(), "term".into()).await.unwrap();
+        assert_eq!(cached_segment, segment);
+        assert!(hits.is_empty());
+        let predicate_for_write = predicate.clone();
+        run_cpu_intensive(move || {
+            predicate_for_write.put(
+                "split".into(),
+                "other-term".into(),
+                segment,
+                HitSet::empty(),
+            );
+        })
+        .await
+        .unwrap();
+        assert!(
+            predicate
+                .get("split".into(), "other-term".into())
+                .await
+                .unwrap()
+                .1
+                .is_empty()
+        );
     }
 }

@@ -91,15 +91,25 @@ Quickwit does caching in many places to deliver a highly performing query engine
 
 In memory:
 
-- Hotcache caching: A static cache that holds information about a split file internal representation. It helps speed up the opening of a split file. Its size can be defined via the `split_footer_cache_capacity` configuration parameter.
-- Fast field caching: Fast fields tend to be accessed very frequently by users especially for stream requests. They are cached in a RAM whose size can be limited by the `fast_field_cache_capacity` configuration value.
+- Storage caching: `storage_cache` retains split footers, hotcache bytes, fast fields, and other split body ranges in one shared cache. Hotcache is static data embedded in each split footer that speeds up opening the split. `storage_cache` defaults to memory-only operation with a 1.5GB budget.
 - Partial request caching: In some cases, like when using dashboards, some very similar requests might be issued, with only timestamp bounds changing. Some partial results can be cached to make these requests faster and issue less requests to the storage. They are cached in a RAM whose size can be limited by the `partial_request_cache_capacity` configuration value.
+- Predicate caching: `predicate_cache` retains predicate hit sets and known-absent terms, with independent memory and optional disk budgets.
+- List-fields caching: Field metadata uses an independent memory cache with the same memory capacity as `partial_request_cache_capacity`.
 
 On disk:
 
+- Configure `storage_cache` with a positive `disk_capacity` and a directory to enable its disk tier. Set `disk_capacity: 0` for memory-only operation without a directory. Predicate and partial-response caches can also use independent disk tiers.
 - The split cache stores entire splits on disk. It can be enabled by setting the `split_cache` configuration fields. This cache can help reduce object store costs and load. Searchers populate this cache when splits are created or queried and evict them with a simple LRU strategy.
 
+If a storage, partial-request, or predicate disk cache cannot be opened at startup,
+the searcher uses memory-only caching for that cache, keeping its configured memory
+capacity. It logs a warning and sets `quickwit_storage_disk_cache_startup_fallback{cache="..."}`
+to `1`. Disk caching is retried on the next restart. This can increase query latency
+and object-storage traffic. Invalid cache configuration still prevents startup.
+
 Learn more about cache parameters in the [searcher configuration docs](../../configuration/node-config.md#searcher-configuration).
+For diagnostics, see [cache metrics](../../reference/metrics.md#feuer-cache-metrics)
+and [access traces](../../internals/feuer-access-trace.md).
 
 ### Scoring
 
