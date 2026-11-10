@@ -58,8 +58,8 @@ use crate::IndexerPool;
 use crate::cooldown_map::{CooldownMap, CooldownStatus};
 use crate::debouncer::Debouncer;
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
-use crate::ingest::IngestController;
 use crate::ingest::ingest_controller::{IngestControllerStats, RebalanceShardsCallback};
+use crate::ingest::{IngestController, is_indexing_capacity_shard_cap_enabled};
 use crate::metrics::{METASTORE_ERROR_ABORTED, METASTORE_ERROR_MAYBE_EXECUTED, RESTART_TOTAL};
 use crate::model::ControlPlaneModel;
 
@@ -133,12 +133,16 @@ impl ControlPlane {
                     / shared_consts::MIB as f32;
                 let indexing_scheduler =
                     IndexingScheduler::new(cluster_id, self_node_id.clone(), indexer_pool.clone());
-                let ingest_controller = IngestController::new(
+                let mut ingest_controller = IngestController::new(
                     metastore.clone(),
                     ingester_pool.clone(),
                     shard_throughput_limit_mib,
                     cluster_config.shard_scale_up_factor,
                 );
+                if is_indexing_capacity_shard_cap_enabled() {
+                    ingest_controller =
+                        ingest_controller.with_indexing_capacity_shard_cap(indexer_pool.clone());
+                }
 
                 let readiness_tx = readiness_tx.clone();
                 let _ = readiness_tx.send(false);

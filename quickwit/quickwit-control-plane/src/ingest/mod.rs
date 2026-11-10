@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod indexing_capacity_cap;
 pub(crate) mod ingest_controller;
 mod scaling_arbiter;
 mod wait_handle;
 
+pub(crate) use indexing_capacity_cap::is_indexing_capacity_shard_cap_enabled;
 pub use ingest_controller::IngestController;
 pub use wait_handle::WaitHandle;

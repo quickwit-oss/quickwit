@@ -222,6 +222,20 @@ fn compute_load_per_shard(shard_entries: &[&ShardEntry]) -> NonZeroU32 {
     }
 }
 
+/// Returns the maximum number of shards a single pipeline can host for a source with the given
+/// shards. It uses the same load model as the indexing scheduler.
+pub(crate) fn compute_max_num_shards_per_pipeline_for_shards(
+    shard_entries: &[&ShardEntry],
+) -> NonZeroU32 {
+    let load_per_shard = compute_load_per_shard(shard_entries);
+    // `compute_max_num_shards_per_pipeline` does not look at the shard ids.
+    let source_type = SourceToScheduleType::Sharded {
+        shard_ids: Vec::new(),
+        load_per_shard,
+    };
+    compute_max_num_shards_per_pipeline(&source_type)
+}
+
 fn get_default_load_per_shard() -> NonZeroU32 {
     let default_load_per_shard = quickwit_common::get_from_env_cached!(
         u32,
