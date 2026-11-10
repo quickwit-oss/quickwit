@@ -17,6 +17,7 @@ use crate::indexing::*;
 use crate::ingest::ingester::*;
 use crate::ingest::router::*;
 use crate::ingest::*;
+use crate::live_tail::*;
 use crate::metastore::*;
 use crate::types::*;
 
@@ -109,6 +110,9 @@ generate_getters! {
     ShardPKey,
     TruncateShardsSubrequest,
     SourceShardUpdate,
+
+    // Live Tail API
+    OpenLiveTailRequest,
 
     // Metastore API
     AcquireShardsRequest,
