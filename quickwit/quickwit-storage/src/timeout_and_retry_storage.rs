@@ -12,16 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::io;
 use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use futures::{StreamExt, stream};
 use quickwit_common::uri::Uri;
 use quickwit_common::{rate_limited_info, rate_limited_warn};
 use quickwit_config::StorageTimeoutPolicy;
 use tantivy::directory::OwnedBytes;
 use tokio::io::AsyncRead;
+use tokio::time::{Instant, timeout_at};
+use tokio_util::io::{ReaderStream, StreamReader};
 
 use crate::storage::SendableAsync;
 use crate::{
@@ -33,6 +37,7 @@ use crate::{
 ///
 /// This is useful in order to ensure a low latency on S3.
 /// Retrying agressively is recommended for S3.
+/// Streamed retries resume after emitted bytes and require immutable objects.
 ///
 /// <https://docs.aws.amazon.com/whitepapers/latest/s3-optimizing-performance-best-practices/timeouts-and-retries-for-latency-sensitive-applications.html>
 #[derive(Clone, Debug)]
@@ -159,7 +164,70 @@ impl Storage for TimeoutAndRetryStorage {
         path: &Path,
         range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        self.underlying.get_slice_stream(path, range).await
+        let mut timeouts = self
+            .storage_timeout_policy
+            .compute_timeout(range.len())
+            .collect::<Vec<_>>()
+            .into_iter();
+        let (reader, deadline) = loop {
+            let Some(duration) = timeouts.next() else {
+                return Err(StorageErrorKind::Timeout
+                    .with_error(anyhow::anyhow!("internal timeout on get_slice_stream")));
+            };
+            let deadline = Instant::now() + duration;
+            let opening = self.underlying.get_slice_stream(path, range.clone());
+            if let Ok(result) = timeout_at(deadline, opening).await {
+                break (result?, deadline);
+            }
+        };
+        let storage = self.underlying.clone();
+        let path = Arc::new(path.to_owned());
+        let state = (range, timeouts, Some((ReaderStream::new(reader), deadline)));
+        let chunks = stream::try_unfold(state, move |(mut range, mut timeouts, mut body)| {
+            let storage = storage.clone();
+            let path = path.clone();
+            async move {
+                loop {
+                    if let Some((reader, deadline)) = body.as_mut() {
+                        match timeout_at(*deadline, reader.next()).await {
+                            Ok(Some(result)) => {
+                                let bytes = result?;
+                                if bytes.len() > range.len() {
+                                    return Err(io::Error::new(
+                                        io::ErrorKind::InvalidData,
+                                        "get_slice_stream returned more bytes than requested",
+                                    ));
+                                }
+                                range.start += bytes.len();
+                                return Ok(Some((bytes, (range, timeouts, body))));
+                            }
+                            Ok(None) => return Ok(None),
+                            Err(_) => body = None, // Drop the timed-out reader before reopening.
+                        }
+                    }
+                    // A timeout while verifying EOF cannot be retried with an empty range.
+                    let duration =
+                        timeouts
+                            .next()
+                            .filter(|_| !range.is_empty())
+                            .ok_or_else(|| {
+                                io::Error::new(
+                                    io::ErrorKind::TimedOut,
+                                    "internal timeout on get_slice_stream",
+                                )
+                            })?;
+                    let deadline = Instant::now() + duration;
+                    let opening = storage.get_slice_stream(&path, range.clone());
+                    if let Ok(result) = timeout_at(deadline, opening).await {
+                        body = Some((
+                            ReaderStream::new(result.map_err(io::Error::from)?),
+                            deadline,
+                        ));
+                    }
+                }
+            }
+        });
+        Ok(Box::new(StreamReader::new(Box::pin(chunks))))
     }
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
@@ -199,9 +267,142 @@ mod tests {
 
     use bytes::Bytes;
     use futures::StreamExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::time::Instant;
 
     use super::*;
+    use crate::MockStorage;
+
+    fn stream_storage(storage: impl Storage) -> TimeoutAndRetryStorage {
+        TimeoutAndRetryStorage::new(
+            Arc::new(storage),
+            StorageTimeoutPolicy {
+                min_throughtput_bytes_per_secs: 0,
+                timeout_millis: 2_000,
+                max_num_retries: 1,
+            },
+        )
+    }
+
+    fn delayed_reader(
+        chunks: Vec<(Duration, io::Result<&'static [u8]>)>,
+    ) -> Box<dyn AsyncRead + Send + Unpin> {
+        let chunks = stream::iter(chunks).then(|(delay, result)| async move {
+            tokio::time::sleep(delay).await;
+            result.map(Bytes::from_static)
+        });
+        Box::new(StreamReader::new(Box::pin(chunks)))
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_stream_body_timeout_resumes_emitted_offset() {
+        let mut underlying = MockStorage::new();
+        let mut sequence = mockall::Sequence::new();
+        underlying
+            .expect_get_slice_stream()
+            .withf(|path, range| path == Path::new("object") && *range == (10..18))
+            .times(1)
+            .in_sequence(&mut sequence)
+            .returning(|_, _| {
+                Ok(delayed_reader(vec![
+                    (Duration::from_secs(1), Ok(b"abcd")),
+                    (Duration::from_millis(1_500), Ok(b"wrong")),
+                ]))
+            });
+        underlying
+            .expect_get_slice_stream()
+            .withf(|_, range| *range == (14..18))
+            .times(1)
+            .in_sequence(&mut sequence)
+            .returning(|_, _| Ok(Box::new(&b"efgh"[..])));
+        let storage = stream_storage(underlying);
+        let start = Instant::now();
+        let mut reader = storage
+            .get_slice_stream(Path::new("object"), 10..18)
+            .await
+            .unwrap();
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).await.unwrap();
+        assert_eq!(bytes, b"abcdefgh");
+        assert_eq!(start.elapsed(), Duration::from_secs(2));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_stream_body_timeouts_exhaust_retries() {
+        let mut underlying = MockStorage::new();
+        underlying
+            .expect_get_slice_stream()
+            .withf(|_, range| *range == (10..18))
+            .times(2)
+            .returning(|_, _| {
+                Ok(delayed_reader(vec![(
+                    Duration::from_secs(3),
+                    Ok(b"abcdefgh"),
+                )]))
+            });
+        let storage = stream_storage(underlying);
+        let start = Instant::now();
+        let mut reader = storage
+            .get_slice_stream(Path::new("object"), 10..18)
+            .await
+            .unwrap();
+        let error = reader.read_to_end(&mut Vec::new()).await.unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert_eq!(start.elapsed(), Duration::from_secs(4));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_stream_preserves_body_failures() {
+        for (body, expected_error) in [
+            (Ok(&b"short"[..]), None),
+            (Ok(&b"too many bytes"[..]), Some(io::ErrorKind::InvalidData)),
+            (
+                Err(io::Error::other("body failure")),
+                Some(io::ErrorKind::Other),
+            ),
+        ] {
+            let mut underlying = MockStorage::new();
+            underlying
+                .expect_get_slice_stream()
+                .times(1)
+                .return_once(|_, _| Ok(delayed_reader(vec![(Duration::ZERO, body)])));
+            let storage = stream_storage(underlying);
+            let mut reader = storage
+                .get_slice_stream(Path::new("object"), 10..18)
+                .await
+                .unwrap();
+            let mut bytes = Vec::new();
+            let result = reader.read_to_end(&mut bytes).await;
+            assert_eq!(result.err().map(|error| error.kind()), expected_error);
+            if expected_error.is_none() {
+                assert_eq!(bytes, b"short"); // Caller can detect truncation from the length.
+            }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_stream_cancellation_drops_reader() {
+        let (reader, mut writer) = tokio::io::duplex(8);
+        let mut underlying = MockStorage::new();
+        underlying
+            .expect_get_slice_stream()
+            .times(1)
+            .return_once(|_, _| Ok(Box::new(reader)));
+        let storage = stream_storage(underlying);
+        let mut reader = storage
+            .get_slice_stream(Path::new("object"), 10..18)
+            .await
+            .unwrap();
+        let mut bytes = Vec::new();
+        let mut reading = Box::pin(reader.read_to_end(&mut bytes));
+        assert!(futures::poll!(&mut reading).is_pending());
+        drop(reading);
+        drop(reader);
+        assert_eq!(
+            writer.write_all(b"abcd").await.unwrap_err().kind(),
+            io::ErrorKind::BrokenPipe
+        );
+    }
 
     #[derive(Debug)]
     struct StorageWithDelay {
@@ -373,16 +574,13 @@ mod tests {
         assert_eq!(error.kind(), StorageErrorKind::NotFound);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn test_timeout_and_retry_storage() {
-        tokio::time::pause();
-
         let timeout_policy = StorageTimeoutPolicy {
             min_throughtput_bytes_per_secs: 100_000,
             timeout_millis: 2_000,
             max_num_retries: 1,
         };
-
         let path = Path::new("foo/bar");
 
         {

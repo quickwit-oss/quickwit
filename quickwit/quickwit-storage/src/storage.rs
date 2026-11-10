@@ -20,8 +20,8 @@ use std::time::SystemTime;
 
 use async_trait::async_trait;
 use bytesize::ByteSize;
-use futures::StreamExt;
 use futures::stream::{self, BoxStream};
+use futures::{StreamExt, TryStreamExt};
 use quickwit_common::uri::Uri;
 use tempfile::TempPath;
 use tokio::fs::File;
@@ -130,6 +130,32 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
         buffer: &mut [u8],
     ) -> StorageResult<()>;
 
+    /// Reads ranges in one batch, returning one buffer per range in input order.
+    /// Overlaps and duplicates are preserved. Empty ranges return empty buffers without reads.
+    /// Reversed ranges fail before any reads start. An error returns no partial result.
+    ///
+    /// The default runs five scalar reads at a time. Wrappers above a coalescer must forward
+    /// batches (after removing cache hits or translating offsets) so it can plan all misses
+    /// before limiting downloads, without creating a live read future per input range.
+    async fn get_slices(
+        &self,
+        path: &Path,
+        ranges: Vec<Range<usize>>,
+    ) -> StorageResult<Vec<OwnedBytes>> {
+        validate_byte_ranges(&ranges)?;
+        stream::iter(ranges)
+            .map(|range| async move {
+                if range.is_empty() {
+                    Ok(OwnedBytes::empty())
+                } else {
+                    self.get_slice(path, range).await
+                }
+            })
+            .buffered(5)
+            .try_collect()
+            .await
+    }
+
     /// Opens a stream handle on the file from the storage.
     ///
     /// Might panic, return an error or an empty stream if the range is empty.
@@ -204,6 +230,17 @@ pub async fn default_get_slice_into<S: Storage + ?Sized>(
             "range download returned more than {} bytes",
             buffer.len()
         )));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_byte_ranges(ranges: &[Range<usize>]) -> StorageResult<()> {
+    if ranges.iter().any(|range| range.start > range.end) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "byte range starts after its end",
+        )
+        .into());
     }
     Ok(())
 }
@@ -313,6 +350,40 @@ mod tests {
         default_get_slice_into(&storage, Path::new("object"), 4..4, &mut [])
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_default_batch_reads() {
+        let storage = crate::RamStorageBuilder::default()
+            .put("file", CONTENT)
+            .build();
+        let missing = Path::new("missing");
+        let error = storage
+            .get_slices(missing, vec![0..1, Range { start: 3, end: 2 }])
+            .await
+            .unwrap_err();
+        assert_eq!(io::Error::from(error).kind(), io::ErrorKind::InvalidInput);
+        assert!(
+            storage
+                .get_slices(missing, Vec::new())
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        let ranges = vec![5..8, 0..2, 6..8, 5..8, 0..0];
+        let buffers = storage
+            .get_slices(Path::new("file"), ranges.clone())
+            .await
+            .unwrap();
+        assert_eq!(buffers.len(), ranges.len());
+        for (range, buffer) in ranges.into_iter().zip(buffers) {
+            assert_eq!(buffer.as_slice(), &CONTENT[range]);
+        }
+        let error = storage
+            .get_slices(missing, vec![0..1, 2..3])
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), StorageErrorKind::NotFound);
     }
 
     #[tokio::test]
