@@ -293,8 +293,8 @@ pub(crate) async fn open_index_with_caches(
 /// `Ok(())` is returned. With no token, `fut` simply runs to completion.
 async fn run_cancellable(
     cancel: Option<&CancellationToken>,
-    fut: impl std::future::Future<Output = anyhow::Result<()>>,
-) -> anyhow::Result<()> {
+    fut: impl std::future::Future<Output = crate::Result<()>>,
+) -> crate::Result<()> {
     let Some(cancel) = cancel else {
         return fut.await;
     };
@@ -339,7 +339,7 @@ pub(crate) async fn warmup(
     warmup_info: &WarmupInfo,
     priority: Priority,
     on_absent: &(dyn Fn(&Term, SegmentId) + Sync),
-) -> anyhow::Result<bool> {
+) -> crate::Result<bool> {
     debug!(warmup_info=?warmup_info);
 
     // Early-abort optimization: the split's downloads can be cancelled as soon as
@@ -416,7 +416,7 @@ pub(crate) async fn warmup(
 async fn warm_up_full_term_dictionaries(
     searcher: &Searcher,
     term_dict_fields: &HashSet<Field>,
-) -> anyhow::Result<()> {
+) -> crate::Result<()> {
     let mut warm_up_futures = Vec::new();
     for field in term_dict_fields {
         for segment_reader in searcher.segment_readers() {
@@ -432,7 +432,7 @@ async fn warm_up_full_term_dictionaries(
 }
 
 /// Warm up all postings, without positions, for each supplied field in every segment.
-async fn warm_up_all_postings(searcher: &Searcher, fields: &HashSet<Field>) -> anyhow::Result<()> {
+async fn warm_up_all_postings(searcher: &Searcher, fields: &HashSet<Field>) -> crate::Result<()> {
     let mut warm_up_futures = Vec::new();
     for field in fields {
         for segment_reader in searcher.segment_readers() {
@@ -447,7 +447,7 @@ async fn warm_up_all_postings(searcher: &Searcher, fields: &HashSet<Field>) -> a
 async fn warm_up_fastfield(
     fast_field_reader: &FastFieldReaders,
     fast_field: &FastFieldWarmupInfo,
-) -> anyhow::Result<()> {
+) -> crate::Result<()> {
     let mut columns = fast_field_reader
         .list_dynamic_column_handles(&fast_field.name)
         .await?;
@@ -471,7 +471,7 @@ async fn warm_up_fastfield(
 async fn warm_up_fastfields(
     searcher: &Searcher,
     fast_fields: &HashSet<FastFieldWarmupInfo>,
-) -> anyhow::Result<()> {
+) -> crate::Result<()> {
     let mut warm_up_futures = Vec::new();
     for segment_reader in searcher.segment_readers() {
         let fast_field_reader = segment_reader.fast_fields();
@@ -490,7 +490,7 @@ async fn warm_up_terms(
     required_terms: &HashSet<Term>,
     abort_token: Option<&CancellationToken>,
     on_absent: &(dyn Fn(&Term, SegmentId) + Sync),
-) -> anyhow::Result<()> {
+) -> crate::Result<()> {
     let mut warm_up_futures = Vec::new();
     for (field, terms) in terms_grouped_by_field {
         for segment_reader in searcher.segment_readers() {
@@ -513,7 +513,7 @@ async fn warm_up_terms(
                         on_absent(term, segment_id);
                         abort_token.cancel();
                     }
-                    anyhow::Ok(())
+                    Ok::<(), SearchError>(())
                 });
             }
         }
@@ -522,7 +522,7 @@ async fn warm_up_terms(
     // once a required term has proven the query empty.
     run_cancellable(abort_token, async move {
         try_join_all(warm_up_futures).await?;
-        anyhow::Ok(())
+        Ok::<(), SearchError>(())
     })
     .await
 }
@@ -530,7 +530,7 @@ async fn warm_up_terms(
 async fn warm_up_term_ranges(
     searcher: &Searcher,
     terms_grouped_by_field: &HashMap<Field, HashMap<TermRange, bool>>,
-) -> anyhow::Result<()> {
+) -> crate::Result<()> {
     let mut warm_up_futures = Vec::new();
     for (field, terms) in terms_grouped_by_field {
         for segment_reader in searcher.segment_readers() {
@@ -554,7 +554,7 @@ async fn warm_up_automatons(
     searcher: &Searcher,
     terms_grouped_by_field: &HashMap<Field, HashSet<Automaton>>,
     priority: Priority,
-) -> anyhow::Result<()> {
+) -> crate::Result<()> {
     let mut warm_up_futures = Vec::new();
     let cpu_intensive_executor = |task| async move {
         crate::search_thread_pool()
@@ -570,8 +570,12 @@ async fn warm_up_automatons(
                 warm_up_futures.push(async move {
                     match automaton {
                         Automaton::Regex(path, regex_str) => {
-                            let regex = get_or_compile_cached_fst_regex(regex_str)
-                                .context("failed to parse regex during warmup")?;
+                            let regex =
+                                get_or_compile_cached_fst_regex(regex_str).ok_or_else(|| {
+                                    SearchError::InvalidArgument(format!(
+                                        "failed to parse regex `{regex_str}` during warmup"
+                                    ))
+                                })?;
                             inv_idx_clone
                                 .warm_postings_automaton(
                                     quickwit_query::query_ast::JsonPathPrefix {
@@ -581,7 +585,10 @@ async fn warm_up_automatons(
                                     cpu_intensive_executor,
                                 )
                                 .await
-                                .context("failed to load automaton")
+                                .map_err(|io_error| {
+                                    SearchError::from(io_error)
+                                        .with_context("failed to load automaton")
+                                })
                         }
                     }
                 });
@@ -592,7 +599,7 @@ async fn warm_up_automatons(
     Ok(())
 }
 
-async fn warm_up_fieldnorms(searcher: &Searcher, requires_scoring: bool) -> anyhow::Result<()> {
+async fn warm_up_fieldnorms(searcher: &Searcher, requires_scoring: bool) -> crate::Result<()> {
     if !requires_scoring {
         return Ok(());
     }
@@ -2414,7 +2421,6 @@ async fn leaf_search_single_split_wrapper(
             &mut search_permit,
         )
         .await;
-
     // Explicitly drop the permit for readability.
     // This should always happen after the ephemeral search cache is dropped. The split's
     // `CachingDirectory` holds the other reference to the warmup memory, together with the
@@ -2440,7 +2446,7 @@ async fn leaf_search_single_split_wrapper(
         Err(err) => locked_incremental_merge_collector.add_failed_split(SplitSearchError {
             split_id: split.split_id.clone(),
             error: format!("{err}"),
-            retryable_error: true,
+            retryable_error: err.is_retryable_on_another_searcher(),
         }),
     }
     if let Some(last_hit) = locked_incremental_merge_collector.peek_worst_hit() {

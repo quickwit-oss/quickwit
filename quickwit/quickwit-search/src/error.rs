@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::io;
+
 use itertools::Itertools;
 use quickwit_common::rate_limited_error;
 use quickwit_common::retry::Retryable;
@@ -49,9 +51,51 @@ pub enum SearchError {
     TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
+    /// The split search would have gone over a warmup memory limit.
+    #[error("{0}")]
+    OutOfWarmupMemory(String),
 }
 
 impl SearchError {
+    /// Whether searching the failed split on another searcher could succeed.
+    ///
+    /// Not to be confused with [`Retryable::is_retryable`], which tells whether the same request
+    /// can be retried after a backoff.
+    pub fn is_retryable_on_another_searcher(&self) -> bool {
+        match self {
+            // A split search that ran out of warmup memory would likely run out of memory again
+            // on another searcher, and make that searcher's other searches fail too.
+            SearchError::OutOfWarmupMemory(_) => false,
+            // The request and the indexes are the same on every searcher, so these errors would
+            // happen again.
+            SearchError::IndexesNotFound { .. }
+            | SearchError::InvalidAggregationRequest(_)
+            | SearchError::InvalidArgument(_)
+            | SearchError::InvalidQuery(_) => false,
+            SearchError::Internal(_)
+            | SearchError::StorageResolver(_)
+            | SearchError::Timeout(_)
+            | SearchError::TooManyRequests
+            | SearchError::Unavailable(_) => true,
+        }
+    }
+
+    /// Prefixes the error message with `context`, keeping the variant.
+    ///
+    /// Only `Internal` and `OutOfWarmupMemory` get the context. The other variants are returned
+    /// unchanged.
+    pub fn with_context(self, context: &str) -> SearchError {
+        match self {
+            SearchError::Internal(message) => {
+                SearchError::Internal(format!("{context}: {message}"))
+            }
+            SearchError::OutOfWarmupMemory(message) => {
+                SearchError::OutOfWarmupMemory(format!("{context}: {message}"))
+            }
+            other => other,
+        }
+    }
+
     /// Creates an internal `SearchError` from a list of split search errors.
     pub fn from_split_errors(failed_splits: &[SplitSearchError]) -> Option<SearchError> {
         let first_failing_split = failed_splits.first()?;
@@ -89,6 +133,7 @@ impl ServiceError for SearchError {
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
+            Self::OutOfWarmupMemory(_) => ServiceErrorCode::Internal,
         }
     }
 }
@@ -137,7 +182,27 @@ pub fn parse_grpc_error(grpc_error: &tonic::Status) -> SearchError {
 
 impl From<TantivyError> for SearchError {
     fn from(tantivy_error: TantivyError) -> Self {
+        // Reading data can run out of warmup memory, for instance when opening the inverted index
+        // of a field.
+        if let TantivyError::IoError(io_error) = &tantivy_error
+            && io_error.kind() == io::ErrorKind::OutOfMemory
+        {
+            return SearchError::OutOfWarmupMemory(io_error.to_string());
+        }
         SearchError::Internal(format!("tantivy error: {tantivy_error}"))
+    }
+}
+
+/// Hidden contract: in the search path, only the `CachingDirectory` returns
+/// `io::ErrorKind::OutOfMemory`, when the split search would go over a warmup memory limit. Its
+/// message tells which limit. If another source ever returned that kind, the split would not be
+/// retried either, which is fine for a memory problem.
+impl From<io::Error> for SearchError {
+    fn from(io_error: io::Error) -> Self {
+        if io_error.kind() == io::ErrorKind::OutOfMemory {
+            return SearchError::OutOfWarmupMemory(io_error.to_string());
+        }
+        SearchError::Internal(format!("io error: {io_error}"))
     }
 }
 
@@ -161,7 +226,9 @@ impl From<serde_json::Error> for SearchError {
 
 impl From<anyhow::Error> for SearchError {
     fn from(any_error: anyhow::Error) -> Self {
-        SearchError::Internal(any_error.to_string())
+        // The alternate format includes the whole chain of causes, not only the outermost
+        // context. For instance: "failed to load automaton: out of warmup memory".
+        SearchError::Internal(format!("{any_error:#}"))
     }
 }
 
@@ -202,5 +269,79 @@ impl From<JoinError> for SearchError {
 impl From<std::convert::Infallible> for SearchError {
     fn from(infallible: std::convert::Infallible) -> SearchError {
         match infallible {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+    use std::sync::Arc;
+
+    use quickwit_directories::OutOfMemoryError;
+    use tantivy::TantivyError;
+
+    use super::SearchError;
+
+    #[test]
+    fn test_out_of_memory_io_error_is_not_retryable() {
+        let io_error = io::Error::from(OutOfMemoryError::SplitBudgetExceeded);
+        let search_error = SearchError::from(io_error);
+        let SearchError::OutOfWarmupMemory(message) = &search_error else {
+            panic!("expected OutOfWarmupMemory, got {search_error:?}");
+        };
+        assert_eq!(message, "out of warmup memory: split budget exceeded");
+        assert!(!search_error.is_retryable_on_another_searcher());
+    }
+
+    #[test]
+    fn test_other_io_error_is_retryable() {
+        let io_error = io::Error::new(io::ErrorKind::ConnectionReset, "connection reset");
+        let search_error = SearchError::from(io_error);
+        assert!(matches!(search_error, SearchError::Internal(_)));
+        assert!(search_error.is_retryable_on_another_searcher());
+    }
+
+    #[test]
+    fn test_out_of_memory_tantivy_error_is_not_retryable() {
+        let io_error = io::Error::from(OutOfMemoryError::GlobalBudgetExceeded);
+        let tantivy_error = TantivyError::IoError(Arc::new(io_error));
+        let search_error = SearchError::from(tantivy_error);
+        let SearchError::OutOfWarmupMemory(message) = &search_error else {
+            panic!("expected OutOfWarmupMemory, got {search_error:?}");
+        };
+        assert_eq!(message, "out of warmup memory: global budget exceeded");
+        assert!(!search_error.is_retryable_on_another_searcher());
+
+        let tantivy_error = TantivyError::InternalError("boom".to_string());
+        let search_error = SearchError::from(tantivy_error);
+        assert!(matches!(search_error, SearchError::Internal(_)));
+        assert!(search_error.is_retryable_on_another_searcher());
+    }
+
+    #[test]
+    fn test_with_context_keeps_the_variant() {
+        let search_error =
+            SearchError::from(io::Error::from(OutOfMemoryError::SplitBudgetExceeded))
+                .with_context("failed to load automaton");
+        let SearchError::OutOfWarmupMemory(message) = &search_error else {
+            panic!("expected OutOfWarmupMemory, got {search_error:?}");
+        };
+        assert_eq!(
+            message,
+            "failed to load automaton: out of warmup memory: split budget exceeded"
+        );
+
+        let search_error =
+            SearchError::Internal("boom".to_string()).with_context("failed to load automaton");
+        let SearchError::Internal(message) = &search_error else {
+            panic!("expected Internal, got {search_error:?}");
+        };
+        assert_eq!(message, "failed to load automaton: boom");
+
+        let search_error = SearchError::InvalidQuery("bad".to_string()).with_context("ignored");
+        let SearchError::InvalidQuery(message) = &search_error else {
+            panic!("expected InvalidQuery, got {search_error:?}");
+        };
+        assert_eq!(message, "bad");
     }
 }

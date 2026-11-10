@@ -93,7 +93,7 @@ impl GlobalWarmupMemory {
                 }
                 Some(new_allocated)
             })
-            .map_err(|_| OutOfMemoryError)?;
+            .map_err(|_| OutOfMemoryError::GlobalBudgetExceeded)?;
         LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES.set((previous_allocated + num_bytes) as f64);
         Ok(())
     }
@@ -179,10 +179,16 @@ mod tests {
     fn test_try_allocate_over_limit_fails() {
         let global = GlobalWarmupMemory::with_limit_and_free_callback(ByteSize(100), || {});
         let _guard = global.try_allocate(60).unwrap();
-        assert_eq!(global.try_allocate(41).err(), Some(OutOfMemoryError));
+        assert_eq!(
+            global.try_allocate(41).err(),
+            Some(OutOfMemoryError::GlobalBudgetExceeded)
+        );
         // A failed allocation does not change the allocated memory.
         assert_eq!(global.allocated(), 60);
-        assert_eq!(global.try_allocate(u64::MAX).err(), Some(OutOfMemoryError));
+        assert_eq!(
+            global.try_allocate(u64::MAX).err(),
+            Some(OutOfMemoryError::GlobalBudgetExceeded)
+        );
         assert_eq!(global.allocated(), 60);
     }
 
@@ -225,7 +231,10 @@ mod tests {
         assert_eq!(guard.num_bytes(), 90);
         assert_eq!(global.allocated(), 90);
         // A failed grow leaves the guard and the global memory unchanged.
-        assert_eq!(guard.try_grow(11).err(), Some(OutOfMemoryError));
+        assert_eq!(
+            guard.try_grow(11).err(),
+            Some(OutOfMemoryError::GlobalBudgetExceeded)
+        );
         assert_eq!(guard.num_bytes(), 90);
         assert_eq!(global.allocated(), 90);
         drop(guard);

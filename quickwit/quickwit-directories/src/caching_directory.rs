@@ -23,13 +23,33 @@ use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, OwnedBytes};
 use tantivy::{Directory, HasLen};
 
-/// Returned when reserving memory would go over the warmup memory limit.
+/// Returned when reserving memory would go over a warmup memory limit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OutOfMemoryError;
+pub enum OutOfMemoryError {
+    /// The split search would go over its own warmup memory limit.
+    SplitBudgetExceeded,
+    /// The node would go over the warmup memory limit shared by all split searches.
+    GlobalBudgetExceeded,
+}
+
+impl fmt::Display for OutOfMemoryError {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            OutOfMemoryError::SplitBudgetExceeded => {
+                write!(formatter, "out of warmup memory: split budget exceeded")
+            }
+            OutOfMemoryError::GlobalBudgetExceeded => {
+                write!(formatter, "out of warmup memory: global budget exceeded")
+            }
+        }
+    }
+}
+
+impl std::error::Error for OutOfMemoryError {}
 
 impl From<OutOfMemoryError> for io::Error {
-    fn from(_out_of_memory_error: OutOfMemoryError) -> io::Error {
-        io::Error::new(io::ErrorKind::OutOfMemory, "out of warmup memory")
+    fn from(out_of_memory_error: OutOfMemoryError) -> io::Error {
+        io::Error::new(io::ErrorKind::OutOfMemory, out_of_memory_error)
     }
 }
 
@@ -223,7 +243,7 @@ mod tests {
                     let new_reserved = reserved + num_bytes;
                     (new_reserved <= self.limit).then_some(new_reserved)
                 })
-                .map_err(|_| OutOfMemoryError)?;
+                .map_err(|_| OutOfMemoryError::GlobalBudgetExceeded)?;
             Ok(())
         }
     }
@@ -294,7 +314,10 @@ mod tests {
 
         let io_error = file_handle.read_bytes_async(0..5).await.unwrap_err();
         assert_eq!(io_error.kind(), io::ErrorKind::OutOfMemory);
-        assert_eq!(io_error.to_string(), "out of warmup memory");
+        assert_eq!(
+            io_error.to_string(),
+            "out of warmup memory: global budget exceeded"
+        );
         assert!(file_handle.read_bytes(0..5).is_err());
         // The underlying directory is never called and nothing is cached.
         assert_eq!(debug_proxy_directory.drain_read_operations().count(), 0);
