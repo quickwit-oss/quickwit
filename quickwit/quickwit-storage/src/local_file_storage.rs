@@ -236,6 +236,19 @@ impl Storage for LocalFileStorage {
         })?
     }
 
+    async fn get_slice_into(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        buffer: &mut [u8],
+    ) -> StorageResult<()> {
+        if buffer.is_empty() {
+            return Ok(());
+        }
+        let _in_flight_guards = object_storage_get_slice_in_flight_guards(buffer.len());
+        crate::default_get_slice_into(self, path, range, buffer).await
+    }
+
     #[tracing::instrument(
         name = "storage.local_file.get_slice_stream",
         skip(self),

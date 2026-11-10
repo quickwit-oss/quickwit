@@ -15,12 +15,10 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::ops::Bound;
-use std::sync::Arc;
 
 use quickwit_query::query_ast::{
     BuildTantivyAstContext, CalcFieldQuery, FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery,
-    QueryAst, QueryAstTransformer, QueryAstVisitor, RangeQuery, RegexQuery, TermSetQuery,
-    WildcardQuery,
+    QueryAst, QueryAstVisitor, RangeQuery, RegexQuery, TermSetQuery, WildcardQuery,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_query::{InvalidQuery, find_field_or_hit_dynamic};
@@ -144,17 +142,7 @@ impl<'a> QueryAstVisitor<'a> for GetRequiredFastFieldsVisitor<'_> {
 pub(crate) fn build_query(
     query_ast: QueryAst,
     context: &BuildTantivyAstContext,
-    cache_context: Option<(Arc<dyn quickwit_query::query_ast::PredicateCache>, String)>,
 ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
-    let query_ast = if let Some((cache, split_id)) = cache_context {
-        let Ok(query_ast) = quickwit_query::query_ast::PredicateCacheInjector { cache, split_id }
-            .transform(query_ast);
-        // this transformer isn't supposed to ever remove a node
-        query_ast.unwrap_or(QueryAst::MatchAll)
-    } else {
-        query_ast
-    };
-
     // Visit after cache injection: cache hits do not evaluate the underlying predicate,
     // while uninitialized cache nodes and cache misses still need their input columns.
     let mut fast_fields_visitor = GetRequiredFastFieldsVisitor {
@@ -415,7 +403,7 @@ mod test {
         // Input names are resolved per segment by Tantivy, not filtered by the builder's schema.
         let schema = Schema::builder().build();
         let context = BuildTantivyAstContext::for_test(&schema);
-        build_query(query, &context, None).unwrap().1
+        build_query(query, &context).unwrap().1
     }
 
     #[test]
@@ -499,7 +487,7 @@ mod test {
                 None,
             ),
         ] {
-            let (_, warmup) = build_query(calc_field(expression), &context, None).unwrap();
+            let (_, warmup) = build_query(calc_field(expression), &context).unwrap();
             assert_eq!(
                 warmup.fast_fields,
                 expected_fast_fields(&[fast_field]),
@@ -529,7 +517,7 @@ mod test {
         // The predicate reads the subfield's fast column, and the postings of the terms accepted
         // by the prefilter under the subfield's path in the dynamic field.
         let expression = r#"(EQ (REGEXP_EXTRACT custom.programName "^/([a-z]+)/(v[0-9]+)/([a-z]+)$" 3u64) "sports")"#;
-        let (_, warmup) = build_query(calc_field(expression), &context, None).unwrap();
+        let (_, warmup) = build_query(calc_field(expression), &context).unwrap();
         assert_eq!(
             warmup.fast_fields,
             expected_fast_fields(&["custom.programName"])
@@ -622,7 +610,7 @@ mod test {
             ..Default::default()
         }
         .into();
-        let (_, warmup) = build_query(query, &context, None).unwrap();
+        let (_, warmup) = build_query(query, &context).unwrap();
         let mut expected = expected_fast_fields(&[
             "value",
             "set_value",
@@ -757,7 +745,7 @@ mod test {
             .parse_user_query(&[])
             .map_err(|err| err.to_string())?;
         let schema = make_schema(dynamic_mode);
-        let query_result = build_query(query_ast, &BuildTantivyAstContext::for_test(&schema), None);
+        let query_result = build_query(query_ast, &BuildTantivyAstContext::for_test(&schema));
         query_result
             .map(|query| format!("{query:?}"))
             .map_err(|err| err.to_string())
@@ -1134,7 +1122,7 @@ mod test {
         let schema = make_schema(true);
         let context = BuildTantivyAstContext::for_test(&schema);
 
-        let (_, warmup_info) = build_query(query_with_set, &context, None).unwrap();
+        let (_, warmup_info) = build_query(query_with_set, &context).unwrap();
         assert!(warmup_info.term_dict_fields.is_empty());
         let desc = schema.get_field("desc").unwrap();
         assert_eq!(
@@ -1145,7 +1133,7 @@ mod test {
             )])
         );
 
-        let (_, warmup_info) = build_query(query_without_set, &context, None).unwrap();
+        let (_, warmup_info) = build_query(query_without_set, &context).unwrap();
         assert!(warmup_info.term_dict_fields.is_empty());
     }
 

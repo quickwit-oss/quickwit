@@ -12,8 +12,10 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 base64 = { workspace = true }
 bitpacking = { workspace = true }
+futures = { workspace = true }
 hex = { workspace = true }
 lru = { workspace = true }
 regex = { workspace = true }
@@ -34,6 +36,7 @@ quickwit-common = { workspace = true }
 quickwit-datetime = { workspace = true }
 
 [dev-dependencies]
+tokio = { workspace = true }
 criterion = { workspace = true }
 proptest = { workspace = true }
 time = { workspace = true }
