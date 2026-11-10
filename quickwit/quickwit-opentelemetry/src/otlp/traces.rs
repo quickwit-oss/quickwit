@@ -77,6 +77,7 @@ doc_mapping:
     - name: resource_attributes
       type: json
       tokenizer: raw
+      fast: true
     - name: resource_dropped_attributes_count
       type: u64
       indexed: false
@@ -138,6 +139,7 @@ doc_mapping:
     - name: span_status
       type: json
       indexed: true
+      fast: true
     - name: parent_span_id
       type: bytes
       input_format: hex
