@@ -10,6 +10,11 @@ repository.workspace = true
 authors.workspace = true
 license.workspace = true
 
+# Run without libtest's background allocations so accounting assertions are exact.
+[[test]]
+name = "allocated_bytes_global"
+harness = false
+
 [dependencies]
 anyhow = { workspace = true }
 async-speed-limit = { workspace = true }
