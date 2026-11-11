@@ -890,6 +890,7 @@ mod tests {
                 cpu_capacity: IndexerConfig::default_cpu_capacity(),
                 enable_cooperative_indexing: false,
                 max_merge_write_throughput: Some(ByteSize::mb(100)),
+                shutdown_drain_timeout: IndexerConfig::default_shutdown_drain_timeout(),
             }
         );
         assert_eq!(
