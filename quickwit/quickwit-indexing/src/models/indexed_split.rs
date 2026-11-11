@@ -26,7 +26,7 @@ use tantivy::IndexBuilder;
 use tantivy::directory::{MmapDirectory, RamDirectory};
 use tracing::{Span, error, instrument};
 
-use crate::controlled_directory::ControlledDirectory;
+use crate::controlled_directory::{ControlledDirectory, split_scratch_mmap_directory_options};
 use crate::docs_clustering::DocIdClusterer;
 use crate::merge_policy::MergeTask;
 use crate::metrics::INDEX_SOURCE;
@@ -99,7 +99,10 @@ impl IndexedSplitBuilder {
         let use_ram_directory =
             quickwit_common::get_bool_from_env_cached!("QW_ENABLE_IN_MEMORY_INDEXING", false);
         let ram_directory_opt = use_ram_directory.then(RamDirectory::default);
-        let mmap_directory = MmapDirectory::open(split_scratch_directory.path())?;
+        let mmap_directory = MmapDirectory::open_with_options(
+            split_scratch_directory.path(),
+            split_scratch_mmap_directory_options(),
+        )?;
         let controlled_directory = ControlledDirectory::new(Box::new(mmap_directory), io_controls);
         let indexing_directory: Box<dyn tantivy::Directory> =
             if let Some(ram_directory) = &ram_directory_opt {

@@ -46,7 +46,7 @@ use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::actors::Packager;
-use crate::controlled_directory::ControlledDirectory;
+use crate::controlled_directory::{ControlledDirectory, split_scratch_mmap_directory_options};
 use crate::merge_policy::{MergeOperationType, MergeSource};
 use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, SplitAttrs};
 
@@ -518,9 +518,9 @@ impl MergeExecutor {
 
         // This directory is here to receive the merged split, as well as the final meta.json file.
         let output_directory = ControlledDirectory::new(
-            Box::new(MmapDirectory::open_with_madvice(
+            Box::new(MmapDirectory::open_with_options(
                 output_path,
-                Advice::Sequential,
+                split_scratch_mmap_directory_options().with_advice(Advice::Sequential),
             )?),
             self.io_controls
                 .clone()

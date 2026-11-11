@@ -26,7 +26,7 @@ use quickwit_directories::BundleDirectory;
 use quickwit_proto::types::SplitId;
 use quickwit_storage::StorageResult;
 use tantivy::Directory;
-use tantivy::directory::{Advice, MmapDirectory};
+use tantivy::directory::{Advice, MmapDirectory, MmapDirectoryOptions};
 use tokio::sync::Mutex;
 use tracing::{debug, error, warn};
 use ulid::Ulid;
@@ -39,14 +39,14 @@ const SPLIT_MAX_AGE: Duration = Duration::from_hours(48); // 2 days
 pub fn get_tantivy_directory_from_split_bundle(
     split_file: &Path,
 ) -> StorageResult<Box<dyn Directory>> {
-    let mmap_directory = MmapDirectory::open_with_madvice(
+    let mmap_directory = MmapDirectory::open_with_options(
         split_file.parent().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::NotFound,
                 format!("couldn't find parent for {}", split_file.display()),
             )
         })?,
-        Advice::Sequential,
+        MmapDirectoryOptions::default().with_advice(Advice::Sequential),
     )?;
     let split_fileslice = mmap_directory.open_read(Path::new(&split_file))?;
     Ok(Box::new(BundleDirectory::open_split(split_fileslice)?))
@@ -68,6 +68,21 @@ async fn num_bytes_in_folder(directory_path: &Path) -> io::Result<ByteSize> {
         }
     }
     Ok(ByteSize(total_bytes))
+}
+
+/// Syncs the files held in a given directory, then the directory itself.
+async fn sync_folder(directory_path: &Path) -> io::Result<()> {
+    let mut read_dir = tokio::fs::read_dir(directory_path).await?;
+    while let Some(dir_entry) = read_dir.next_entry().await? {
+        if dir_entry.file_type().await?.is_file() {
+            let file = tokio::fs::File::open(dir_entry.path()).await?;
+            file.sync_data().await?;
+        }
+    }
+    tokio::fs::File::open(directory_path)
+        .await?
+        .sync_data()
+        .await
 }
 
 /// Recovers the creation time of a split from its id.
@@ -552,6 +567,8 @@ impl IndexingSplitCache {
         split_path: &Path,
     ) -> io::Result<bool> {
         assert!(split_path.is_dir());
+        // Split files are written without fsync, but the cache outlives crashes.
+        sync_folder(split_path).await?;
         let mut inner = self.inner.lock().await;
         inner.move_into_cache(split_id, split_path).await
     }

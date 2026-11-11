@@ -24,8 +24,18 @@ use quickwit_common::io::{ControlledWrite, IoControls, IoControlsAccess};
 use tantivy::Directory;
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
 use tantivy::directory::{
-    AntiCallToken, FileHandle, TerminatingWrite, WatchCallback, WatchHandle, WritePtr,
+    AntiCallToken, FileHandle, MmapDirectoryOptions, TerminatingWrite, WatchCallback, WatchHandle,
+    WritePtr,
 };
+
+/// Options for the mmap directories holding split scratch files (indexing and merge outputs).
+///
+/// Scratch files are discarded on restart, so fsync is disabled unless
+/// `QW_ENABLE_SPLIT_SCRATCH_FSYNC` is set.
+pub(crate) fn split_scratch_mmap_directory_options() -> MmapDirectoryOptions {
+    let fsync = quickwit_common::get_bool_from_env_cached!("QW_ENABLE_SPLIT_SCRATCH_FSYNC", false);
+    MmapDirectoryOptions::default().with_fsync(fsync)
+}
 
 /// Buffer capacity.
 ///
