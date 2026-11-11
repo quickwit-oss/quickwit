@@ -56,10 +56,14 @@ struct Execute {
 /// in a cache and periodically update this list.
 pub struct RetentionPolicyExecutor {
     metastore: MetastoreServiceClient,
-    /// A map of index_id to index metadata that are managed by this executor.
+    /// A map of index UID to index config that are managed by this executor.
     /// This act as local cache that is periodically updated while taking into
     /// account deleted indexes, updated or removed retention policy on indexes.
-    index_configs: HashMap<String, IndexConfig>,
+    ///
+    /// The key is the full index UID: an index that is deleted and recreated under the same
+    /// `index_id` is a new incarnation, and queued executions from the previous incarnation
+    /// must not keep rescheduling themselves.
+    index_configs: HashMap<IndexUid, IndexConfig>,
     counters: RetentionPolicyExecutorCounters,
 }
 
@@ -99,15 +103,15 @@ impl RetentionPolicyExecutor {
         info!("loaded {} indexes from the metastore", indexes.len());
 
         let deleted_indexes = compute_deleted_indexes(
-            self.index_configs.keys().map(String::as_str),
+            self.index_configs.keys(),
             indexes
                 .iter()
-                .map(|index_metadata| index_metadata.index_id()),
+                .map(|index_metadata| &index_metadata.index_uid),
         );
         if !deleted_indexes.is_empty() {
-            debug!(index_ids=%deleted_indexes.iter().join(", "), "deleting indexes from cache");
-            for index_id in deleted_indexes {
-                self.index_configs.remove(&index_id);
+            debug!(index_uids=%deleted_indexes.iter().join(", "), "deleting indexes from cache");
+            for deleted_index_uid in deleted_indexes {
+                self.index_configs.remove(&deleted_index_uid);
             }
         }
         for index_metadata in indexes {
@@ -120,24 +124,25 @@ impl RetentionPolicyExecutor {
                     // Remove the index from the cache if it exist.
                     // In case where the retention policy was removed this index might have
                     // been inserted in the cache from a previous iteration.
-                    self.index_configs.remove(&index_config.index_id);
+                    self.index_configs.remove(&index_uid);
                     continue;
                 }
             };
 
             // Insert or update the index in the cache.
-            if let Some(value) = self.index_configs.get_mut(&index_config.index_id) {
+            if let Some(value) = self.index_configs.get_mut(&index_uid) {
                 // Update the cache index entry in case the retention policy was updated.
                 *value = index_config;
                 continue;
             }
 
             if let Ok(next_interval) = retention_policy.duration_until_next_evaluation() {
-                let message = Execute { index_uid };
+                let message = Execute {
+                    index_uid: index_uid.clone(),
+                };
                 info!(index_id=?index_config.index_id, scheduled_in=?next_interval, "retention-policy-schedule-operation");
                 // Inserts & schedule the index's first retention policy execution.
-                self.index_configs
-                    .insert(index_config.index_id.clone(), index_config);
+                self.index_configs.insert(index_uid, index_config);
                 ctx.schedule_self_msg(next_interval, message);
             } else {
                 error!(index_id=%index_config.index_id, "Couldn't extract the index next schedule time.")
@@ -194,10 +199,10 @@ impl Handler<Execute> for RetentionPolicyExecutor {
         info!(index_id=%message.index_uid.index_id, "retention-policy-execute-operation");
         self.counters.num_execution_passes += 1;
 
-        let index_config = match self.index_configs.get(&message.index_uid.index_id) {
+        let index_config = match self.index_configs.get(&message.index_uid) {
             Some(config) => config,
             None => {
-                debug!(index_id=%message.index_uid.index_id, "the index might have been deleted");
+                debug!(index_uid=%message.index_uid, "the index was deleted, recreated, or no longer has a retention policy");
                 return Ok(());
             }
         };
@@ -228,7 +233,7 @@ impl Handler<Execute> for RetentionPolicyExecutor {
             // Since we have failed to schedule next execution for this index,
             // we remove it from the cache for it to be retried next time it gets
             // added back by the RetentionPolicyExecutor cache refresh loop.
-            self.index_configs.remove(&message.index_uid.index_id);
+            self.index_configs.remove(&message.index_uid);
             error!(index_id=%message.index_uid.index_id, "couldn't extract the index next schedule interval");
         }
         Ok(())
@@ -237,15 +242,12 @@ impl Handler<Execute> for RetentionPolicyExecutor {
 
 /// Extract the list of deleted indexes.
 fn compute_deleted_indexes<'a>(
-    cached_indexes: impl Iterator<Item = &'a str>,
-    indexes: impl Iterator<Item = &'a str>,
-) -> HashSet<String> {
+    cached_indexes: impl Iterator<Item = &'a IndexUid>,
+    indexes: impl Iterator<Item = &'a IndexUid>,
+) -> HashSet<IndexUid> {
     let cached_set: HashSet<_> = cached_indexes.collect();
     let indexes_set: HashSet<_> = indexes.collect();
-    (&cached_set - &indexes_set)
-        .into_iter()
-        .map(ToString::to_string)
-        .collect()
+    (&cached_set - &indexes_set).into_iter().cloned().collect()
 }
 
 #[cfg(test)]
@@ -434,6 +436,74 @@ mod tests {
             .await?;
         universe.assert_quit().await;
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_retention_executor_ignores_executions_from_previous_incarnation()
+    -> anyhow::Result<()> {
+        let previous_index_uid = IndexUid::for_test("index-1", 0);
+        let recreated_index_uid = IndexUid::for_test("index-1", 1);
+
+        let mut mock_metastore = MockMetastoreService::new();
+        let mut sequence = Sequence::new();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .times(1)
+            .in_sequence(&mut sequence)
+            .returning({
+                let previous_index_uid = previous_index_uid.clone();
+                move |_list_indexes_request| {
+                    let index_metadata = IndexMetadata::new_with_index_uid(
+                        previous_index_uid.clone(),
+                        make_index("index-1", Some("3 hours")),
+                    );
+                    Ok(ListIndexesMetadataResponse::for_test(vec![index_metadata]))
+                }
+            });
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .times(1)
+            .in_sequence(&mut sequence)
+            .returning({
+                let recreated_index_uid = recreated_index_uid.clone();
+                move |_list_indexes_request| {
+                    let index_metadata = IndexMetadata::new_with_index_uid(
+                        recreated_index_uid.clone(),
+                        make_index("index-1", Some("3 hours")),
+                    );
+                    Ok(ListIndexesMetadataResponse::for_test(vec![index_metadata]))
+                }
+            });
+        // An execution queued before the index was recreated must not reach the metastore.
+        mock_metastore.expect_list_splits().times(0);
+        mock_metastore.expect_mark_splits_for_deletion().times(0);
+
+        let retention_policy_executor =
+            RetentionPolicyExecutor::new(MetastoreServiceClient::from_mock(mock_metastore));
+        let universe = Universe::with_accelerated_time();
+        let (mailbox, handle) = universe.spawn_builder().spawn(retention_policy_executor);
+
+        // First refresh: the index exists with its original UID.
+        let counters = handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.num_refresh_passes, 1);
+
+        // The index is deleted and recreated under the same ID, so the next refresh sees a new UID.
+        mailbox.send_message(Loop).await?;
+        let counters = handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.num_refresh_passes, 2);
+
+        // The execution scheduled before the recreation still carries the previous UID.
+        mailbox
+            .send_message(Execute {
+                index_uid: previous_index_uid,
+            })
+            .await?;
+        let counters = handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.num_execution_passes, 1);
+        assert_eq!(counters.num_expired_splits, 0);
+
+        universe.assert_quit().await;
         Ok(())
     }
 
