@@ -27,7 +27,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 pub use storage_with_cache::StorageWithCache;
 
-pub use self::batch_read::read_batch_with_cache;
+pub use self::batch_read::{read_batch_with_async_cache, read_batch_with_cache};
 pub use self::byte_range_cache::{ByteRangeCache, FileByteRangeCache};
 pub use self::memory_sized_cache::MemorySizedCache;
 use crate::{OwnedBytes, Storage};
