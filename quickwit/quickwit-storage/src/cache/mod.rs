@@ -13,6 +13,7 @@
 // limitations under the License.
 
 mod base_cache;
+mod batch_read;
 mod byte_range_cache;
 mod memory_sized_cache;
 mod slice_address;
@@ -26,6 +27,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 pub use storage_with_cache::StorageWithCache;
 
+pub use self::batch_read::read_batch_with_cache;
 pub use self::byte_range_cache::{ByteRangeCache, FileByteRangeCache};
 pub use self::memory_sized_cache::MemorySizedCache;
 use crate::{OwnedBytes, Storage};

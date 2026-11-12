@@ -73,7 +73,8 @@ pub use self::bundle_storage::{
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::cache::MockStorageCache;
 pub use self::cache::{
-    ByteRangeCache, FileByteRangeCache, MemorySizedCache, StorageCache, wrap_storage_with_cache,
+    ByteRangeCache, FileByteRangeCache, MemorySizedCache, StorageCache,
+    read_batch_with_cache, wrap_storage_with_cache,
 };
 pub use self::coalescing_storage::CoalescingStorage;
 pub use self::counting_storage::{CountingStorage, DownloadCounters};
