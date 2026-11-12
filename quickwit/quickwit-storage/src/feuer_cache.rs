@@ -53,8 +53,8 @@ impl FeuerIoQueues {
         scorer: Arc<dyn feuer::RetentionScorer>,
         payload_version: u64,
     ) -> anyhow::Result<feuer::Cache> {
-        // Feuer checks disk capacity only when opening disk files. Validate it before
-        // attempting I/O so an unavailable disk cannot hide invalid settings.
+        // An invalid disk capacity must fail startup, even if the disk is unavailable
+        // and the cache would otherwise fall back to memory.
         let disk_capacity = config.disk_capacity.as_u64();
         anyhow::ensure!(
             disk_capacity == 0 || (2 * 1024 * 1024..=i64::MAX as u64).contains(&disk_capacity),
