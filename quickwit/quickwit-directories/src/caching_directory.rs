@@ -100,34 +100,21 @@ impl FileHandle for CachingFileHandle {
         &self,
         byte_ranges: Vec<Range<usize>>,
     ) -> io::Result<Vec<OwnedBytes>> {
-        let mut results = vec![OwnedBytes::empty(); byte_ranges.len()];
-        let mut misses = Vec::new();
-        for (index, byte_range) in byte_ranges.into_iter().enumerate() {
-            if let Some(bytes) = self.cache.get_slice(byte_range.clone()) {
-                results[index] = bytes;
-            } else {
-                misses.push((index, byte_range));
-            }
-        }
-        if misses.is_empty() {
-            return Ok(results);
-        }
-        let ranges = misses.iter().map(|(_, range)| range.clone()).collect();
-        let payloads = self
-            .underlying_filehandle
-            .read_bytes_batch_async(ranges)
-            .await?;
-        if payloads.len() != misses.len() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "batch read returned an unexpected number of buffers",
-            ));
-        }
-        for ((index, byte_range), bytes) in misses.into_iter().zip(payloads) {
-            self.cache.put_slice(byte_range, bytes.clone());
-            results[index] = bytes;
-        }
-        Ok(results)
+        crate::batch_read::read_batch_with_cache(
+            byte_ranges,
+            |range| self.cache.get_slice(range),
+            |ranges| async move {
+                let payloads = self
+                    .underlying_filehandle
+                    .read_bytes_batch_async(ranges.clone())
+                    .await?;
+                for (range, bytes) in ranges.into_iter().zip(&payloads) {
+                    self.cache.put_slice(range, bytes.clone());
+                }
+                Ok(payloads)
+            },
+        )
+        .await
     }
 }
 

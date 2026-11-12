@@ -37,36 +37,30 @@ const COLLECTION_DURATION: Duration = Duration::from_millis(1);
 struct CollectedBatch {
     // Taking these ranges ends collection. Later callers start another batch because
     // the stream may have discarded bytes they need.
-    ranges_to_read: Mutex<Option<Vec<Range<usize>>>>,
+    ranges_to_read: Arc<Mutex<Option<Vec<Range<usize>>>>>,
     read_future: Shared<BoxFuture<'static, StorageResult<Arc<Vec<OwnedBytes>>>>>,
 }
 
 impl CollectedBatch {
     fn new(underlying: Arc<dyn Storage>, path: PathBuf, ranges: Vec<Range<usize>>) -> Arc<Self> {
-        Arc::new_cyclic(|weak_batch: &Weak<Self>| {
-            let weak_batch = weak_batch.clone();
-            let read_future = async move {
-                tokio::time::sleep(COLLECTION_DURATION).await;
-                // The upgraded Arc drops before awaiting the reads. Callers own the batch,
-                // so dropping the last caller cancels its timer or downloads.
-                let collected_ranges = weak_batch
-                    .upgrade()
-                    .expect("a caller owns the batch while polling its read future")
-                    .ranges_to_read
-                    .lock()
-                    .unwrap()
-                    .take()
-                    .expect("collected ranges are taken once");
-                read_collected_ranges(underlying.as_ref(), &path, collected_ranges)
-                    .await
-                    .map(Arc::new)
-            }
-            .boxed()
-            .shared();
-            Self {
-                ranges_to_read: Mutex::new(Some(ranges)),
-                read_future,
-            }
+        let ranges_to_read = Arc::new(Mutex::new(Some(ranges)));
+        let collected_ranges = ranges_to_read.clone();
+        let read_future = async move {
+            tokio::time::sleep(COLLECTION_DURATION).await;
+            let ranges = collected_ranges
+                .lock()
+                .unwrap()
+                .take()
+                .expect("collected ranges are taken once");
+            read_collected_ranges(underlying.as_ref(), &path, ranges)
+                .await
+                .map(Arc::new)
+        }
+        .boxed()
+        .shared();
+        Arc::new(Self {
+            ranges_to_read,
+            read_future,
         })
     }
 }
@@ -75,6 +69,7 @@ impl CollectedBatch {
 /// including singletons. Batches submit all descriptors together, with one shared read future
 /// per caller. Merges overlaps and gaps up to 4 MiB and runs at most five downloads per collected
 /// group. Streams merged downloads, retaining requested slices and discarding gaps.
+/// Callers must supply ranges with `start <= end`; ranges may be in any order.
 ///
 /// Place this below exact-range caches and above timeout/retry storage. Caches then see original
 /// ranges, and only their misses wait for collection. Object paths are relative to `underlying`.
@@ -152,7 +147,6 @@ impl Storage for CoalescingStorage {
         path: &Path,
         ranges: Vec<Range<usize>>,
     ) -> StorageResult<Vec<OwnedBytes>> {
-        crate::storage::validate_byte_ranges(&ranges)?;
         if ranges.iter().all(Range::is_empty) {
             return Ok(vec![OwnedBytes::empty(); ranges.len()]);
         }
@@ -236,16 +230,10 @@ async fn read_download_range(
     range: Range<usize>,
     mut requests: &[(usize, Range<usize>)],
 ) -> StorageResult<Vec<(usize, OwnedBytes)>> {
-    let invalid_length = || {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            "download length differs from requested range",
-        )
-    };
     if let [(index, _)] = requests {
         let bytes = storage.get_slice(path, range.clone()).await?;
         if bytes.len() != range.len() {
-            return Err(invalid_length().into());
+            return Err(io::Error::from(io::ErrorKind::InvalidData).into());
         }
         return Ok(vec![(*index, bytes)]);
     }
@@ -266,16 +254,10 @@ async fn read_download_range(
             && tokio::io::copy_buf(&mut (&mut reader).take(gap), &mut tokio::io::sink()).await?
                 != gap
         {
-            return Err(invalid_length().into());
+            return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
         }
         let mut bytes = vec![0; useful.len()];
-        reader.read_exact(&mut bytes).await.map_err(|error| {
-            if error.kind() == io::ErrorKind::UnexpectedEof {
-                invalid_length()
-            } else {
-                error
-            }
-        })?;
+        reader.read_exact(&mut bytes).await?;
         let bytes = OwnedBytes::new(bytes);
         for (index, requested) in &requests[..count] {
             let result = if *requested == useful {
@@ -294,7 +276,7 @@ async fn read_download_range(
     }
     debug_assert_eq!(position, range.end);
     if reader.read(&mut [0]).await? != 0 {
-        return Err(invalid_length().into());
+        return Err(io::Error::from(io::ErrorKind::InvalidData).into());
     }
     Ok(buffers)
 }

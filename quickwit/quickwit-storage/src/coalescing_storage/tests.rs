@@ -104,12 +104,6 @@ async fn test_singleton_waits_and_preserves_allocation() {
         assert!(buffers.iter().all(|bytes| bytes.is_empty()));
     }
     assert_eq!(read_start.elapsed(), Duration::ZERO);
-    let reversed_range = Range { start: 3, end: 2 };
-    let error = storage
-        .get_slices(Path::new("file"), vec![0..1, reversed_range])
-        .await
-        .unwrap_err();
-    assert_eq!(io::Error::from(error).kind(), io::ErrorKind::InvalidInput);
     assert!(storage.batches_by_object.lock().unwrap().is_empty());
     let bytes = storage.get_slice(Path::new("file"), 5..9).await.unwrap();
     assert!(read_start.elapsed() >= COLLECTION_DURATION);
