@@ -132,7 +132,7 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
 
     /// Reads ranges in one batch, returning one buffer per range in input order.
     /// Overlaps and duplicates are preserved. Empty ranges return empty buffers without reads.
-    /// Reversed ranges fail before any reads start. An error returns no partial result.
+    /// Callers must supply ranges with `start <= end`. An error returns no partial result.
     ///
     /// The default runs five scalar reads at a time. Wrappers above a coalescer must forward
     /// batches (after removing cache hits or translating offsets) so it can plan all misses
@@ -142,7 +142,6 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
         path: &Path,
         ranges: Vec<Range<usize>>,
     ) -> StorageResult<Vec<OwnedBytes>> {
-        validate_byte_ranges(&ranges)?;
         stream::iter(ranges)
             .map(|range| async move {
                 if range.is_empty() {
@@ -230,17 +229,6 @@ pub async fn default_get_slice_into<S: Storage + ?Sized>(
             "range download returned more than {} bytes",
             buffer.len()
         )));
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_byte_ranges(ranges: &[Range<usize>]) -> StorageResult<()> {
-    if ranges.iter().any(|range| range.start > range.end) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "byte range starts after its end",
-        )
-        .into());
     }
     Ok(())
 }
@@ -358,11 +346,6 @@ mod tests {
             .put("file", CONTENT)
             .build();
         let missing = Path::new("missing");
-        let error = storage
-            .get_slices(missing, vec![0..1, Range { start: 3, end: 2 }])
-            .await
-            .unwrap_err();
-        assert_eq!(io::Error::from(error).kind(), io::ErrorKind::InvalidInput);
         assert!(
             storage
                 .get_slices(missing, Vec::new())

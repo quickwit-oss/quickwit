@@ -16,13 +16,12 @@ use std::ops::Range;
 
 const MAX_GAP: usize = 4 * 1024 * 1024;
 
-/// Ranges must be sorted by start offset. Empty ranges are ignored.
+/// Ranges must have `start <= end` and be sorted by start offset. Empty ranges are ignored.
 /// Merges overlaps and gaps up to 4 MiB. This limits each gap, not the total download size
 /// or the total number of gap bytes downloaded.
 pub(super) fn coalesce_ranges(ranges: impl Iterator<Item = Range<usize>>) -> Vec<Range<usize>> {
     let mut downloads: Vec<Range<usize>> = Vec::new();
     for range in ranges {
-        assert!(range.start <= range.end, "byte range starts after its end");
         if range.is_empty() {
             continue;
         }
@@ -171,11 +170,5 @@ mod tests {
                 }));
             }
         }
-    }
-
-    #[test]
-    #[should_panic(expected = "byte range starts after its end")]
-    fn test_coalesce_ranges_rejects_reversed_range() {
-        coalesce_ranges(vec![Range { start: 2, end: 1 }]);
     }
 }
