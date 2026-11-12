@@ -13,11 +13,11 @@
 // limitations under the License.
 
 use std::collections::HashMap;
+use std::io;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
-use std::{fmt, io};
 
 use async_trait::async_trait;
 use futures::future::{BoxFuture, Shared};
@@ -75,6 +75,7 @@ impl CollectedBatch {
 /// ranges, and only their misses wait for collection. Object paths are relative to `underlying`.
 /// Callers own each batch. Dropping the last caller cancels its timer or downloads.
 /// Other storage operations, including `get_slice_stream`, forward to `underlying`.
+#[derive(Debug)]
 pub struct CoalescingStorage {
     underlying: Arc<dyn Storage>,
     batches_by_object: Mutex<HashMap<PathBuf, Weak<CollectedBatch>>>,
@@ -107,15 +108,6 @@ impl CoalescingStorage {
         let batch = CollectedBatch::new(self.underlying.clone(), path.to_owned(), ranges);
         batches_by_object.insert(path.to_owned(), Arc::downgrade(&batch));
         (batch, buffer_indices)
-    }
-}
-
-impl fmt::Debug for CoalescingStorage {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("CoalescingStorage")
-            .field("underlying", &self.underlying)
-            .finish_non_exhaustive()
     }
 }
 
