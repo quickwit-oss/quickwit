@@ -21,7 +21,6 @@ use crate::OwnedBytes;
 
 /// Checks a synchronous cache, then reads all misses as one batch.
 /// Preserves input order and duplicates. Empty ranges bypass cache and storage.
-/// Cache lookups run in a plain loop, without futures or buffering.
 ///
 /// Ranges must have `start <= end`. `read_misses` must return one buffer per range,
 /// in input order, and may populate its cache after the whole read succeeds.
@@ -33,17 +32,17 @@ pub async fn read_batch_with_cache<ReadFuture, Error>(
 where
     ReadFuture: Future<Output = Result<Vec<OwnedBytes>, Error>>,
 {
-    let mut cached = CacheLookupResults::new(byte_ranges.len());
+    let mut batch = BatchReadBuffers::new(byte_ranges.len());
     for (index, range) in byte_ranges.iter().enumerate() {
         if !range.is_empty() {
-            cached.record(index, get_cached(range.clone()));
+            batch.set_cached_bytes(index, get_cached(range.clone()));
         }
     }
-    cached.read_misses(byte_ranges, read_misses).await
+    batch.read_missing_ranges(byte_ranges, read_misses).await
 }
 
 /// Like [`read_batch_with_cache`], with up to five concurrent asynchronous cache lookups.
-/// All misses are collected before forwarding one complete batch to `read_misses`.
+/// Collects all misses before calling `read_misses`.
 pub async fn read_batch_with_async_cache<GetFuture, ReadFuture, Error>(
     byte_ranges: Vec<Range<usize>>,
     mut get_cached: impl FnMut(Range<usize>) -> GetFuture,
@@ -53,7 +52,7 @@ where
     GetFuture: Future<Output = Option<OwnedBytes>>,
     ReadFuture: Future<Output = Result<Vec<OwnedBytes>, Error>>,
 {
-    let mut cached = CacheLookupResults::new(byte_ranges.len());
+    let mut batch = BatchReadBuffers::new(byte_ranges.len());
     let mut lookups = stream::iter(
         byte_ranges
             .iter()
@@ -67,34 +66,37 @@ where
     })
     .buffered(5);
     while let Some((index, bytes)) = lookups.next().await {
-        cached.record(index, bytes);
+        batch.set_cached_bytes(index, bytes);
     }
     drop(lookups);
-    cached.read_misses(byte_ranges, read_misses).await
+    batch.read_missing_ranges(byte_ranges, read_misses).await
 }
 
-struct CacheLookupResults {
-    buffers: Vec<OwnedBytes>,
-    misses: Vec<usize>,
+/// Buffers for a batch read, in input order, and indices of ranges missing from the cache.
+/// Empty ranges and unread ranges initially contain empty bytes.
+struct BatchReadBuffers {
+    results: Vec<OwnedBytes>,
+    missing_range_indices: Vec<usize>,
 }
 
-impl CacheLookupResults {
+impl BatchReadBuffers {
     fn new(num_ranges: usize) -> Self {
         Self {
-            buffers: vec![OwnedBytes::empty(); num_ranges],
-            misses: Vec::new(),
+            results: vec![OwnedBytes::empty(); num_ranges],
+            missing_range_indices: Vec::new(),
         }
     }
 
-    fn record(&mut self, index: usize, bytes: Option<OwnedBytes>) {
-        if let Some(bytes) = bytes {
-            self.buffers[index] = bytes;
+    /// Saves the range index for reading when cached bytes are absent.
+    fn set_cached_bytes(&mut self, range_index: usize, cached_bytes: Option<OwnedBytes>) {
+        if let Some(bytes) = cached_bytes {
+            self.results[range_index] = bytes;
         } else {
-            self.misses.push(index);
+            self.missing_range_indices.push(range_index);
         }
     }
 
-    async fn read_misses<ReadFuture, Error>(
+    async fn read_missing_ranges<ReadFuture, Error>(
         mut self,
         byte_ranges: Vec<Range<usize>>,
         read_misses: impl FnOnce(Vec<Range<usize>>) -> ReadFuture,
@@ -102,22 +104,26 @@ impl CacheLookupResults {
     where
         ReadFuture: Future<Output = Result<Vec<OwnedBytes>, Error>>,
     {
-        if self.misses.is_empty() {
-            return Ok(self.buffers);
+        if self.missing_range_indices.is_empty() {
+            return Ok(self.results);
         }
-        if self.misses.len() == byte_ranges.len() {
+        if self.missing_range_indices.len() == byte_ranges.len() {
             return read_misses(byte_ranges).await;
         }
-        let ranges = self
-            .misses
+        let missing_ranges = self
+            .missing_range_indices
             .iter()
-            .map(|&index| byte_ranges[index].clone())
+            .map(|&range_index| byte_ranges[range_index].clone())
             .collect();
-        let payloads = read_misses(ranges).await?;
-        for (index, bytes) in self.misses.into_iter().zip(payloads) {
-            self.buffers[index] = bytes;
+        let missing_range_bytes = read_misses(missing_ranges).await?;
+        for (range_index, bytes) in self
+            .missing_range_indices
+            .into_iter()
+            .zip(missing_range_bytes)
+        {
+            self.results[range_index] = bytes;
         }
-        Ok(self.buffers)
+        Ok(self.results)
     }
 }
 
