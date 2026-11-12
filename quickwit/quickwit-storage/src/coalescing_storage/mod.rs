@@ -94,20 +94,28 @@ impl CoalescingStorage {
         &self,
         path: &Path,
         ranges: Vec<Range<usize>>,
-    ) -> (Arc<CollectedBatch>, Range<usize>) {
-        let mut batches_by_object = self.batches_by_object.lock().unwrap();
-        if let Some(batch) = batches_by_object.get(path).and_then(Weak::upgrade) {
-            let mut ranges_to_read = batch.ranges_to_read.lock().unwrap();
-            if let Some(ranges_to_read) = ranges_to_read.as_mut() {
-                let buffer_indices = ranges_to_read.len()..ranges_to_read.len() + ranges.len();
-                ranges_to_read.extend(ranges);
-                return (batch.clone(), buffer_indices);
+    ) -> impl Future<Output = StorageResult<Vec<OwnedBytes>>> + Send + use<> {
+        let (batch, caller_result_indices) = 'collect: {
+            let mut batches_by_object = self.batches_by_object.lock().unwrap();
+            if let Some(batch) = batches_by_object.get(path).and_then(Weak::upgrade) {
+                let mut ranges_to_read = batch.ranges_to_read.lock().unwrap();
+                if let Some(ranges_to_read) = ranges_to_read.as_mut() {
+                    let caller_result_indices =
+                        ranges_to_read.len()..ranges_to_read.len() + ranges.len();
+                    ranges_to_read.extend(ranges);
+                    break 'collect (batch.clone(), caller_result_indices);
+                }
             }
+            let caller_result_indices = 0..ranges.len();
+            let batch = CollectedBatch::new(self.underlying.clone(), path.to_owned(), ranges);
+            batches_by_object.insert(path.to_owned(), Arc::downgrade(&batch));
+            (batch, caller_result_indices)
+        };
+        // Keep the batch alive while this caller awaits its results.
+        async move {
+            let buffers = batch.read_future.clone().await?;
+            Ok(buffers[caller_result_indices].to_vec())
         }
-        let buffer_indices = 0..ranges.len();
-        let batch = CollectedBatch::new(self.underlying.clone(), path.to_owned(), ranges);
-        batches_by_object.insert(path.to_owned(), Arc::downgrade(&batch));
-        (batch, buffer_indices)
     }
 }
 
@@ -142,9 +150,7 @@ impl Storage for CoalescingStorage {
         if ranges.iter().all(Range::is_empty) {
             return Ok(vec![OwnedBytes::empty(); ranges.len()]);
         }
-        let (batch, buffer_indices) = self.collect_ranges(path, ranges);
-        let buffers = batch.read_future.clone().await?;
-        Ok(buffers[buffer_indices].to_vec())
+        self.collect_ranges(path, ranges).await
     }
 
     async fn get_slice_stream(
