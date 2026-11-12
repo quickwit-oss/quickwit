@@ -129,11 +129,7 @@ impl Storage for TimeoutAndRetryStorage {
         path: &Path,
         range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        let mut timeouts = self
-            .storage_timeout_policy
-            .compute_timeout(range.len())
-            .collect::<Vec<_>>()
-            .into_iter();
+        let mut timeouts = self.storage_timeout_policy.compute_timeout(range.len());
         let (reader, deadline) = loop {
             let Some(duration) = timeouts.next() else {
                 return Err(StorageErrorKind::Timeout
