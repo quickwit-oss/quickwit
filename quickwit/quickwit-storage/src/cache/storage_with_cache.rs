@@ -18,7 +18,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use futures::{StreamExt, stream};
 use quickwit_common::uri::Uri;
 use tokio::io::AsyncRead;
 
@@ -74,40 +73,19 @@ impl Storage for StorageWithCache {
         ranges: Vec<Range<usize>>,
     ) -> StorageResult<Vec<OwnedBytes>> {
         crate::storage::validate_byte_ranges(&ranges)?;
-        let mut buffers = vec![OwnedBytes::empty(); ranges.len()];
-        let mut misses = Vec::new();
-        let mut buffer_indices = Vec::new();
-        // Limit cache lookups, while retaining all misses for one storage batch.
-        let mut lookups = stream::iter(
-            ranges
-                .iter()
-                .cloned()
-                .enumerate()
-                .filter(|(_, range)| !range.is_empty()),
+        super::read_batch_with_cache(
+            ranges,
+            |range| self.cache.get(path, range),
+            |ranges| async move {
+                let downloaded = self.storage.get_slices(path, ranges.clone()).await?;
+                assert_eq!(downloaded.len(), ranges.len());
+                for (range, bytes) in ranges.into_iter().zip(&downloaded) {
+                    self.cache.put(path.to_owned(), range, bytes.clone()).await;
+                }
+                Ok(downloaded)
+            },
         )
-        .map(|(index, range)| async move { (index, self.cache.get(path, range).await) })
-        .buffered(5);
-        while let Some((index, bytes)) = lookups.next().await {
-            if let Some(bytes) = bytes {
-                buffers[index] = bytes;
-            } else {
-                misses.push(ranges[index].clone());
-                buffer_indices.push(index);
-            }
-        }
-        if misses.is_empty() {
-            return Ok(buffers);
-        }
-        // Forward all misses together, and publish only after the whole batch succeeds.
-        let downloaded = self.storage.get_slices(path, misses).await?;
-        assert_eq!(downloaded.len(), buffer_indices.len());
-        for (index, bytes) in buffer_indices.into_iter().zip(downloaded) {
-            self.cache
-                .put(path.to_owned(), ranges[index].clone(), bytes.clone())
-                .await;
-            buffers[index] = bytes;
-        }
-        Ok(buffers)
+        .await
     }
 
     async fn get_slice_stream(

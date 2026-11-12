@@ -409,9 +409,9 @@ impl FileHandle for FileSliceWithCache {
         &self,
         byte_ranges: Vec<Range<usize>>,
     ) -> io::Result<Vec<OwnedBytes>> {
-        crate::batch_read::read_batch_with_cache(
+        quickwit_storage::read_batch_with_cache(
             byte_ranges,
-            |range| self.static_cache.try_read_bytes(range),
+            |range| std::future::ready(self.static_cache.try_read_bytes(range)),
             |ranges| self.underlying.read_bytes_batch_async(ranges),
         )
         .await

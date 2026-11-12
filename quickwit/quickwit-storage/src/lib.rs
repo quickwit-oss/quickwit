@@ -68,7 +68,7 @@ pub use self::bundle_storage::{
 pub use self::cache::MockStorageCache;
 pub use self::cache::{
     ByteRangeCache, FileByteRangeCache, MemorySizedCache, QuickwitCache, StorageCache,
-    wrap_storage_with_cache,
+    read_batch_with_cache, wrap_storage_with_cache,
 };
 pub use self::coalescing_storage::CoalescingStorage;
 pub use self::counting_storage::{CountingStorage, DownloadCounters};

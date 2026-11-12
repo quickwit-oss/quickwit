@@ -24,7 +24,6 @@
 #![warn(missing_docs)]
 #![deny(clippy::disallowed_methods)]
 
-mod batch_read;
 mod bundle_directory;
 mod caching_directory;
 mod debug_proxy_directory;

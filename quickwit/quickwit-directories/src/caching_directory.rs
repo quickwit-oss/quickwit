@@ -100,9 +100,9 @@ impl FileHandle for CachingFileHandle {
         &self,
         byte_ranges: Vec<Range<usize>>,
     ) -> io::Result<Vec<OwnedBytes>> {
-        crate::batch_read::read_batch_with_cache(
+        quickwit_storage::read_batch_with_cache(
             byte_ranges,
-            |range| self.cache.get_slice(range),
+            |range| std::future::ready(self.cache.get_slice(range)),
             |ranges| async move {
                 let payloads = self
                     .underlying_filehandle
