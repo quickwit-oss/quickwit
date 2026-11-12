@@ -78,8 +78,6 @@ impl Storage for FeuerStorage {
             .join(path)
             .map_err(|error| StorageErrorKind::Internal.with_error(error))?
             .into_string();
-        // Each exact split slice is a complete object to Feuer. Keep its namespace
-        // separate from any whole-object keys used with this cache.
         let cache_key = split_slice_key(&object_uri, &byte_range);
         let cache = self.cache.clone();
         let storage = self.inner.clone();
