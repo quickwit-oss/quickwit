@@ -102,7 +102,7 @@ impl FileHandle for CachingFileHandle {
     ) -> io::Result<Vec<OwnedBytes>> {
         quickwit_storage::read_batch_with_cache(
             byte_ranges,
-            |range| std::future::ready(self.cache.get_slice(range)),
+            |range| self.cache.get_slice(range),
             |ranges| async move {
                 let payloads = self
                     .underlying_filehandle
