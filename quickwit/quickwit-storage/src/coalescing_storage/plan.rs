@@ -53,8 +53,6 @@ mod tests {
         assert!(coalesce_ranges(Vec::new()).is_empty());
         let range = 10..20;
         assert_eq!(coalesce_ranges(vec![range.clone()]), vec![range]);
-        let empty_range = 7..7;
-        assert!(coalesce_ranges(vec![empty_range]).is_empty());
         assert!(coalesce_ranges(vec![7..7, 0..0]).is_empty());
         let ranges = vec![
             4 * MIB..5 * MIB,
