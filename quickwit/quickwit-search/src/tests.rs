@@ -2287,9 +2287,13 @@ async fn test_negative_cache_short_circuits_query_with_extra_terms() {
     let key = term_absence_key_for(&doc_mapper, "body", "hello");
     let segment_id =
         tantivy::index::SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
-    searcher_context
-        .predicate_cache
-        .put(split_id, key, segment_id, HitSet::empty());
+    searcher_context.predicate_cache.put(
+        split_id,
+        key,
+        segment_id,
+        HitSet::empty(),
+        std::time::Duration::ZERO,
+    );
 
     // A *larger* query that merely contains `hello` as a required term: despite `hello`
     // (and `world`) being present, the cached absence of `hello` proves the whole
@@ -2754,9 +2758,13 @@ async fn test_negative_cache_short_circuits_across_time_windows() {
     let key = term_absence_key_for(&doc_mapper, "body", "info");
     let segment_id =
         tantivy::index::SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
-    searcher_context
-        .predicate_cache
-        .put(split_id, key, segment_id, HitSet::empty());
+    searcher_context.predicate_cache.put(
+        split_id,
+        key,
+        segment_id,
+        HitSet::empty(),
+        std::time::Duration::ZERO,
+    );
 
     // Query a specific, different window: despite `info` matching, the seeded absence
     // short-circuits the search.

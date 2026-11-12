@@ -522,16 +522,13 @@ impl SearcherContext {
                         &queues,
                         "partial_response_cache",
                         "partial_request",
+                        None,
+                        1,
                     )?),
                     None => None,
                 };
                 let predicate_cache = match predicate_cache_config {
-                    Some(config) => Some(quickwit_storage::FeuerCache::open(
-                        &config,
-                        &queues,
-                        "predicate_cache",
-                        "predicate",
-                    )?),
+                    Some(config) => Some(PredicateCacheImpl::open(&config, &queues)?),
                     None => None,
                 };
                 anyhow::Ok((storage_cache, partial_request_cache, predicate_cache))
@@ -545,7 +542,7 @@ impl SearcherContext {
             self.leaf_search_cache = LeafSearchCache::with_feuer_cache(cache);
         }
         if let Some(cache) = predicate_cache {
-            self.predicate_cache = Arc::new(PredicateCacheImpl::with_feuer_cache(cache));
+            self.predicate_cache = Arc::new(cache);
         }
         Ok(())
     }

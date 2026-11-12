@@ -2088,6 +2088,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cpu-time"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9e393a7668fe1fad3075085b86c781883000b4ede868f43627b34a87c8b7ded"
+dependencies = [
+ "libc",
+ "winapi",
+]
+
+[[package]]
 name = "cpubits"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8290,6 +8300,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "bitpacking",
+ "cpu-time",
  "criterion",
  "futures",
  "hex",
@@ -8359,6 +8370,7 @@ dependencies = [
  "postcard",
  "proptest",
  "prost 0.14.4",
+ "quick_cache",
  "quickwit-common",
  "quickwit-config",
  "quickwit-directories",

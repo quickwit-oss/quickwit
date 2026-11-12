@@ -93,8 +93,10 @@ In memory:
 
 - Storage caching: `storage_cache` retains split footers, hotcache bytes, fast fields, and other split body ranges in one shared cache. Hotcache is static data embedded in each split footer that speeds up opening the split. `storage_cache` defaults to memory-only operation with a 1.5GB budget.
 - Partial request caching: In some cases, like when using dashboards, some very similar requests might be issued, with only timestamp bounds changing. Some partial results can be cached to make these requests faster and issue less requests to the storage. They are cached in a RAM whose size can be limited by the `partial_request_cache_capacity` configuration value.
-- Predicate caching: `predicate_cache` retains predicate hit sets and known-absent terms, with independent memory and optional disk budgets.
+- Predicate caching: `predicate_cache` retains predicate hit sets and known-absent terms, with independent memory and optional disk budgets. Hit sets are scored for retention by decayed request frequency × fill CPU time / encoded entry size. Each predicate's fill time includes evaluation and hit-set construction, excludes warmup, and includes nested predicate fills. Known-absent terms discovered during warmup use an estimated CPU-equivalent cost of 10 ms in the same scoring formula, reflecting the future warmup and search they can avoid.
 - List-fields caching: Field metadata uses an independent memory cache with the same memory capacity as `partial_request_cache_capacity`.
+
+Predicate fill costs are stored with the cached hit sets. An in-memory cache keeps costs for up to roughly 100,000 active entries. Entries whose costs have been forgotten, including unread entries after restart, score zero until a cache read restores their cost. The predicate payload format is versioned; upgrading from the previous format invalidates existing predicate disk-cache entries.
 
 On disk:
 

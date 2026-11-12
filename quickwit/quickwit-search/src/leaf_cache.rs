@@ -13,15 +13,19 @@
 // limitations under the License.
 
 use std::ops::{Bound, RangeBounds};
+use std::sync::Arc;
+use std::time::Duration;
 
+use feuer::{ObjectAccessHistories, ObjectKeyHash, RetentionScorer};
 use prost::Message;
-use quickwit_config::CacheConfig;
+use quick_cache::sync::Cache;
+use quickwit_config::{CacheConfig, StorageCacheConfig};
 use quickwit_proto::search::{
     CountHits, LeafResourceStats, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
 };
 use quickwit_query::query_ast::{HitSet, PredicateCache};
 use quickwit_storage::metrics::{CacheMetrics, PARTIAL_REQUEST_CACHE, PREDICATE_CACHE};
-use quickwit_storage::{FeuerCache, OwnedBytes};
+use quickwit_storage::{FeuerCache, FeuerIoQueues, OwnedBytes};
 use tantivy::index::SegmentId;
 
 /// A cache to memoize `leaf_search_single_split` results.
@@ -221,8 +225,31 @@ impl RangeBounds<i64> for HalfOpenRange {
     }
 }
 
+/// CPU nanoseconds saved per cached byte, weighted by request frequency.
+struct PredicateCacheScorer {
+    // Feuer has no eviction callback. Keep cost metadata in a separate size-limited cache.
+    // Forgotten costs score zero until a read restores them from the cached payload.
+    cpu_times: Cache<ObjectKeyHash, u64>,
+}
+
+impl RetentionScorer for PredicateCacheScorer {
+    fn score(
+        &self,
+        key: &ObjectKeyHash,
+        payload_len: u64,
+        histories: &ObjectAccessHistories,
+    ) -> f64 {
+        let Some(cpu_nanos) = self.cpu_times.peek(key) else {
+            return 0.0;
+        };
+        let demand = histories.decayed_request_count(key);
+        demand * cpu_nanos as f64 / payload_len.max(1) as f64
+    }
+}
+
 pub struct PredicateCacheImpl {
     cache: FeuerCache,
+    scorer: Arc<PredicateCacheScorer>,
     lookup_metrics: Option<&'static CacheMetrics>,
     enabled: bool,
 }
@@ -230,21 +257,37 @@ pub struct PredicateCacheImpl {
 impl PredicateCacheImpl {
     pub fn new(config: &CacheConfig) -> Self {
         let memory_capacity = config.memory_capacity().as_u64();
-        PredicateCacheImpl {
-            cache: FeuerCache::memory(memory_capacity, "predicate")
-                .expect("invalid Feuer memory cache configuration"),
-            lookup_metrics: (memory_capacity > 0).then_some(&PREDICATE_CACHE),
-            enabled: memory_capacity > 0,
-        }
+        Self::open(
+            &StorageCacheConfig {
+                directory: None,
+                memory_capacity: bytesize::ByteSize::b(memory_capacity),
+                disk_capacity: bytesize::ByteSize::b(0),
+            },
+            &FeuerIoQueues::default(),
+        )
+        .expect("invalid Feuer memory cache configuration")
     }
 
-    /// Use a supplied Feuer cache.
-    pub fn with_feuer_cache(cache: FeuerCache) -> Self {
-        Self {
+    /// Open a cache whose retention score accounts for each predicate's fill CPU time.
+    pub fn open(config: &StorageCacheConfig, queues: &FeuerIoQueues) -> anyhow::Result<Self> {
+        let scorer = Arc::new(PredicateCacheScorer {
+            cpu_times: Cache::new(100_000),
+        });
+        let enabled = config.memory_capacity.as_u64() > 0 || config.disk_capacity.as_u64() > 0;
+        let cache = FeuerCache::open(
+            config,
+            queues,
+            "predicate_cache",
+            "predicate",
+            Some(scorer.clone()),
+            2, // Version 2 adds fill CPU nanoseconds after the segment ID.
+        )?;
+        Ok(Self {
             cache,
-            lookup_metrics: Some(&PREDICATE_CACHE),
-            enabled: true,
-        }
+            scorer,
+            lookup_metrics: enabled.then_some(&PREDICATE_CACHE),
+            enabled,
+        })
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -252,11 +295,12 @@ impl PredicateCacheImpl {
     }
 }
 
-fn decode_predicate_entry(encoded_result: OwnedBytes) -> Option<(SegmentId, HitSet)> {
+fn decode_predicate_entry(encoded_result: OwnedBytes) -> Option<(SegmentId, HitSet, u64)> {
     let segment_id_str = str::from_utf8(encoded_result.get(..32)?).ok()?;
     let segment_id = SegmentId::from_uuid_string(segment_id_str).ok()?;
-    let hits = HitSet::try_from_buffer(encoded_result.slice(32..encoded_result.len()))?;
-    Some((segment_id, hits))
+    let cpu_nanos = u64::from_le_bytes(encoded_result.get(32..40)?.try_into().ok()?);
+    let hits = HitSet::try_from_buffer(encoded_result.slice(40..encoded_result.len()))?;
+    Some((segment_id, hits, cpu_nanos))
 }
 
 #[async_trait::async_trait]
@@ -279,18 +323,35 @@ impl PredicateCache for PredicateCacheImpl {
                 "error when deserializing predicate entry from cache"
             );
         }
-        entry
+        let (segment, hits, cpu_nanos) = entry?;
+        self.scorer
+            .cpu_times
+            .insert(ObjectKeyHash::from_hash(&key), cpu_nanos);
+        Some((segment, hits))
     }
 
-    fn put(&self, split_id: String, query_ast_json: String, segment: SegmentId, hits: HitSet) {
+    fn put(
+        &self,
+        split_id: String,
+        query_ast_json: String,
+        segment: SegmentId,
+        hits: HitSet,
+        cpu_time: Duration,
+    ) {
         if !self.enabled {
             return;
         }
         let hits_buffer = hits.into_buffer();
-        let mut buffer = Vec::with_capacity(32 + hits_buffer.len());
+        let cpu_nanos =
+            u64::try_from(cpu_time.as_nanos()).expect("predicate CPU time exceeds u64 nanoseconds");
+        let mut buffer = Vec::with_capacity(40 + hits_buffer.len());
         buffer.extend_from_slice(segment.uuid_string().as_bytes());
+        buffer.extend_from_slice(&cpu_nanos.to_le_bytes());
         buffer.extend_from_slice(&hits_buffer);
         let key = (split_id.as_str(), query_ast_json.as_str());
+        self.scorer
+            .cpu_times
+            .insert(ObjectKeyHash::from_hash(&key), cpu_nanos);
         self.cache.put(&key, OwnedBytes::new(buffer));
     }
 }
@@ -298,6 +359,7 @@ impl PredicateCache for PredicateCacheImpl {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::time::Duration;
 
     use bytesize::ByteSize;
     use quickwit_common::thread_pool::run_cpu_intensive;
@@ -308,7 +370,10 @@ mod tests {
     use quickwit_query::query_ast::{HitSet, PredicateCache};
     use tantivy::index::SegmentId;
 
-    use super::{CacheKey, FeuerCache, LeafSearchCache, PredicateCacheImpl};
+    use super::{
+        Cache, CacheKey, FeuerCache, LeafSearchCache, ObjectAccessHistories, ObjectKeyHash,
+        PredicateCacheImpl, PredicateCacheScorer, RetentionScorer,
+    };
 
     // This synchronous test helper is used with memory-only caches.
     fn get(
@@ -599,7 +664,7 @@ mod tests {
     #[tokio::test]
     async fn test_invalid_predicate_cache_entries_are_misses() {
         let segment = SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
-        let header = segment.uuid_string().into_bytes();
+        let header = [segment.uuid_string().as_bytes(), &0u64.to_le_bytes()].concat();
         for bytes in [
             vec![],
             vec![b'0'; 31],
@@ -661,13 +726,7 @@ mod tests {
                 (capacity > 0).then_some(7),
             );
 
-            let cache = if supplied {
-                PredicateCacheImpl::with_feuer_cache(
-                    FeuerCache::memory(capacity, "predicate").unwrap(),
-                )
-            } else {
-                PredicateCacheImpl::new(&config)
-            };
+            let cache = PredicateCacheImpl::new(&config);
             if capacity > 0 {
                 assert!(std::ptr::eq(
                     cache.lookup_metrics.unwrap(),
@@ -676,7 +735,13 @@ mod tests {
             }
             assert_eq!(cache.is_enabled(), capacity > 0);
             let segment = SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
-            cache.put("split".into(), "query".into(), segment, HitSet::empty());
+            cache.put(
+                "split".into(),
+                "query".into(),
+                segment,
+                HitSet::empty(),
+                Duration::from_millis(1),
+            );
             assert_eq!(
                 futures::executor::block_on(cache.get("split".into(), "query".into())).map(
                     |(segment, hits)| {
@@ -726,6 +791,7 @@ mod tests {
             "first-query".to_string(),
             segment_id,
             HitSet::empty(),
+            Duration::from_millis(1),
         );
 
         let (cached_segment_id, cached_hits) = cache
@@ -750,15 +816,84 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_cost_metadata_eviction_and_zero_cost_entries() {
+        let scorer = PredicateCacheScorer {
+            cpu_times: Cache::new(1),
+        };
+        let histories = ObjectAccessHistories::new();
+        let first = ObjectKeyHash::from_hash(&"first");
+        let second = ObjectKeyHash::from_hash(&"second");
+        histories.record_request(&first);
+        histories.record_request(&second);
+        scorer.cpu_times.insert(first, 100);
+        scorer.cpu_times.insert(second, 0);
+        assert_eq!(scorer.score(&first, 100, &histories), 0.0);
+        assert_eq!(scorer.score(&second, 100, &histories), 0.0);
+        scorer.cpu_times.insert(first, 100);
+        assert_eq!(
+            scorer.score(&first, 100, &histories),
+            histories.decayed_request_count(&first)
+        );
+    }
+
     #[tokio::test]
-    async fn test_supplied_predicate_cache_put_from_async_runtime_and_cpu_pool() {
+    async fn test_predicate_fill_costs_are_stored_and_restored() {
+        let cache = PredicateCacheImpl::new(&ByteSize::mb(1).into());
+        let restored = PredicateCacheImpl::new(&ByteSize::mb(1).into());
+        let segment = SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
+        let histories = ObjectAccessHistories::new();
+        for (query, cpu_time) in [
+            ("cheap", Duration::from_micros(10)),
+            ("expensive", Duration::from_millis(1)),
+            ("known_absent", Duration::from_millis(10)),
+        ] {
+            let key = ("split", query);
+            let hash = ObjectKeyHash::from_hash(&key);
+            histories.record_request(&hash);
+            cache.put(
+                "split".into(),
+                query.into(),
+                segment,
+                HitSet::empty(),
+                cpu_time,
+            );
+            let bytes = cache.cache.get(&key).await.unwrap();
+            let size = bytes.len() as u64;
+            let expected =
+                histories.decayed_request_count(&hash) * cpu_time.as_nanos() as f64 / size as f64;
+            assert_eq!(cache.scorer.score(&hash, size, &histories), expected);
+
+            // Simulate a recovered disk payload with no in-memory cost metadata.
+            restored.cache.put(&key, bytes);
+            assert_eq!(restored.scorer.score(&hash, size, &histories), 0.0);
+            let (cached_segment, hits) = restored.get("split".into(), query.into()).await.unwrap();
+            assert_eq!(cached_segment, segment);
+            assert!(hits.is_empty());
+            assert_eq!(restored.scorer.score(&hash, size, &histories), expected);
+            assert_eq!(
+                restored.scorer.score(&hash, size * 2, &histories),
+                expected / 2.0
+            );
+            assert!(restored.scorer.score(&hash, 0, &histories).is_finite());
+            histories.record_request(&hash);
+            assert!(restored.scorer.score(&hash, size, &histories) > expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_predicate_cache_put_from_async_runtime_and_cpu_pool() {
         // Calling Handle::block_on for a put would panic inside the async task.
-        let cache = Arc::new(PredicateCacheImpl::with_feuer_cache(
-            quickwit_storage::FeuerCache::memory(1_000_000, "predicate").unwrap(),
-        ));
+        let cache = Arc::new(PredicateCacheImpl::new(&ByteSize::mb(1).into()));
         assert!(cache.get("split".into(), "query".into()).await.is_none());
         let segment = SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
-        cache.put("split".into(), "query".into(), segment, HitSet::empty());
+        cache.put(
+            "split".into(),
+            "query".into(),
+            segment,
+            HitSet::empty(),
+            Duration::from_millis(1),
+        );
         let (cached_segment, hits) = cache.get("split".into(), "query".into()).await.unwrap();
         assert_eq!(cached_segment, segment);
         assert!(hits.is_empty());
@@ -769,6 +904,7 @@ mod tests {
                 "other-query".into(),
                 segment,
                 HitSet::empty(),
+                Duration::from_millis(1),
             );
         })
         .await
@@ -837,7 +973,13 @@ mod tests {
 
         let predicate = context.predicate_cache;
         let segment = SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
-        predicate.put("split".into(), "term".into(), segment, HitSet::empty());
+        predicate.put(
+            "split".into(),
+            "term".into(),
+            segment,
+            HitSet::empty(),
+            Duration::from_millis(1),
+        );
         // Disk-backed reads can run directly on the async task.
         let (cached_segment, hits) = predicate.get("split".into(), "term".into()).await.unwrap();
         assert_eq!(cached_segment, segment);
@@ -849,6 +991,7 @@ mod tests {
                 "other-term".into(),
                 segment,
                 HitSet::empty(),
+                Duration::from_millis(1),
             );
         })
         .await

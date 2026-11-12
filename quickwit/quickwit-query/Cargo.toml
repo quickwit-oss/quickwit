@@ -15,6 +15,7 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
 bitpacking = { workspace = true }
+cpu-time = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
 lru = { workspace = true }

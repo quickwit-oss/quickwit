@@ -14,8 +14,10 @@
 
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Duration;
 
 use bitpacking::{BitPacker, BitPacker1x};
+use cpu_time::ThreadTime;
 use serde::{Deserialize, Serialize};
 
 use super::{BuildTantivyAst, BuildTantivyAstContext, TantivyQueryAst};
@@ -402,9 +404,14 @@ impl std::fmt::Debug for CacheFiller {
 }
 
 impl CacheFiller {
-    fn fill_segment(&self, segment_id: SegmentId, value: HitSet) {
-        self.cache
-            .put(self.split_id.clone(), self.query.clone(), segment_id, value);
+    fn fill_segment(&self, segment_id: SegmentId, value: HitSet, cpu_time: Duration) {
+        self.cache.put(
+            self.split_id.clone(),
+            self.query.clone(),
+            segment_id,
+            value,
+            cpu_time,
+        );
     }
 }
 
@@ -457,6 +464,8 @@ pub struct CacheFillerWeight {
 
 impl Weight for CacheFillerWeight {
     fn scorer(&self, reader: &SegmentReader, boost: Score) -> tantivy::Result<Box<dyn Scorer>> {
+        // Nested cache fills are intentionally included in this predicate's CPU time.
+        let start = ThreadTime::now();
         let mut hit_set_builder = HitSetBuilder::new();
         let mut scorer = self.inner_weight.scorer(reader, 1.0)?;
         let mut doc_id = scorer.doc();
@@ -465,8 +474,10 @@ impl Weight for CacheFillerWeight {
             doc_id = scorer.advance();
         }
         let mut hit_set = hit_set_builder.build();
+        // Preserve a positive cost even below the timer's resolution.
+        let cpu_time = start.elapsed().max(Duration::from_nanos(1));
         self.cache_filler
-            .fill_segment(reader.segment_id(), hit_set.clone());
+            .fill_segment(reader.segment_id(), hit_set.clone(), cpu_time);
         hit_set.boost = boost;
         Ok(Box::new(hit_set))
     }
@@ -542,8 +553,17 @@ impl PredicateCacheInjector {
 pub trait PredicateCache: Send + Sync + 'static {
     async fn get(&self, split_id: String, query_ast_json: String) -> Option<(SegmentId, HitSet)>;
 
-    // Called during synchronous query execution on a CPU thread.
-    fn put(&self, split_id: String, query_ast_json: String, segment: SegmentId, results: HitSet);
+    /// Called during synchronous query execution on a CPU thread.
+    /// `cpu_time` measures predicate evaluation and hit set construction, including nested fills.
+    /// Callers without a measurement can supply an estimated CPU-equivalent cost.
+    fn put(
+        &self,
+        split_id: String,
+        query_ast_json: String,
+        segment: SegmentId,
+        results: HitSet,
+        cpu_time: Duration,
+    );
 }
 
 #[cfg(test)]
@@ -561,7 +581,7 @@ mod tests {
     };
 
     #[async_trait::async_trait]
-    impl PredicateCache for Mutex<HashMap<(String, String), (SegmentId, HitSet)>> {
+    impl PredicateCache for Mutex<HashMap<(String, String), (SegmentId, HitSet, Duration)>> {
         async fn get(
             &self,
             split_id: String,
@@ -572,7 +592,7 @@ mod tests {
             self.lock()
                 .unwrap()
                 .get(&(split_id, query_ast_json))
-                .cloned()
+                .map(|(segment, hits, _)| (*segment, hits.clone()))
         }
 
         fn put(
@@ -581,10 +601,11 @@ mod tests {
             query_ast_json: String,
             segment: SegmentId,
             results: HitSet,
+            cpu_time: Duration,
         ) {
             self.lock()
                 .unwrap()
-                .insert((split_id, query_ast_json), (segment, results));
+                .insert((split_id, query_ast_json), (segment, results, cpu_time));
         }
     }
 
@@ -847,6 +868,7 @@ mod tests {
             query_json,
             SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap(),
             HitSet::empty(),
+            Duration::ZERO,
         );
         let mut cache_hit_ast = ast;
         PredicateCacheInjector {
@@ -880,6 +902,7 @@ mod tests {
             query_json,
             SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap(),
             HitSet::empty(),
+            Duration::ZERO,
         );
 
         {
@@ -924,7 +947,7 @@ mod tests {
             None
         }
 
-        fn put(&self, _: String, _: String, _: SegmentId, _: HitSet) {
+        fn put(&self, _: String, _: String, _: SegmentId, _: HitSet, _: Duration) {
             unreachable!("preparation only reads the cache");
         }
     }
@@ -965,6 +988,7 @@ mod tests {
             serde_json::to_string(&QueryAst::MatchAll).unwrap(),
             SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap(),
             HitSet::empty(),
+            Duration::ZERO,
         );
         PredicateCacheInjector {
             cache,
@@ -1100,5 +1124,47 @@ mod tests {
             assert_eq!(cache_entry.1.doc(), doc_id);
             cache_entry.1.advance();
         }
+
+        // Each fill reports its own CPU cost, including scorer construction.
+        struct CpuWeight(Duration);
+        impl Weight for CpuWeight {
+            fn scorer(&self, _: &SegmentReader, _: Score) -> tantivy::Result<Box<dyn Scorer>> {
+                let start = ThreadTime::now();
+                while start.elapsed() < self.0 {
+                    std::hint::spin_loop();
+                }
+                let mut builder = HitSetBuilder::new();
+                builder.insert(0);
+                Ok(Box::new(builder.build()))
+            }
+
+            fn explain(&self, _: &SegmentReader, _: DocId) -> tantivy::Result<Explanation> {
+                unreachable!()
+            }
+        }
+        let reader = &searcher.segment_readers()[0];
+        for (query, cpu_time) in [
+            ("first", Duration::from_millis(20)),
+            ("second", Duration::from_millis(2)),
+        ] {
+            let weight = CacheFillerWeight {
+                inner_weight: Box::new(CpuWeight(cpu_time)),
+                cache_filler: CacheFiller {
+                    cache: cache.clone(),
+                    split_id: "split".to_string(),
+                    query: query.to_string(),
+                },
+            };
+            let start = ThreadTime::now();
+            assert_eq!(weight.scorer(reader, 1.0).unwrap().doc(), 0);
+            let elapsed = start.elapsed();
+            let entries = cache.lock().unwrap();
+            let (segment, hits, measured) = &entries[&("split".to_string(), query.to_string())];
+            assert_eq!(*segment, reader.segment_id());
+            assert_eq!(hits.size_hint(), 1);
+            assert!(*measured >= cpu_time);
+            assert!(*measured <= elapsed);
+        }
+        assert_eq!(cache.lock().unwrap().len(), 3);
     }
 }

@@ -789,6 +789,8 @@ async fn leaf_search_single_split(
                 term_absence_cache_key(term),
                 segment_id,
                 HitSet::empty(),
+                // CPU-equivalent retention cost for avoiding future warmup and search.
+                Duration::from_millis(10),
             );
         };
         // `downloaded_mb` is what warmup actually fetched from blob storage; `total_mb` adds the
