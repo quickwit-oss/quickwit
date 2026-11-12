@@ -26,12 +26,15 @@ use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
 use quickwit_proto::types::IndexId;
 use quickwit_proto::{ServiceError, ServiceErrorCode, tonic};
 use serde::{self, Serialize};
-use warp::{Filter, Rejection};
+use warp::hyper::StatusCode;
+use warp::hyper::header::CONTENT_TYPE;
+use warp::hyper::http::HeaderValue;
+use warp::{Filter, Rejection, Reply};
 
 use crate::decompression::get_body_bytes;
 use crate::rest::recover_fn;
-use crate::rest_api_response::into_rest_api_response;
-use crate::{Body, BodyFormat, require, with_arg};
+use crate::rest_api_response::{RestApiError, RestApiResponse};
+use crate::{Body, BodyFormat, require};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(
@@ -41,6 +44,36 @@ use crate::{Body, BodyFormat, require, with_arg};
     otlp_ingest_traces_handler
 ))]
 pub struct OtlpApi;
+
+fn into_otlp_protobuf_response<T: prost::Message, E: ServiceError>(
+    result: Result<T, E>,
+) -> warp::reply::Response {
+    match result {
+        Ok(msg) => {
+            let body = msg.encode_to_vec();
+            let mut response = warp::reply::Response::new(body.into());
+            response.headers_mut().insert(
+                CONTENT_TYPE,
+                HeaderValue::from_static("application/x-protobuf"),
+            );
+            *response.status_mut() = StatusCode::OK;
+            response
+        }
+        Err(error) => {
+            let status_code = error.error_code().http_status_code();
+            let rest_api_error = RestApiError {
+                status_code,
+                message: error.to_string(),
+            };
+            RestApiResponse::new(
+                &Result::<(), _>::Err(rest_api_error),
+                status_code,
+                BodyFormat::Json,
+            )
+            .into_response()
+        }
+    }
+}
 
 /// Setup OpenTelemetry API handlers.
 pub(crate) fn otlp_ingest_api_handlers(
@@ -80,7 +113,7 @@ pub(crate) fn otlp_ingest_api_handlers(
     path = "/otlp/v1/logs",
     request_body(content = String, description = "`ExportLogsServiceRequest` protobuf message", content_type = "application/x-protobuf"),
     responses(
-        (status = 200, description = "Successfully exported logs.", body = ExportLogsServiceResponse)
+        (status = 200, description = "Successfully exported logs.", body = ExportLogsServiceResponse, content_type = "application/x-protobuf")
     ),
 )]
 pub(crate) fn otlp_default_logs_handler(
@@ -110,8 +143,7 @@ pub(crate) fn otlp_default_logs_handler(
                 otlp_ingest_logs(otlp_logs_service, index_id, body).await
             },
         )
-        .and(with_arg(BodyFormat::default()))
-        .map(into_rest_api_response)
+        .map(into_otlp_protobuf_response)
         .boxed()
 }
 /// Open Telemetry REST/Protobuf logs ingest endpoint.
@@ -121,7 +153,7 @@ pub(crate) fn otlp_default_logs_handler(
     path = "/{index}/otlp/v1/logs",
     request_body(content = String, description = "`ExportLogsServiceRequest` protobuf message", content_type = "application/x-protobuf"),
     responses(
-        (status = 200, description = "Successfully exported logs.", body = ExportLogsServiceResponse)
+        (status = 200, description = "Successfully exported logs.", body = ExportLogsServiceResponse, content_type = "application/x-protobuf")
     ),
 )]
 pub(crate) fn otlp_logs_handler(
@@ -142,8 +174,7 @@ pub(crate) fn otlp_logs_handler(
             "otlp_logs",
         ))
         .then(otlp_ingest_logs)
-        .and(with_arg(BodyFormat::default()))
-        .map(into_rest_api_response)
+        .map(into_otlp_protobuf_response)
         .boxed()
 }
 
@@ -154,7 +185,7 @@ pub(crate) fn otlp_logs_handler(
     path = "/otlp/v1/traces",
     request_body(content = String, description = "`ExportTraceServiceRequest` protobuf message", content_type = "application/x-protobuf"),
     responses(
-        (status = 200, description = "Successfully exported traces.", body = ExportTracesServiceResponse)
+        (status = 200, description = "Successfully exported traces.", body = ExportTraceServiceResponse, content_type = "application/x-protobuf")
     ),
 )]
 pub(crate) fn otlp_default_traces_handler(
@@ -184,8 +215,7 @@ pub(crate) fn otlp_default_traces_handler(
                 otlp_ingest_traces(otlp_traces_service, index_id, body).await
             },
         )
-        .and(with_arg(BodyFormat::default()))
-        .map(into_rest_api_response)
+        .map(into_otlp_protobuf_response)
         .boxed()
 }
 /// Open Telemetry REST/Protobuf traces ingest endpoint.
@@ -195,7 +225,7 @@ pub(crate) fn otlp_default_traces_handler(
     path = "/{index}/otlp/v1/traces",
     request_body(content = String, description = "`ExportTraceServiceRequest` protobuf message", content_type = "application/x-protobuf"),
     responses(
-        (status = 200, description = "Successfully exported traces.", body = ExportTracesServiceResponse)
+        (status = 200, description = "Successfully exported traces.", body = ExportTraceServiceResponse, content_type = "application/x-protobuf")
     ),
 )]
 pub(crate) fn otlp_ingest_traces_handler(
@@ -216,8 +246,7 @@ pub(crate) fn otlp_ingest_traces_handler(
             "otlp_traces",
         ))
         .then(otlp_ingest_traces)
-        .and(with_arg(BodyFormat::default()))
-        .map(into_rest_api_response)
+        .map(into_otlp_protobuf_response)
         .boxed()
 }
 
@@ -320,6 +349,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_otlp_protobuf_error_response() {
+        let filter = warp::any().map(|| {
+            super::into_otlp_protobuf_response::<ExportLogsServiceResponse, _>(Err(
+                super::OtlpApiError::InvalidPayload("invalid protobuf".to_string()),
+            ))
+        });
+        let response = warp::test::request().reply(&filter).await;
+        assert_eq!(response.status(), warp::http::StatusCode::BAD_REQUEST);
+        assert_eq!(response.headers()["content-type"], "application/json");
+        let error: serde_json::Value = serde_json::from_slice(response.body()).unwrap();
+        assert_eq!(error["message"], "invalid OTLP request: invalid protobuf");
+    }
+
+    #[test]
+    fn test_otlp_openapi_protobuf_response_content_type() {
+        let document = <super::OtlpApi as utoipa::OpenApi>::openapi();
+        let document = serde_json::to_value(document).unwrap();
+        for path in [
+            "/otlp/v1/logs",
+            "/{index}/otlp/v1/logs",
+            "/otlp/v1/traces",
+            "/{index}/otlp/v1/traces",
+        ] {
+            let content = document["paths"][path]["post"]["responses"]["200"]["content"]
+                .as_object()
+                .unwrap();
+            assert!(content.contains_key("application/x-protobuf"), "{path}");
+            assert!(!content.contains_key("application/json"), "{path}");
+        }
+    }
+
+    #[tokio::test]
     async fn test_otlp_ingest_logs_handler() {
         let mut mock_ingest_router = MockIngestRouterService::new();
         mock_ingest_router
@@ -414,8 +475,11 @@ mod tests {
                 .reply(&otlp_traces_api_handler)
                 .await;
             assert_eq!(resp.status(), 200);
-            let actual_response: ExportLogsServiceResponse =
-                serde_json::from_slice(resp.body()).unwrap();
+            assert_eq!(
+                resp.headers().get("content-type").unwrap(),
+                "application/x-protobuf"
+            );
+            let actual_response = ExportLogsServiceResponse::decode(resp.body().as_ref()).unwrap();
             assert!(actual_response.partial_success.is_some());
             assert_eq!(
                 actual_response
@@ -436,8 +500,11 @@ mod tests {
                 .reply(&otlp_traces_api_handler)
                 .await;
             assert_eq!(resp.status(), 200);
-            let actual_response: ExportLogsServiceResponse =
-                serde_json::from_slice(resp.body()).unwrap();
+            assert_eq!(
+                resp.headers().get("content-type").unwrap(),
+                "application/x-protobuf"
+            );
+            let actual_response = ExportLogsServiceResponse::decode(resp.body().as_ref()).unwrap();
             assert!(actual_response.partial_success.is_some());
             assert_eq!(
                 actual_response
@@ -458,8 +525,11 @@ mod tests {
                 .reply(&otlp_traces_api_handler)
                 .await;
             assert_eq!(resp.status(), 200);
-            let actual_response: ExportLogsServiceResponse =
-                serde_json::from_slice(resp.body()).unwrap();
+            assert_eq!(
+                resp.headers().get("content-type").unwrap(),
+                "application/x-protobuf"
+            );
+            let actual_response = ExportLogsServiceResponse::decode(resp.body().as_ref()).unwrap();
             assert!(actual_response.partial_success.is_some());
             assert_eq!(
                 actual_response
@@ -479,8 +549,11 @@ mod tests {
                 .reply(&otlp_traces_api_handler)
                 .await;
             assert_eq!(resp.status(), 200);
-            let actual_response: ExportLogsServiceResponse =
-                serde_json::from_slice(resp.body()).unwrap();
+            assert_eq!(
+                resp.headers().get("content-type").unwrap(),
+                "application/x-protobuf"
+            );
+            let actual_response = ExportLogsServiceResponse::decode(resp.body().as_ref()).unwrap();
             assert!(actual_response.partial_success.is_some());
             assert_eq!(
                 actual_response
@@ -565,8 +638,11 @@ mod tests {
                 .reply(&otlp_traces_api_handler)
                 .await;
             assert_eq!(resp.status(), 200);
-            let actual_response: ExportTraceServiceResponse =
-                serde_json::from_slice(resp.body()).unwrap();
+            assert_eq!(
+                resp.headers().get("content-type").unwrap(),
+                "application/x-protobuf"
+            );
+            let actual_response = ExportTraceServiceResponse::decode(resp.body().as_ref()).unwrap();
             assert!(actual_response.partial_success.is_some());
             assert_eq!(actual_response.partial_success.unwrap().rejected_spans, 0);
         }
@@ -581,8 +657,11 @@ mod tests {
                 .reply(&otlp_traces_api_handler)
                 .await;
             assert_eq!(resp.status(), 200);
-            let actual_response: ExportTraceServiceResponse =
-                serde_json::from_slice(resp.body()).unwrap();
+            assert_eq!(
+                resp.headers().get("content-type").unwrap(),
+                "application/x-protobuf"
+            );
+            let actual_response = ExportTraceServiceResponse::decode(resp.body().as_ref()).unwrap();
             assert!(actual_response.partial_success.is_some());
             assert_eq!(actual_response.partial_success.unwrap().rejected_spans, 0);
         }
@@ -597,8 +676,11 @@ mod tests {
                 .reply(&otlp_traces_api_handler)
                 .await;
             assert_eq!(resp.status(), 200);
-            let actual_response: ExportTraceServiceResponse =
-                serde_json::from_slice(resp.body()).unwrap();
+            assert_eq!(
+                resp.headers().get("content-type").unwrap(),
+                "application/x-protobuf"
+            );
+            let actual_response = ExportTraceServiceResponse::decode(resp.body().as_ref()).unwrap();
             assert!(actual_response.partial_success.is_some());
             assert_eq!(actual_response.partial_success.unwrap().rejected_spans, 0);
         }
@@ -612,8 +694,11 @@ mod tests {
                 .reply(&otlp_traces_api_handler)
                 .await;
             assert_eq!(resp.status(), 200);
-            let actual_response: ExportTraceServiceResponse =
-                serde_json::from_slice(resp.body()).unwrap();
+            assert_eq!(
+                resp.headers().get("content-type").unwrap(),
+                "application/x-protobuf"
+            );
+            let actual_response = ExportTraceServiceResponse::decode(resp.body().as_ref()).unwrap();
             assert!(actual_response.partial_success.is_some());
             assert_eq!(actual_response.partial_success.unwrap().rejected_spans, 0);
         }
