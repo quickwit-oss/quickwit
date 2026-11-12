@@ -21,14 +21,12 @@ use tantivy::directory::OwnedBytes;
 /// Filters cache hits and reads all misses as one batch, preserving result order.
 /// Like `FileHandle::read_bytes_batch_async`, `read_misses` must return one buffer
 /// per range, in the same order.
-pub(crate) async fn read_batch_with_cache<Get, Read, ReadFuture>(
+pub(crate) async fn read_batch_with_cache<ReadFuture>(
     byte_ranges: Vec<Range<usize>>,
-    mut get_cached: Get,
-    read_misses: Read,
+    mut get_cached: impl FnMut(Range<usize>) -> Option<OwnedBytes>,
+    read_misses: impl FnOnce(Vec<Range<usize>>) -> ReadFuture,
 ) -> io::Result<Vec<OwnedBytes>>
 where
-    Get: FnMut(Range<usize>) -> Option<OwnedBytes>,
-    Read: FnOnce(Vec<Range<usize>>) -> ReadFuture,
     ReadFuture: Future<Output = io::Result<Vec<OwnedBytes>>>,
 {
     let mut results = vec![OwnedBytes::empty(); byte_ranges.len()];
