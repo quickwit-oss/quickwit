@@ -250,11 +250,8 @@ async fn read_download_range(
             count += 1;
         }
         let gap = (useful.start - position) as u64;
-        if gap > 0
-            && tokio::io::copy_buf(&mut (&mut reader).take(gap), &mut tokio::io::sink()).await?
-                != gap
-        {
-            return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
+        if gap > 0 {
+            tokio::io::copy_buf(&mut (&mut reader).take(gap), &mut tokio::io::sink()).await?;
         }
         let mut bytes = vec![0; useful.len()];
         reader.read_exact(&mut bytes).await?;
