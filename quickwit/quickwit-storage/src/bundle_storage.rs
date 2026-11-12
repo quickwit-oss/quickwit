@@ -533,7 +533,6 @@ impl Storage for BundleStorage {
         path: &Path,
         mut ranges: Vec<Range<usize>>,
     ) -> StorageResult<Vec<OwnedBytes>> {
-        crate::storage::validate_byte_ranges(&ranges)?;
         // Validate every nonempty range before forwarding the batch. Empty ranges need no I/O.
         for range in &mut ranges {
             if range.start != range.end {

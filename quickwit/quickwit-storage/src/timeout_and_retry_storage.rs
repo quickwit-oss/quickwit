@@ -180,10 +180,7 @@ impl Storage for TimeoutAndRetryStorage {
                     let deadline = Instant::now() + duration;
                     let opening = storage.get_slice_stream(&path, range.clone());
                     if let Ok(result) = timeout_at(deadline, opening).await {
-                        body = Some((
-                            ReaderStream::new(result.map_err(io::Error::from)?),
-                            deadline,
-                        ));
+                        body = Some((ReaderStream::new(result?), deadline));
                     }
                 }
             }
