@@ -317,8 +317,8 @@ mod tests {
         // Missing file, short gap/data, oversized body, and I/O failures in gaps/data.
         for (end, fail_at, kind) in [
             (None, None, io::ErrorKind::NotFound),
-            (Some(10), None, io::ErrorKind::InvalidData),
-            (Some(18), None, io::ErrorKind::InvalidData),
+            (Some(10), None, io::ErrorKind::UnexpectedEof),
+            (Some(18), None, io::ErrorKind::UnexpectedEof),
             (Some(21), None, io::ErrorKind::InvalidData),
             (Some(20), Some(7), io::ErrorKind::ConnectionReset),
             (Some(20), Some(18), io::ErrorKind::ConnectionReset),
