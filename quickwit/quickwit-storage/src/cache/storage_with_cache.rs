@@ -70,17 +70,22 @@ impl Storage for StorageWithCache {
     async fn get_slices(
         &self,
         path: &Path,
-        ranges: Vec<Range<usize>>,
+        requested_ranges: Vec<Range<usize>>,
     ) -> StorageResult<Vec<OwnedBytes>> {
-        crate::storage::validate_byte_ranges(&ranges)?;
+        crate::storage::validate_byte_ranges(&requested_ranges)?;
         super::read_batch_with_async_cache(
-            ranges,
-            |range| self.cache.get(path, range),
-            |ranges| async move {
-                let downloaded = self.storage.get_slices(path, ranges.clone()).await?;
-                assert_eq!(downloaded.len(), ranges.len());
-                for (range, bytes) in ranges.into_iter().zip(&downloaded) {
-                    self.cache.put(path.to_owned(), range, bytes.clone()).await;
+            requested_ranges,
+            |requested_range| self.cache.get(path, requested_range),
+            |missing_ranges| async move {
+                let downloaded = self
+                    .storage
+                    .get_slices(path, missing_ranges.clone())
+                    .await?;
+                assert_eq!(downloaded.len(), missing_ranges.len());
+                for (missing_range, bytes) in missing_ranges.into_iter().zip(&downloaded) {
+                    self.cache
+                        .put(path.to_owned(), missing_range, bytes.clone())
+                        .await;
                 }
                 Ok(downloaded)
             },
