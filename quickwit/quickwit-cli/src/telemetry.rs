@@ -21,10 +21,12 @@ use quickwit_serve::BuildInfo;
 use quickwit_telemetry::payload::{BuildTelemetryInfo, QuickwitFeature, QuickwitTelemetryInfo};
 
 pub(crate) fn quickwit_telemetry_info(config: &NodeConfig) -> QuickwitTelemetryInfo {
+    // Releases 0.6 to 0.8 reported `control_plane`, before the service was renamed
+    // `control-plane`.
     let services = config
         .enabled_services
         .iter()
-        .map(|service| service.to_string())
+        .map(|service| service.as_str().replace('-', "_"))
         .collect();
     let build_info = BuildInfo::get();
     QuickwitTelemetryInfo {
@@ -124,6 +126,18 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn test_quickwit_telemetry_info_services() {
+        let mut node_config = NodeConfig::for_test();
+        node_config.enabled_services =
+            HashSet::from([QuickwitService::ControlPlane, QuickwitService::Searcher]);
+        let telemetry_info = quickwit_telemetry_info(&node_config);
+        assert_eq!(
+            telemetry_info.services,
+            HashSet::from(["control_plane".to_string(), "searcher".to_string()])
+        );
+    }
 
     #[test]
     fn test_telemetry_features() {
