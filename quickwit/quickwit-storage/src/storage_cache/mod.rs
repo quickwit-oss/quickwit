@@ -50,7 +50,11 @@ pub fn open_storage_cache(
     config: &StorageCacheConfig,
     queues: &FeuerIoQueues,
 ) -> anyhow::Result<feuer::Cache> {
-    queues.open(config, "storage_cache", "storage", 256_000)
+    let scorer = std::sync::Arc::new(feuer::FetchCostScorer {
+        cost_per_request: 256_000.0,
+        ..Default::default()
+    });
+    queues.open(config, "storage_cache", "storage", scorer, 1)
 }
 
 #[cfg(test)]

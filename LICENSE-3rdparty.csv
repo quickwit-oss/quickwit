@@ -161,6 +161,7 @@ core-foundation,https://github.com/servo/core-foundation-rs,MIT OR Apache-2.0,Th
 core-foundation-sys,https://github.com/servo/core-foundation-rs,MIT OR Apache-2.0,The Servo Project Developers
 core_detect,https://github.com/thomcc/core_detect,MIT OR Apache-2.0,Thom Chiovoloni <chiovolonit@gmail.com>
 cpp_demangle,https://github.com/gimli-rs/cpp_demangle,MIT OR Apache-2.0,"Nick Fitzgerald <fitzgen@gmail.com>, Jim Blandy <jimb@red-bean.com>, Kyle Huey <khuey@kylehuey.com>"
+cpu-time,https://github.com/tailhook/cpu-time,MIT OR Apache-2.0,Paul Colomiets <paul@colomiets.name>
 cpubits,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developers
 cpufeatures,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developers
 cranelift,https://github.com/bytecodealliance/wasmtime,Apache-2.0 WITH LLVM-exception,The Cranelift Project Developers

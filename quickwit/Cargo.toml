@@ -76,6 +76,7 @@ coarsetime = "0.1"
 colored = "3.1"
 console-subscriber = "0.5"
 const_format = "0.2"
+cpu-time = "1.0"
 criterion = { version = "0.8", features = ["async_tokio"] }
 cron = "0.17"
 dashmap = "6.2"
