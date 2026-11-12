@@ -53,14 +53,8 @@ impl FileHandle for StorageDirectoryFileHandle {
         Err(unsupported_operation(&self.path))
     }
 
-    #[instrument(level = "debug", fields(path = %self.path.to_string_lossy(), byte_range_size = byte_range.end.saturating_sub(byte_range.start)), skip(self))]
+    #[instrument(level = "debug", fields(path = %self.path.to_string_lossy(), byte_range_size = byte_range.end - byte_range.start), skip(self))]
     async fn read_bytes_async(&self, byte_range: Range<usize>) -> io::Result<OwnedBytes> {
-        if byte_range.start > byte_range.end {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "byte range starts after its end",
-            ));
-        }
         if byte_range.is_empty() {
             return Ok(OwnedBytes::empty());
         }
@@ -83,13 +77,15 @@ impl FileHandle for StorageDirectoryFileHandle {
     }
 }
 
-/// Directory backed by Quickwit's `Storage` abstraction.
+/// Directory backed a quickwit `Storage` abstraction.
 ///
-/// Batch reads forward the full range list through storage caches and bundle translation.
-/// Results preserve input order, duplicates, and empty ranges. Storage caches see the original
-/// ranges before a lower `CoalescingStorage` combines all misses and limits backend downloads.
+/// It should not be used in a context outside quickwit, as it contains
+/// several pitfalls:
+/// Fetching data synchronously panics.
+/// Writing data panics.
 ///
-/// This directory supports asynchronous reads. Synchronous reads return errors. Writes panic.
+/// This directory is fetch slices of data to a possibly distant storage
+/// everytime `read_bytes` is called.
 #[derive(Clone)]
 pub struct StorageDirectory {
     storage: Arc<dyn Storage>,
@@ -231,15 +227,6 @@ mod tests {
                 .await
                 .unwrap()
                 .is_empty()
-        );
-        let reversed_range = Range { start: 3, end: 2 };
-        assert_eq!(
-            handle
-                .read_bytes_async(reversed_range)
-                .await
-                .unwrap_err()
-                .kind(),
-            io::ErrorKind::InvalidInput
         );
         assert_eq!(
             handle.read_bytes_async(4..6).await.unwrap().as_slice(),
