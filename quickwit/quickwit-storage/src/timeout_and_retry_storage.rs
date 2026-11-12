@@ -227,7 +227,7 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::*;
-    use crate::MockStorage;
+    use crate::{CoalescingStorage, MockStorage};
 
     fn stream_storage(storage: impl Storage) -> TimeoutAndRetryStorage {
         TimeoutAndRetryStorage::new(
@@ -252,35 +252,48 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn test_stream_body_timeout_resumes_emitted_offset() {
-        let mut underlying = MockStorage::new();
-        let mut sequence = mockall::Sequence::new();
-        underlying
-            .expect_get_slice_stream()
-            .withf(|path, range| path == Path::new("object") && *range == (10..18))
-            .times(1)
-            .in_sequence(&mut sequence)
-            .returning(|_, _| {
-                Ok(delayed_reader(vec![
-                    (Duration::from_secs(1), Ok(b"abcd")),
-                    (Duration::from_millis(1_500), Ok(b"wrong")),
-                ]))
-            });
-        underlying
-            .expect_get_slice_stream()
-            .withf(|_, range| *range == (14..18))
-            .times(1)
-            .in_sequence(&mut sequence)
-            .returning(|_, _| Ok(Box::new(&b"efgh"[..])));
-        let storage = stream_storage(underlying);
-        let start = Instant::now();
-        let mut reader = storage
-            .get_slice_stream(Path::new("object"), 10..18)
-            .await
-            .unwrap();
-        let mut bytes = Vec::new();
-        reader.read_to_end(&mut bytes).await.unwrap();
-        assert_eq!(bytes, b"abcdefgh");
-        assert_eq!(start.elapsed(), Duration::from_secs(2));
+        for coalesced in [false, true] {
+            let mut underlying = MockStorage::new();
+            let mut sequence = mockall::Sequence::new();
+            underlying
+                .expect_get_slice_stream()
+                .withf(|path, range| path == Path::new("object") && *range == (10..18))
+                .times(1)
+                .in_sequence(&mut sequence)
+                .returning(|_, _| {
+                    Ok(delayed_reader(vec![
+                        (Duration::from_secs(1), Ok(b"abcd")),
+                        (Duration::from_millis(1_500), Ok(b"wrong")),
+                    ]))
+                });
+            underlying
+                .expect_get_slice_stream()
+                .withf(|_, range| *range == (14..18))
+                .times(1)
+                .in_sequence(&mut sequence)
+                .returning(|_, _| Ok(Box::new(&b"efgh"[..])));
+            let storage = stream_storage(underlying);
+            if coalesced {
+                let storage = CoalescingStorage::new(Arc::new(storage));
+                let (first, second) = tokio::try_join!(
+                    storage.get_slice(Path::new("object"), 10..12),
+                    storage.get_slice(Path::new("object"), 16..18)
+                )
+                .unwrap();
+                assert_eq!(first.as_slice(), b"ab");
+                assert_eq!(second.as_slice(), b"gh");
+            } else {
+                let start = Instant::now();
+                let mut reader = storage
+                    .get_slice_stream(Path::new("object"), 10..18)
+                    .await
+                    .unwrap();
+                let mut bytes = Vec::new();
+                reader.read_to_end(&mut bytes).await.unwrap();
+                assert_eq!(bytes, b"abcdefgh");
+                assert_eq!(start.elapsed(), Duration::from_secs(2));
+            }
+        }
     }
 
     #[tokio::test(start_paused = true)]

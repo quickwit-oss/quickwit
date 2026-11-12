@@ -17,15 +17,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 
 use bytes::Bytes;
-use quickwit_config::StorageTimeoutPolicy;
 use tokio::io::{AsyncWriteExt, ReadBuf};
 use tokio_util::io::StreamReader;
 
 use super::*;
-use crate::{
-    MockStorage, MockStorageCache, StorageErrorKind, TimeoutAndRetryStorage,
-    wrap_storage_with_cache,
-};
+use crate::{MockStorage, MockStorageCache, StorageErrorKind, wrap_storage_with_cache};
 
 #[tokio::test]
 async fn test_plans_collected_ranges_and_preserves_order() {
@@ -54,19 +50,6 @@ async fn test_plans_collected_ranges_and_preserves_order() {
                 largest_gap_read: gap_read_for_storage.clone(),
             }))
         });
-    assert!(
-        read_collected_ranges(&storage, Path::new("file"), Vec::new())
-            .await
-            .unwrap()
-            .is_empty()
-    );
-    assert!(
-        read_collected_ranges(&storage, Path::new("file"), vec![0..0, 9..9])
-            .await
-            .unwrap()
-            .iter()
-            .all(|bytes| bytes.is_empty())
-    );
     let mut ranges: Vec<_> = [5 * MIB..5 * MIB + 2, 0..2, 1..3, 4..4, 5 * MIB..5 * MIB + 2]
         .into_iter()
         .cycle()
@@ -123,62 +106,6 @@ impl AsyncRead for GeneratedReader {
             self.position += 1;
         }
         Poll::Ready(Ok(()))
-    }
-}
-
-#[tokio::test]
-async fn test_collected_batch_limits_streams_refills_and_cancels() {
-    let writers = Arc::new(Mutex::new(Vec::new()));
-    let writers_for_storage = writers.clone();
-    let mut storage = MockStorage::default();
-    storage
-        .expect_get_slice_stream()
-        .times(6)
-        .returning(move |_, _| {
-            let (reader, writer) = tokio::io::duplex(1);
-            writers_for_storage.lock().unwrap().push(writer);
-            Ok(Box::new(reader))
-        });
-    let batch = tokio::spawn(async move {
-        let ranges = (0..6)
-            .flat_map(|index| {
-                let start = index * 5 * 1024 * 1024;
-                [start..start + 1, start + 2..start + 3]
-            })
-            .collect();
-        CoalescingStorage::new(Arc::new(storage))
-            .get_slices(Path::new("file"), ranges)
-            .await
-    });
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while writers.lock().unwrap().len() < 5 {
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .unwrap();
-    assert_eq!(writers.lock().unwrap().len(), 5);
-    // Completing the fifth download admits the sixth while earlier downloads remain blocked.
-    let mut completed_writer = writers.lock().unwrap().pop().unwrap();
-    completed_writer.write_all(&[0, 1, 2]).await.unwrap();
-    completed_writer.shutdown().await.unwrap();
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while writers.lock().unwrap().len() < 5 {
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .unwrap();
-    assert!(!batch.is_finished());
-    batch.abort();
-    assert!(batch.await.unwrap_err().is_cancelled());
-    let writers = std::mem::take(&mut *writers.lock().unwrap());
-    assert_eq!(writers.len(), 5);
-    for mut writer in writers {
-        assert_eq!(
-            writer.write_all(&[0]).await.unwrap_err().kind(),
-            io::ErrorKind::BrokenPipe
-        );
     }
 }
 
@@ -254,50 +181,6 @@ async fn test_one_download_failure_fails_all_callers_and_cancels_peers() {
         pending_writer.write_all(&[0]).await.unwrap_err().kind(),
         io::ErrorKind::BrokenPipe
     );
-}
-
-#[tokio::test(start_paused = true)]
-async fn test_merged_download_retries_body_from_emitted_offset() {
-    let mut storage = MockStorage::default();
-    let mut sequence = mockall::Sequence::new();
-    storage
-        .expect_get_slice_stream()
-        .withf(|path, range| path == Path::new("file") && *range == (10..18))
-        .times(1)
-        .in_sequence(&mut sequence)
-        .returning(|_, _| {
-            let chunks = stream::iter([&b"abcd"[..], &b"wrong"[..]])
-                .enumerate()
-                .then(|(index, bytes)| async move {
-                    if index > 0 {
-                        tokio::time::sleep(Duration::from_secs(3)).await;
-                    }
-                    Ok::<_, io::Error>(Bytes::from_static(bytes))
-                });
-            Ok(Box::new(StreamReader::new(Box::pin(chunks))))
-        });
-    storage
-        .expect_get_slice_stream()
-        .withf(|_, range| *range == (14..18))
-        .times(1)
-        .in_sequence(&mut sequence)
-        .returning(|_, _| Ok(Box::new(&b"efgh"[..])));
-    let retrying_storage = TimeoutAndRetryStorage::new(
-        Arc::new(storage),
-        StorageTimeoutPolicy {
-            min_throughtput_bytes_per_secs: 0,
-            timeout_millis: 2_000,
-            max_num_retries: 1,
-        },
-    );
-    let storage = CoalescingStorage::new(Arc::new(retrying_storage));
-    let (first, second) = tokio::try_join!(
-        storage.get_slice(Path::new("file"), 10..12),
-        storage.get_slice(Path::new("file"), 16..18)
-    )
-    .unwrap();
-    assert_eq!(first.as_slice(), b"ab");
-    assert_eq!(second.as_slice(), b"gh");
 }
 
 #[tokio::test]

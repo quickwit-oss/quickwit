@@ -151,21 +151,21 @@ mod tests {
     async fn test_cache_lookups_overlap_and_forward_all_misses_together() {
         use std::time::Duration;
 
-        struct DelayedCache;
+        struct DelayedCache {
+            bytes_by_range: Mutex<HashMap<Range<usize>, OwnedBytes>>,
+        }
 
         #[async_trait]
         impl StorageCache for DelayedCache {
             async fn get(&self, _: &Path, range: Range<usize>) -> Option<OwnedBytes> {
                 tokio::time::sleep(Duration::from_millis(10)).await;
-                range
-                    .start
-                    .is_multiple_of(2)
-                    .then(|| OwnedBytes::new(vec![range.start as u8]))
+                self.bytes_by_range.lock().unwrap().get(&range).cloned()
             }
 
             async fn put(&self, _: PathBuf, range: Range<usize>, bytes: OwnedBytes) {
                 assert_eq!(range.start % 2, 1);
                 assert_eq!(bytes.as_slice(), &[range.start as u8]);
+                self.bytes_by_range.lock().unwrap().insert(range, bytes);
             }
 
             async fn get_all(&self, _: &Path) -> Option<OwnedBytes> {
@@ -187,14 +187,19 @@ mod tests {
         });
         let storage = StorageWithCache {
             storage: Arc::new(backend),
-            cache: Arc::new(DelayedCache),
+            cache: Arc::new(DelayedCache {
+                bytes_by_range: Mutex::new(
+                    (0..10)
+                        .step_by(2)
+                        .map(|start| (start..start + 1, OwnedBytes::new(vec![start as u8])))
+                        .collect(),
+                ),
+            }),
         };
+        let ranges: Vec<_> = (0..10).map(|index| index..index + 1).collect();
         let start = tokio::time::Instant::now();
         let buffers = storage
-            .get_slices(
-                Path::new("file"),
-                (0..10).map(|index| index..index + 1).collect(),
-            )
+            .get_slices(Path::new("file"), ranges.clone())
             .await
             .unwrap();
         // Ten delayed lookups run in two waves of five, then all misses are forwarded together.
@@ -203,6 +208,9 @@ mod tests {
         for (index, buffer) in buffers.iter().enumerate() {
             assert_eq!(buffer.as_slice(), &[index as u8]);
         }
+        // Repeating the batch uses the inserted bytes without another storage read.
+        let repeated = storage.get_slices(Path::new("file"), ranges).await.unwrap();
+        assert_eq!(repeated, buffers);
     }
 
     #[tokio::test]
