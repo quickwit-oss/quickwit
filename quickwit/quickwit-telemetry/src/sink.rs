@@ -61,8 +61,7 @@ impl HttpClient {
         Ok(HttpClient { client, endpoint })
     }
 
-    /// Returns the scheme, host and port of the endpoint, without the credentials, path or query
-    /// that a custom endpoint may hold, so that it can be logged.
+    /// Endpoint origin with credentials, path and query removed for logging.
     pub fn endpoint_origin(&self) -> String {
         self.endpoint.origin().ascii_serialization()
     }
@@ -78,8 +77,6 @@ impl Sink for UnboundedSender<TelemetryPayload> {
 #[async_trait]
 impl Sink for HttpClient {
     async fn send_payload(&self, payload: TelemetryPayload) {
-        // Telemetry is best effort, so failures, including payloads that the relay rejects, are
-        // only logged at the debug level.
         let send_result = self
             .client
             .post(self.endpoint.clone())
@@ -88,7 +85,7 @@ impl Sink for HttpClient {
             .await
             .and_then(Response::error_for_status);
         if let Err(error) = send_result {
-            debug!(?error, "failed to send telemetry request");
+            debug!(error = ?error.without_url(), "failed to send telemetry request");
         }
     }
 }

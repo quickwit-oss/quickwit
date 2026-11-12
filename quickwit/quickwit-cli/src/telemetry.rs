@@ -49,7 +49,6 @@ fn telemetry_features(config: &NodeConfig) -> HashSet<QuickwitFeature> {
     if config.jaeger_config.enable_endpoint {
         features.insert(QuickwitFeature::Jaeger);
     }
-    // The metastore URI is only relevant on the nodes that serve the metastore.
     let served_metastore_uri_opt = if config.is_service_enabled(QuickwitService::Metastore) {
         Some(&config.metastore_uri)
     } else if config.is_service_enabled(QuickwitService::MetastoreReadReplica) {

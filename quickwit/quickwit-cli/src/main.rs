@@ -150,7 +150,6 @@ async fn main_impl() -> anyhow::Result<()> {
     std::process::exit(return_code)
 }
 
-/// Return the about text with telemetry info.
 fn about_text() -> String {
     let mut about_text = String::from(
         "Sub-second search & analytics engine on cloud storage.\n  Find more information at https://quickwit.io/docs\n\n",

@@ -25,7 +25,6 @@ use crate::usage::{ApiKind, IndexingSourceKind, IndexingUsage};
 /// Version of the payload format. Payloads without one are version 1.
 pub(crate) const TELEMETRY_SCHEMA_VERSION: u32 = 2;
 
-/// Represents the payload of the request sent with telemetry requests.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TelemetryPayload {
     pub schema_version: u32,
@@ -44,9 +43,7 @@ pub struct EventWithTimestamp {
     pub event: TelemetryEvent,
 }
 
-/// Returns the number of seconds elapsed since UNIX_EPOCH.
-///
-/// If the system clock is set before 1970, returns 0.
+/// Unix time in seconds, or zero if the clock predates the epoch.
 fn unixtime() -> u64 {
     match UNIX_EPOCH.elapsed() {
         Ok(duration) => duration.as_secs(),
@@ -63,13 +60,11 @@ impl From<TelemetryEvent> for EventWithTimestamp {
     }
 }
 
-/// Represents a telemetry event sent to the telemetry relay for usage information.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 pub enum TelemetryEvent {
     RunCommand,
-    /// Event sent when the node stops, with its exit code.
     EndCommand {
         return_code: i32,
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -77,7 +72,6 @@ pub enum TelemetryEvent {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         indexing_usage: BTreeMap<IndexingSourceKind, IndexingUsage>,
     },
-    /// Event sent every 12h to signal the server is running.
     Running {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         api_usage: BTreeMap<ApiKind, String>,
@@ -187,7 +181,6 @@ mod tests {
 
     #[test]
     fn test_serialize_features_as_expected() {
-        // These names are part of the telemetry payload documented in `docs/telemetry.md`.
         let features = [
             QuickwitFeature::AzureStorage,
             QuickwitFeature::DocsClustering,

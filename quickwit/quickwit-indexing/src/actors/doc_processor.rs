@@ -597,19 +597,20 @@ impl Handler<RawDocBatch> for DocProcessor {
             self.process_raw_doc(raw_doc, &mut processed_docs);
             ctx.record_progress();
         }
-        if quickwit_telemetry::is_telemetry_enabled() {
+        let telemetry_counts_opt = if quickwit_telemetry::is_telemetry_enabled() {
             let num_indexed_bytes = processed_docs
                 .iter()
                 .map(|processed_doc| processed_doc.num_bytes as u64)
                 .sum();
             let num_rejected_docs = self.counters.num_invalid_docs() - num_invalid_docs_before;
-            quickwit_telemetry::record_indexed_batch(
-                self.telemetry_source_kind,
+            Some((
                 processed_docs.len() as u64,
                 num_indexed_bytes,
                 num_rejected_docs,
-            );
-        }
+            ))
+        } else {
+            None
+        };
         let processed_doc_batch = ProcessedDocBatch::new(
             processed_docs,
             raw_doc_batch.checkpoint_delta,
@@ -617,6 +618,16 @@ impl Handler<RawDocBatch> for DocProcessor {
         );
         ctx.send_message(&self.indexer_mailbox, processed_doc_batch)
             .await?;
+        // A failed handoff is replayed when the pipeline restarts, so only count accepted batches.
+        if let Some((num_indexed_docs, num_indexed_bytes, num_rejected_docs)) = telemetry_counts_opt
+        {
+            quickwit_telemetry::record_indexed_batch(
+                self.telemetry_source_kind,
+                num_indexed_docs,
+                num_indexed_bytes,
+                num_rejected_docs,
+            );
+        }
         Ok(())
     }
 }

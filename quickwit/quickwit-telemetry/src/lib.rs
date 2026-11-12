@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! This crate contains the code responsible for sending anonymous usage data to the telemetry
-//! relay. See `docs/telemetry.md` for the data that is sent.
+//! Anonymous usage telemetry. See `docs/telemetry.md` for the payload and opt-out.
 
 #![deny(clippy::disallowed_methods)]
 
@@ -36,11 +35,11 @@ use crate::sender::{TelemetryLoopHandle, TelemetrySender};
 use crate::sink::HttpClient;
 pub use crate::usage::{ApiKind, IndexingSourceKind, record_api_request, record_indexed_batch};
 
-static TELEMETRY_SENDER: OnceLock<TelemetrySender> = OnceLock::new();
+static TELEMETRY_SENDER: OnceLock<Option<TelemetrySender>> = OnceLock::new();
 
-/// Starts the telemetry loop, and queues the `install` event if the install ID stored in
-/// `data_dir` was just created. Returns `None` if telemetry is disabled, if the HTTP client can't
-/// be created, or if the loop is already started. Must be called from a Tokio runtime.
+/// Starts telemetry and queues `install` when a new install ID is created.
+/// Returns `None` when disabled, initialization fails, or startup was already attempted.
+/// Must be called from a Tokio runtime.
 pub fn start_telemetry_loop(
     mut quickwit_info: QuickwitTelemetryInfo,
     data_dir: &Path,
@@ -61,25 +60,22 @@ pub fn start_telemetry_loop(
     };
     let mut is_new_install_opt = None;
     let telemetry_sender = TELEMETRY_SENDER.get_or_init(|| {
-        // Only created once telemetry can be sent, so that a node with telemetry off never writes
-        // the install ID.
+        // Do not create an install ID until telemetry can be sent.
         let is_new_install = match load_or_create_install_id(data_dir) {
             Ok((install_uuid, is_new_install)) => {
                 quickwit_info.install_uuid = Some(install_uuid);
                 is_new_install
             }
             Err(error) => {
-                warn!(%error, "failed to load or create the telemetry install ID");
-                false
+                warn!(%error, "failed to load or create the telemetry install ID, telemetry is disabled");
+                return None;
             }
         };
         is_new_install_opt = Some(is_new_install);
         info!("telemetry to {} is enabled", http_client.endpoint_origin());
-        TelemetrySender::new(quickwit_info, http_client)
-    });
+        Some(TelemetrySender::new(quickwit_info, http_client))
+    }).as_ref()?;
     let Some(is_new_install) = is_new_install_opt else {
-        // This should not happen... unless telemetry is enabled and you are running tests in
-        // parallel in the same process.
         info!("telemetry loop already started. please disable telemetry during tests");
         return None;
     };
@@ -90,24 +86,17 @@ pub fn start_telemetry_loop(
     Some(telemetry_loop_handle)
 }
 
-/// Queues a telemetry event for the telemetry loop to send to the telemetry relay. Does nothing
-/// unless `start_telemetry_loop` started the loop.
-///
-/// Telemetry sends at most 1 request per minute, except for one last request with the pending
-/// events when the node shuts down. Each request holds at most 10 events, so some events are
-/// dropped if this function is called too often.
-///
-/// The event is an enum so that readers can audit what information is sent.
+/// Queues an event if telemetry has started. Events are dropped when the queue is full.
+/// Sends at most 10 events per request and one request per minute, plus a final flush on shutdown.
 pub fn send_telemetry_event(event: TelemetryEvent) {
-    if let Some(telemetry_sender) = TELEMETRY_SENDER.get() {
+    if let Some(telemetry_sender) = TELEMETRY_SENDER.get().and_then(Option::as_ref) {
         telemetry_sender.send(event);
     }
 }
 
-/// Returns true once `start_telemetry_loop` has started the telemetry loop. It is false before
-/// that, so check it on each use instead of caching it.
+/// Returns whether telemetry has started. Do not cache before startup.
 pub fn is_telemetry_enabled() -> bool {
-    TELEMETRY_SENDER.get().is_some()
+    TELEMETRY_SENDER.get().and_then(Option::as_ref).is_some()
 }
 
 /// Setting this environment variable to any value, even empty or `false`, disables telemetry, as

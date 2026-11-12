@@ -29,11 +29,8 @@ use crate::sink::Sink;
 /// At most 1 request per minute, except for the last request on termination.
 const TELEMETRY_PUSH_COOLDOWN: Duration = Duration::from_secs(60);
 
-/// Interval at which to send telemetry `Running` event.
 const TELEMETRY_RUNNING_EVENT_INTERVAL: Duration = Duration::from_secs(60 * 60 * 12);
 
-/// Upon termination of the program, we send one last telemetry request with pending events.
-/// This duration is the amount of time we wait for at most to send that last telemetry request.
 const LAST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// The relay rejects requests with more events.
@@ -64,7 +61,6 @@ struct Inner {
     client_info: ClientInfo,
     quickwit_info: QuickwitTelemetryInfo,
     events_state: Mutex<EventsState>,
-    /// Wakes the telemetry loop up when an event is queued into an empty queue.
     events_available: Notify,
 }
 
@@ -76,7 +72,6 @@ impl Inner {
         }
     }
 
-    /// Sends the queued events, if any.
     async fn send_queued_events(&self) {
         let events_state = mem::take(&mut *self.events_state.lock().unwrap());
         if events_state.events.is_empty() {
@@ -124,7 +119,7 @@ impl TelemetrySender {
         }
     }
 
-    /// Starts the loop that sends the queued events. Must be called at most once.
+    /// Must be called at most once.
     pub(crate) fn start_loop(&self) -> TelemetryLoopHandle {
         let (terminate_command_tx, mut terminate_command_rx) = oneshot::channel();
         let inner = self.inner.clone();

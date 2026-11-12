@@ -22,11 +22,8 @@ pub(crate) fn classify_rest_request(method: &Method, path: &str) -> Option<ApiKi
     if first_segment == "_elastic" {
         return Some(classify_elasticsearch_request(method, rest));
     }
-    // Management routes put a user-chosen ID after `indexes/` or `templates/`, which can be named
-    // like a counted route, such as `search`.
-    if matches!(first_segment, "indexes" | "templates") {
-        return None;
-    }
+    // Native routes precede management routes, including for indexes named `indexes` or
+    // `templates`.
     match (method, rest) {
         (&Method::GET | &Method::POST, "search") => Some(ApiKind::NativeSearch),
         (&Method::POST, "ingest") => Some(ApiKind::NativeIngest),
@@ -39,9 +36,7 @@ pub(crate) fn classify_rest_request(method: &Method, path: &str) -> Option<ApiKi
     }
 }
 
-/// Matches the shapes and methods of the search and bulk routes in `elasticsearch_api/filter.rs`.
-/// Any other request, including `DELETE _search/scroll` and requests rejected for their method,
-/// counts as other.
+/// Keep in sync with the routes in `elasticsearch_api/filter.rs`.
 fn classify_elasticsearch_request(method: &Method, elasticsearch_path: &str) -> ApiKind {
     let (first_segment, rest_opt) = match elasticsearch_path.split_once('/') {
         Some((first_segment, rest)) => (first_segment, Some(rest)),
@@ -57,7 +52,6 @@ fn classify_elasticsearch_request(method: &Method, elasticsearch_path: &str) -> 
     }
 }
 
-/// Returns a gRPC interceptor that counts the requests to `api_kind`.
 pub(crate) fn grpc_request_counter(
     api_kind: ApiKind,
 ) -> impl FnMut(tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status> + Clone {
@@ -144,8 +138,21 @@ mod tests {
             (Method::DELETE, "/api/v1/indexes/jaeger", None),
             (Method::PUT, "/api/v1/templates/ingest", None),
             (Method::GET, "/api/v1/indexes/search/describe", None),
-            (Method::GET, "/api/v1/indexes/search", None),
-            (Method::GET, "/api/v1/templates/search", None),
+            (
+                Method::GET,
+                "/api/v1/indexes/search",
+                Some(ApiKind::NativeSearch),
+            ),
+            (
+                Method::GET,
+                "/api/v1/templates/search",
+                Some(ApiKind::NativeSearch),
+            ),
+            (
+                Method::POST,
+                "/api/v1/templates/ingest",
+                Some(ApiKind::NativeIngest),
+            ),
             (Method::GET, "/ui/search", None),
         ];
         for (method, path, expected_api_kind) in cases {

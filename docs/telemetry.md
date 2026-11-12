@@ -25,7 +25,7 @@ Sub-second search & analytics engine on cloud storage.
 Telemetry: enabled
 ```
 
-The line disappears when telemetry is off. If the node can't set up HTTPS, for example because no CA certificates are installed, `quickwit run` logs a warning and sends nothing even though the line is shown.
+The line disappears when telemetry is off. If the node can't set up HTTPS, for example because no CA certificates are installed, `quickwit run` logs a warning and sends nothing even though the line is shown. It also disables telemetry with a warning if it can't read or create a valid install ID in the data directory.
 
 Only `quickwit run` sends telemetry. Other CLI commands never do.
 

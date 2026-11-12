@@ -34,7 +34,6 @@ pub enum ApiKind {
     UiIndexPageLoad,
 }
 
-/// Type of the source that documents are indexed from.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IndexingSourceKind {
@@ -66,8 +65,7 @@ struct SourceIndexingCounts {
     num_rejected_docs: u64,
 }
 
-/// Counts since the previous report, behind one lock so that a report never holds only part of a
-/// batch.
+/// One lock keeps snapshots from splitting a batch across reports.
 struct UsageCounts {
     num_api_requests: BTreeMap<ApiKind, u64>,
     indexing_counts: BTreeMap<IndexingSourceKind, SourceIndexingCounts>,
@@ -101,7 +99,6 @@ impl UsageCounts {
         source_counts.num_rejected_docs += num_rejected_docs;
     }
 
-    /// Returns the bucketed counts, and resets them.
     fn take(
         &mut self,
     ) -> (
@@ -135,8 +132,6 @@ pub fn record_api_request(api_kind: ApiKind) {
     }
 }
 
-/// Records a batch of documents from a source: the documents and bytes that were indexed, and
-/// the documents that were rejected.
 pub fn record_indexed_batch(
     source_kind: IndexingSourceKind,
     num_indexed_docs: u64,
@@ -169,8 +164,7 @@ impl TelemetryEvent {
         }
     }
 
-    /// Adds the API request and indexing counts since the previous report. Only called once the
-    /// event is queued, so that a dropped event never loses the counts.
+    /// Call only after enqueueing so dropped events do not discard usage counts.
     pub(crate) fn add_usage(&mut self) {
         if let TelemetryEvent::Running {
             api_usage,
