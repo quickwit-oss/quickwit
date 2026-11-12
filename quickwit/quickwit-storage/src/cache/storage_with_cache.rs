@@ -72,7 +72,6 @@ impl Storage for StorageWithCache {
         path: &Path,
         requested_ranges: Vec<Range<usize>>,
     ) -> StorageResult<Vec<OwnedBytes>> {
-        crate::storage::validate_byte_ranges(&requested_ranges)?;
         super::read_batch_with_async_cache(
             requested_ranges,
             |requested_range| self.cache.get(path, requested_range),

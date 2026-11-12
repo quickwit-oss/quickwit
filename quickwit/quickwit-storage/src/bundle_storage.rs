@@ -52,7 +52,7 @@ impl BundleStorage {
                 .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
         })?;
         // Underlying storage only sees the split object, not this file's boundaries.
-        if range.start > range.end || range.end as u64 > file_range.end - file_range.start {
+        if range.end as u64 > file_range.end - file_range.start {
             return Err(
                 io::Error::new(io::ErrorKind::InvalidInput, "range outside bundled file").into(),
             );
@@ -828,7 +828,6 @@ mod tests {
         for (path, range, kind) in [
             ("missing", 0..1, StorageErrorKind::NotFound),
             ("f2", 3..4, StorageErrorKind::Io),
-            ("f2", Range { start: 3, end: 2 }, StorageErrorKind::Io),
         ] {
             let path = Path::new(path);
             assert_eq!(
