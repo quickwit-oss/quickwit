@@ -77,6 +77,11 @@ impl CacheNode {
             state: CacheState::Uninitialized,
         }
     }
+
+    /// Retains prepared matches in the query, independently of shared-cache admission.
+    pub fn set_hits(&mut self, segment_id: SegmentId, hits: HitSet) {
+        self.state = CacheState::CacheHit(Box::new(CacheEntry { segment_id, hits }));
+    }
 }
 
 impl BuildTantivyAst for CacheNode {
