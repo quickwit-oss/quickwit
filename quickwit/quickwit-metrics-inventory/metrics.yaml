@@ -314,6 +314,10 @@ quickwit_ingest_reset_shards_operations_total:
   module: quickwit_ingest::ingest_v2::metrics
   kind: counter
   description: Total number of reset shards operations performed.
+quickwit_ingest_reset_shards_unsafe_deletes_total:
+  module: quickwit_ingest::ingest_v2::metrics
+  kind: counter
+  description: Total number of shards the control plane advised deleting while they held unpublished data or were open and not empty. These shards are closed instead of deleted.
 quickwit_ingest_shard_lt_throughput_mib:
   module: quickwit_ingest::ingest_v2::metrics
   kind: histogram
