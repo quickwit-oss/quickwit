@@ -331,7 +331,7 @@ async fn run_cancellable(
 /// Queries without predicate caching request postings-only warmup.
 ///
 /// Returns whether the query is provably empty in this split (i.e. `on_absent` fired and
-/// warmup was short-circuited).
+/// warmup was short-circuited), and prepared hitsets to retain in the executable query.
 pub(crate) async fn warmup(
     searcher: &Searcher,
     warmup_info: &WarmupInfo,
@@ -339,7 +339,7 @@ pub(crate) async fn warmup(
     on_absent: &(dyn Fn(&Term, SegmentId) + Sync),
     predicate_cache: Arc<dyn PredicateCache>,
     split_id: &str,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<(bool, WarmedHits)> {
     debug!(warmup_info=?warmup_info);
 
     // Early-abort optimization: the split's downloads can be cancelled as soon as
@@ -389,10 +389,12 @@ pub(crate) async fn warmup(
         warm_up_all_postings(searcher, &warmup_info.term_dict_fields),
     )
     .instrument(debug_span!("warm_up_all_postings"));
-    let warm_up_automatons_future = run_cancellable(
-        abort_token.as_ref(),
-        warm_up_automatons(searcher, warmup_info, predicate_cache, split_id, priority),
-    )
+    let mut warmed_hits = WarmedHits::default();
+    let warm_up_automatons_future = run_cancellable(abort_token.as_ref(), async {
+        warmed_hits =
+            warm_up_automatons(searcher, warmup_info, predicate_cache, split_id, priority).await?;
+        anyhow::Ok(())
+    })
     .instrument(debug_span!("warm_up_automatons"));
 
     tokio::try_join!(
@@ -409,7 +411,7 @@ pub(crate) async fn warmup(
         Some(abort_token) => abort_token.is_cancelled(),
         None => false,
     };
-    Ok(provably_empty)
+    Ok((provably_empty, warmed_hits))
 }
 
 /// Warm up the full term dictionary for each supplied field in every segment.
@@ -550,13 +552,35 @@ async fn warm_up_term_ranges(
     Ok(())
 }
 
+/// Prepared predicate results owned by this split-search until installed in its query.
+type WarmedHits = HashMap<String, (SegmentId, HitSet)>;
+
+struct WarmedHitsInjector(WarmedHits);
+
+impl QueryAstTransformer for WarmedHitsInjector {
+    type Err = serde_json::Error;
+
+    fn transform_cache_node(&mut self, mut node: CacheNode) -> Result<Option<QueryAst>, Self::Err> {
+        let key = serde_json::to_string(&node.inner)?;
+        if let Some((segment_id, hits)) = self.0.get(&key) {
+            node.set_hits(*segment_id, hits.clone());
+        } else {
+            node.inner = Box::new(
+                self.transform(*node.inner)?
+                    .expect("injector preserves nodes"),
+            );
+        }
+        Ok(Some(node.into()))
+    }
+}
+
 async fn warm_up_automatons(
     searcher: &Searcher,
     warmup_info: &WarmupInfo,
     predicate_cache: Arc<dyn PredicateCache>,
     split_id: &str,
     priority: Priority,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<WarmedHits> {
     let predicate_cache = &predicate_cache;
     let mut warm_up_futures = Vec::new();
     let cpu_intensive_executor = |task| async move {
@@ -591,8 +615,12 @@ async fn warm_up_automatons(
                         .await
                         .context("failed to load automaton")?;
                     let AutomatonWarmup::CacheHits(cache_keys) = warmup else {
-                        return anyhow::Ok(());
+                        return anyhow::Ok(WarmedHits::default());
                     };
+                    anyhow::ensure!(
+                        searcher.segment_readers().len() == 1,
+                        "predicate hitsets require a single-segment split"
+                    );
                     let cache = predicate_cache.clone();
                     let split_id = split_id.to_string();
                     let cache_keys = cache_keys.clone();
@@ -619,20 +647,24 @@ async fn warm_up_automatons(
                                 }
                             }
                             let hits = HitSet::from_bitset(bitset);
+                            let mut warmed_hits = WarmedHits::default();
                             for key in cache_keys {
-                                cache.put(split_id.clone(), key, segment_id, hits.clone());
+                                cache.put(split_id.clone(), key.clone(), segment_id, hits.clone());
+                                warmed_hits.insert(key, (segment_id, hits.clone()));
                             }
-                            anyhow::Ok(())
+                            anyhow::Ok(warmed_hits)
                         })
                         .await
-                        .context("automaton cache fill task panicked")??;
-                    anyhow::Ok(())
+                        .context("automaton cache fill task panicked")?
                 });
             }
         }
     }
-    try_join_all(warm_up_futures).await?;
-    Ok(())
+    Ok(try_join_all(warm_up_futures)
+        .await?
+        .into_iter()
+        .flatten()
+        .collect())
 }
 
 async fn warm_up_fieldnorms(searcher: &Searcher, requires_scoring: bool) -> anyhow::Result<()> {
@@ -816,9 +848,9 @@ async fn leaf_search_single_split(
     let doc_mapper = ctx.doc_mapper.clone();
     let schema = index.schema();
     let query_ast_to_build = query_ast.clone();
-    let (query, mut warmup_info) = crate::search_thread_pool()
+    let (mut query, mut warmup_info, resolved_query_ast) = crate::search_thread_pool()
         .run_cpu_intensive_with_priority(priority, move || {
-            doc_mapper.query(schema, query_ast_to_build, false, cache_context)
+            doc_mapper.query_with_ast(schema, query_ast_to_build, false, cache_context)
         })
         .await
         .map_err(|_| SearchError::Internal("query compilation task panicked".to_string()))??;
@@ -853,8 +885,8 @@ async fn leaf_search_single_split(
             None => false,
         }
     });
-    let provably_empty = if cached_known_empty {
-        true
+    let (provably_empty, warmed_hits) = if cached_known_empty {
+        (true, WarmedHits::default())
     } else {
         // Record every required term proven absent during warmup, so any future query
         // carrying one of them prunes before warmup. Absence is per `(split, term)`,
@@ -908,6 +940,22 @@ async fn leaf_search_single_split(
         );
         provably_empty
     };
+    if !provably_empty && !warmed_hits.is_empty() {
+        let doc_mapper = ctx.doc_mapper.clone();
+        let schema = index.schema();
+        query = crate::search_thread_pool()
+            .run_cpu_intensive_with_priority(priority, move || {
+                let query_ast = WarmedHitsInjector(warmed_hits)
+                    .transform(resolved_query_ast)?
+                    .expect("injector preserves nodes");
+                // Preserve initial cache hits as well as warmed hits. Looking up the shared
+                // cache again could lose results evicted since the first query build.
+                let (query, _) = doc_mapper.query(schema, query_ast, false, None)?;
+                anyhow::Ok(query)
+            })
+            .await
+            .map_err(|_| SearchError::Internal("query compilation task panicked".to_string()))??;
+    }
     let warmup_end = Instant::now();
     let warmup_duration: Duration = warmup_end.duration_since(warmup_start);
     let warmup_size = ByteSize(byte_range_cache.get_num_bytes());
@@ -2512,8 +2560,8 @@ mod tests {
     use quickwit_config::{LambdaConfig, SearcherConfig};
     use quickwit_proto::search::LambdaSingleSplitResult;
     use quickwit_query::query_ast::RegexQuery;
+    use tantivy::TantivyDocument;
     use tantivy::schema::Schema;
-    use tantivy::{DocSet, TantivyDocument};
 
     use super::*;
     use crate::LambdaLeafSearchInvoker;
@@ -3060,7 +3108,7 @@ mod tests {
         // `on_absent` was invoked with.
         async fn run(searcher: &Searcher, warmup_info: &WarmupInfo) -> (bool, Vec<Term>) {
             let reported = std::sync::Mutex::new(Vec::new());
-            let provably_empty = warmup(
+            let (provably_empty, _) = warmup(
                 searcher,
                 warmup_info,
                 Priority::default(),
@@ -3097,52 +3145,103 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_warmup_caches_automaton_hitsets() {
-        let (searcher, body) =
-            ram_searcher_with_text("body", &["apple apricot", "banana", "apricot", "carrot"]);
-        let searcher_context = SearcherContext::for_test();
-        let predicate_cache = searcher_context.predicate_cache.clone();
-        let split_id = "split";
-        for (pattern, expected_docs) in [
-            ("a.*", vec![0, 2]),
-            ("z.*", vec![]),
-            (".*", vec![0, 1, 2, 3]),
-        ] {
-            let automaton = Automaton::Regex(None, pattern.to_string());
-            let cache_keys = HashSet::from([pattern.to_string(), format!("alias:{pattern}")]);
-            let warmup_info = WarmupInfo {
-                automatons_grouped_by_field: HashMap::from([(
-                    body,
-                    HashMap::from([(automaton, AutomatonWarmup::CacheHits(cache_keys.clone()))]),
-                )]),
-                ..Default::default()
-            };
-            warm_up_automatons(
-                &searcher,
-                &warmup_info,
-                predicate_cache.clone(),
-                split_id,
-                Priority::default(),
-            )
-            .await
-            .unwrap();
-            for key in cache_keys {
-                let (segment_id, mut hits) = predicate_cache
-                    .get(split_id.to_string(), key)
-                    .expect("warmup should populate every cache key");
-                assert_eq!(segment_id, searcher.segment_reader(0).segment_id());
-                let mut docs = Vec::new();
-                while hits.doc() != tantivy::TERMINATED {
-                    docs.push(hits.doc());
-                    hits.advance();
+    async fn test_warmup_retains_automaton_hitsets() {
+        use std::sync::atomic::AtomicUsize;
+
+        struct TestCache {
+            shared: Arc<dyn PredicateCache>,
+            admit: bool,
+            writes: AtomicUsize,
+        }
+        impl PredicateCache for TestCache {
+            fn get(&self, split: String, query: String) -> Option<(SegmentId, HitSet)> {
+                self.shared.get(split, query)
+            }
+
+            fn put(&self, split: String, query: String, segment: SegmentId, hits: HitSet) {
+                self.writes.fetch_add(1, Ordering::Relaxed);
+                if self.admit {
+                    self.shared.put(split, query, segment, hits);
                 }
-                assert_eq!(docs, expected_docs);
+            }
+        }
+
+        let (searcher, _) =
+            ram_searcher_with_text("body", &["apple apricot", "banana", "apricot", "carrot"]);
+        let builder: quickwit_doc_mapper::DocMapperBuilder = serde_json::from_str("{}").unwrap();
+        let doc_mapper = builder.try_build().unwrap();
+        for (pattern, wildcard, expected_docs) in [
+            ("a.*", "a*", vec![0, 2]),
+            ("z.*", "z*", vec![]),
+            (".*", "*", vec![0, 1, 2, 3]),
+        ] {
+            for admit in [false, true] {
+                let cache = Arc::new(TestCache {
+                    shared: SearcherContext::for_test().predicate_cache.clone(),
+                    admit,
+                    writes: AtomicUsize::new(0),
+                });
+                let ast: QueryAst = serde_json::from_value(serde_json::json!({
+                    "type": "bool",
+                    "must": [
+                        {"type": "regex", "field": "body", "regex": pattern},
+                        {"type": "wildcard", "field": "body", "value": wildcard,
+                         "lenient": false, "case_insensitive": false}
+                    ]
+                }))
+                .unwrap();
+                let (_, warmup_info, ast) = doc_mapper
+                    .query_with_ast(
+                        searcher.schema().clone(),
+                        ast,
+                        false,
+                        Some((cache.clone(), "split".into())),
+                    )
+                    .unwrap();
+                let (empty, hits) = warmup(
+                    &searcher,
+                    &warmup_info,
+                    Priority::default(),
+                    &|_, _| {},
+                    cache.clone(),
+                    "split",
+                )
+                .await
+                .unwrap();
+                assert!(!empty);
+                assert_eq!(hits.len(), 2);
+                for (key, (segment, hits)) in &hits {
+                    assert_eq!(*segment, searcher.segment_reader(0).segment_id());
+                    assert_eq!(
+                        cache
+                            .get("split".into(), key.clone())
+                            .map(|(_, hits)| hits.into_buffer()),
+                        admit.then(|| hits.clone().into_buffer())
+                    );
+                }
+                assert_eq!(cache.writes.load(Ordering::Relaxed), 2);
+                let ast = WarmedHitsInjector(hits).transform(ast).unwrap().unwrap();
+                let (query, warmup_info) = doc_mapper
+                    .query(searcher.schema().clone(), ast, false, None)
+                    .unwrap();
+                assert!(warmup_info.automatons_grouped_by_field.is_empty());
+                assert_eq!(
+                    searcher
+                        .search(&query, &tantivy::collector::DocSetCollector)
+                        .unwrap(),
+                    expected_docs
+                        .iter()
+                        .map(|&doc| tantivy::DocAddress::new(0, doc))
+                        .collect()
+                );
+                // Rebuilding through CacheFillerWeight would attempt another write.
+                assert_eq!(cache.writes.load(Ordering::Relaxed), 2);
             }
         }
     }
 
     #[tokio::test]
-    async fn test_query_caching_controls_automaton_warmup() {
+    async fn test_postings_only_warmup_skips_hitsets() {
         let (searcher, body) = ram_searcher_with_text("body", &["apple", "banana", "apricot"]);
         let predicate_cache = SearcherContext::for_test().predicate_cache.clone();
         let doc_mapper_builder: quickwit_doc_mapper::DocMapperBuilder =
@@ -3155,54 +3254,26 @@ mod tests {
         }
         .into();
         let key = serde_json::to_string(&query).unwrap();
-        for cache_predicates in [false, true] {
-            let cache_context = cache_predicates.then(|| {
-                (
-                    predicate_cache.clone() as Arc<dyn PredicateCache>,
-                    split_id.to_string(),
-                )
-            });
-            let (_, warmup_info) = doc_mapper
-                .query(
-                    searcher.schema().clone(),
-                    query.clone(),
-                    false,
-                    cache_context,
-                )
-                .unwrap();
-            let expected = if cache_predicates {
-                AutomatonWarmup::CacheHits(HashSet::from([key.clone()]))
-            } else {
-                AutomatonWarmup::PostingsOnly
-            };
-            // Regex resolution adds case-insensitivity for the lowercasing text tokenizer.
-            assert_eq!(
-                warmup_info.automatons_grouped_by_field[&body]
-                    [&Automaton::Regex(None, "(?i)a.*".to_string())],
-                expected
-            );
-            warm_up_automatons(
-                &searcher,
-                &warmup_info,
-                predicate_cache.clone(),
-                split_id,
-                Priority::default(),
-            )
-            .await
+        let (_, warmup_info) = doc_mapper
+            .query(searcher.schema().clone(), query, false, None)
             .unwrap();
-            let cached = predicate_cache.get(split_id.to_string(), key.clone());
-            if cache_predicates {
-                assert_eq!(
-                    cached
-                        .expect("warmup should cache predicate hits")
-                        .1
-                        .size_hint(),
-                    2
-                );
-            } else {
-                assert!(cached.is_none());
-            }
-        }
+        // Regex resolution adds case-insensitivity for the lowercasing text tokenizer.
+        assert_eq!(
+            warmup_info.automatons_grouped_by_field[&body]
+                [&Automaton::Regex(None, "(?i)a.*".to_string())],
+            AutomatonWarmup::PostingsOnly
+        );
+        let hits = warm_up_automatons(
+            &searcher,
+            &warmup_info,
+            predicate_cache.clone(),
+            split_id,
+            Priority::default(),
+        )
+        .await
+        .unwrap();
+        assert!(hits.is_empty());
+        assert!(predicate_cache.get(split_id.to_string(), key).is_none());
     }
 
     fn nz(n: usize) -> std::num::NonZeroUsize {

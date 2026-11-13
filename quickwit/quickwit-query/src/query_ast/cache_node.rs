@@ -77,6 +77,11 @@ impl CacheNode {
         }
     }
 
+    /// Retains prepared matches in the query, independently of shared-cache admission.
+    pub fn set_hits(&mut self, segment_id: SegmentId, hits: HitSet) {
+        self.state = CacheState::CacheHit(CacheEntry { segment_id, hits });
+    }
+
     pub fn fill_cache_state(&mut self, cache: &Arc<dyn PredicateCache>, split_id: &str) {
         let Ok(query) = serde_json::to_string(&self.inner) else {
             return;
@@ -461,16 +466,6 @@ pub struct CacheFillerWeight {
 
 impl Weight for CacheFillerWeight {
     fn scorer(&self, reader: &SegmentReader, boost: Score) -> tantivy::Result<Box<dyn Scorer>> {
-        // Query construction may have seen a miss before warmup populated the cache.
-        if let Some((segment_id, mut hits)) = self.cache_filler.cache.get(
-            self.cache_filler.split_id.clone(),
-            self.cache_filler.query.clone(),
-        ) {
-            if segment_id == reader.segment_id() {
-                hits.boost = boost;
-                return Ok(Box::new(hits));
-            }
-        }
         let mut hit_set_builder = HitSetBuilder::new();
         let mut scorer = self.inner_weight.scorer(reader, 1.0)?;
         let mut doc_id = scorer.doc();
