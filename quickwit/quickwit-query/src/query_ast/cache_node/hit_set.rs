@@ -70,7 +70,7 @@ impl HitSet {
         (self.size_hint() as usize).div_ceil(BLOCK_LEN)
     }
 
-    fn block_first(&self, block: usize) -> u32 {
+    fn first_doc_in_block(&self, block: usize) -> u32 {
         self.read_u32(4 + block * 8)
     }
 
@@ -94,7 +94,7 @@ impl HitSet {
             }
         } else {
             BitPacker4x::new().decompress_strictly_sorted(
-                self.block_first(block).checked_sub(1),
+                self.first_doc_in_block(block).checked_sub(1),
                 &payload[1..],
                 &mut self.current_block,
                 payload[0],
