@@ -635,7 +635,7 @@ mod tests {
             (0..65).collect(),
             (0..1030).map(|doc| doc * 3).collect(),
         ] {
-            let max_doc = docs.last().map_or(0, |doc| doc + 1);
+            let max_doc = docs.last().map(|doc| doc + 1).unwrap_or(0);
             let mut bitset = BitSet::with_max_value(max_doc);
             let mut builder = HitSetBuilder::new();
             for &doc in &docs {
