@@ -18,13 +18,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use bytesize::ByteSize;
+use quickwit_directories::OutOfMemoryError;
 
 use crate::metrics::LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES;
-
-/// Returned when an allocation would make the warmup memory go over its limit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-#[error("warmup memory limit exceeded")]
-pub struct OutOfMemoryError;
 
 /// Called after memory is freed.
 type OnMemoryFreed = Box<dyn Fn() + Send + Sync>;
@@ -33,8 +29,7 @@ type OnMemoryFreed = Box<dyn Fn() + Send + Sync>;
 ///
 /// It is shared by the search permit actor and by every [`WarmupMemoryGuard`].
 ///
-/// Invariant: `allocated <= limit`. [`WarmupMemoryGuard::grow_unchecked`] is the only way to
-/// break it, and it will be removed once warmups reserve memory while downloading.
+/// Invariant: `allocated <= limit`.
 #[derive(Clone)]
 pub(crate) struct GlobalWarmupMemory {
     inner: Arc<GlobalWarmupMemoryInner>,
@@ -77,6 +72,15 @@ impl GlobalWarmupMemory {
     ///
     /// The memory is freed when the returned guard is dropped.
     pub fn try_allocate(&self, num_bytes: u64) -> Result<WarmupMemoryGuard, OutOfMemoryError> {
+        self.try_add(num_bytes)?;
+        Ok(WarmupMemoryGuard {
+            global: self.clone(),
+            num_bytes,
+        })
+    }
+
+    /// Adds `num_bytes` to the allocated memory, or fails if the total would go over the limit.
+    fn try_add(&self, num_bytes: u64) -> Result<(), OutOfMemoryError> {
         let limit = self.inner.limit;
         // The check and the addition must happen atomically, hence the CAS loop.
         let previous_allocated = self
@@ -91,18 +95,7 @@ impl GlobalWarmupMemory {
             })
             .map_err(|_| OutOfMemoryError)?;
         LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES.set((previous_allocated + num_bytes) as f64);
-        Ok(WarmupMemoryGuard {
-            global: self.clone(),
-            num_bytes,
-        })
-    }
-
-    /// Allocates `num_bytes`, even if the total goes over the limit.
-    ///
-    /// DISCLAIMER: this breaks the contract allocated <= limit.
-    fn allocate_unchecked(&self, num_bytes: u64) {
-        let previous_allocated = self.inner.allocated.fetch_add(num_bytes, Ordering::Relaxed);
-        LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES.set((previous_allocated + num_bytes) as f64);
+        Ok(())
     }
 
     /// Frees `num_bytes`, then calls the `on_memory_freed` callback.
@@ -150,14 +143,13 @@ impl WarmupMemoryGuard {
         self.num_bytes = new_num_bytes;
     }
 
-    /// Adds `additional_num_bytes` to this guard, even if the total goes over the limit.
+    /// Adds `additional_num_bytes` to this guard, or fails if the total would go over the limit.
     ///
-    /// This keeps the current behavior, where the memory used by a warmup is only known after the
-    /// fact and may go over the limit.
-    // TODO: remove once warmups reserve memory while downloading and the limit is enforced.
-    pub fn grow_unchecked(&mut self, additional_num_bytes: u64) {
-        self.global.allocate_unchecked(additional_num_bytes);
+    /// On failure, the guard is left unchanged.
+    pub fn try_grow(&mut self, additional_num_bytes: u64) -> Result<(), OutOfMemoryError> {
+        self.global.try_add(additional_num_bytes)?;
         self.num_bytes += additional_num_bytes;
+        Ok(())
     }
 }
 
@@ -226,14 +218,16 @@ mod tests {
     }
 
     #[test]
-    fn test_guard_grow_unchecked_can_go_over_limit() {
+    fn test_guard_try_grow() {
         let global = GlobalWarmupMemory::with_limit_and_free_callback(ByteSize(100), || {});
-        let mut guard = global.try_allocate(80).unwrap();
-        guard.grow_unchecked(50);
-        assert_eq!(guard.num_bytes(), 130);
-        assert_eq!(global.allocated(), 130);
-        // While over the limit, no allocation can succeed.
-        assert!(global.try_allocate(0).is_err());
+        let mut guard = global.try_allocate(60).unwrap();
+        guard.try_grow(30).unwrap();
+        assert_eq!(guard.num_bytes(), 90);
+        assert_eq!(global.allocated(), 90);
+        // A failed grow leaves the guard and the global memory unchanged.
+        assert_eq!(guard.try_grow(11).err(), Some(OutOfMemoryError));
+        assert_eq!(guard.num_bytes(), 90);
+        assert_eq!(global.allocated(), 90);
         drop(guard);
         assert_eq!(global.allocated(), 0);
     }
@@ -262,8 +256,9 @@ mod tests {
         let (global, allocated_on_callbacks) =
             global_warmup_memory_recording_callbacks(ByteSize(100));
         let mut guard = global.try_allocate(100).unwrap();
-        assert!(global.try_allocate(1).is_err());
-        guard.grow_unchecked(0);
+        let failed_guard_res = global.try_allocate(1);
+        assert!(failed_guard_res.is_err());
+        guard.try_grow(0).unwrap();
         assert!(allocated_on_callbacks.lock().unwrap().is_empty());
 
         // The callback is called after the memory is freed.

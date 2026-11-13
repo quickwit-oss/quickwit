@@ -23,12 +23,50 @@ use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, OwnedBytes};
 use tantivy::{Directory, HasLen};
 
+/// Returned when reserving memory would go over the warmup memory limit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OutOfMemoryError;
+
+impl From<OutOfMemoryError> for io::Error {
+    fn from(_out_of_memory_error: OutOfMemoryError) -> io::Error {
+        io::Error::new(io::ErrorKind::OutOfMemory, "out of warmup memory")
+    }
+}
+
+/// Reserves memory for the data a [`CachingDirectory`] downloads and keeps in its cache.
+pub trait MemoryReserver: Send + Sync + 'static {
+    /// Called on each cache miss, before reading `num_bytes` from the underlying directory.
+    ///
+    /// On error, the read fails with an `io::Error` of kind `OutOfMemory`: the underlying directory
+    /// is not called and nothing is cached.
+    fn try_reserve_memory(&self, num_bytes: u64) -> Result<(), OutOfMemoryError>;
+
+    /// Gives back `num_bytes` reserved by `try_reserve_memory` for a read that failed, so that
+    /// nothing was cached.
+    ///
+    /// Contract: `num_bytes` were reserved by an earlier `try_reserve_memory` call, and are not
+    /// released twice.
+    fn release_memory(&self, num_bytes: u64);
+}
+
+/// A [`MemoryReserver`] that always succeeds. Used when the cache memory is not accounted for.
+struct NoopMemoryReserver;
+
+impl MemoryReserver for NoopMemoryReserver {
+    fn try_reserve_memory(&self, _num_bytes: u64) -> Result<(), OutOfMemoryError> {
+        Ok(())
+    }
+
+    fn release_memory(&self, _num_bytes: u64) {}
+}
+
 /// The caching directory is a simple cache that wraps another directory.
 #[derive(Clone)]
 pub struct CachingDirectory {
     underlying: Arc<dyn Directory>,
     // TODO fixme: that's a pretty ugly cache we have here.
     cache: ByteRangeCache,
+    memory_reserver: Arc<dyn MemoryReserver>,
 }
 
 impl CachingDirectory {
@@ -46,7 +84,22 @@ impl CachingDirectory {
     /// Warning: The resulting CacheDirectory will cache all information without ever
     /// removing any item from the cache.
     pub fn new(underlying: Arc<dyn Directory>, cache: ByteRangeCache) -> CachingDirectory {
-        CachingDirectory { underlying, cache }
+        CachingDirectory {
+            underlying,
+            cache,
+            memory_reserver: Arc::new(NoopMemoryReserver),
+        }
+    }
+
+    /// Reserves memory in `memory_reserver` before reading each cache miss.
+    ///
+    /// The directory holds `memory_reserver` until it is dropped.
+    pub fn with_memory_reserver(
+        mut self,
+        memory_reserver: Arc<dyn MemoryReserver>,
+    ) -> CachingDirectory {
+        self.memory_reserver = memory_reserver;
+        self
     }
 }
 
@@ -60,6 +113,7 @@ struct CachingFileHandle {
     path: PathBuf,
     cache: FileByteRangeCache,
     underlying_filehandle: Arc<dyn FileHandle>,
+    memory_reserver: Arc<dyn MemoryReserver>,
 }
 
 impl fmt::Debug for CachingFileHandle {
@@ -79,7 +133,12 @@ impl FileHandle for CachingFileHandle {
         if let Some(bytes) = self.cache.get_slice(byte_range.clone()) {
             return Ok(bytes);
         }
-        let owned_bytes = self.underlying_filehandle.read_bytes(byte_range.clone())?;
+        let num_bytes = byte_range.len() as u64;
+        self.memory_reserver.try_reserve_memory(num_bytes)?;
+        let owned_bytes = self
+            .underlying_filehandle
+            .read_bytes(byte_range.clone())
+            .inspect_err(|_| self.memory_reserver.release_memory(num_bytes))?;
         self.cache.put_slice(byte_range, owned_bytes.clone());
         Ok(owned_bytes)
     }
@@ -88,10 +147,13 @@ impl FileHandle for CachingFileHandle {
         if let Some(owned_bytes) = self.cache.get_slice(byte_range.clone()) {
             return Ok(owned_bytes);
         }
+        let num_bytes = byte_range.len() as u64;
+        self.memory_reserver.try_reserve_memory(num_bytes)?;
         let read_bytes = self
             .underlying_filehandle
             .read_bytes_async(byte_range.clone())
-            .await?;
+            .await
+            .inspect_err(|_| self.memory_reserver.release_memory(num_bytes))?;
         self.cache.put_slice(byte_range, read_bytes.clone());
         Ok(read_bytes)
     }
@@ -117,6 +179,7 @@ impl Directory for CachingDirectory {
             path: path.to_path_buf(),
             cache: self.cache.get_file_cache(path),
             underlying_filehandle,
+            memory_reserver: self.memory_reserver.clone(),
         };
         Ok(Arc::new(caching_file_handle))
     }
@@ -136,14 +199,112 @@ impl Directory for CachingDirectory {
 #[cfg(test)]
 mod tests {
 
+    use std::io;
+    use std::ops::Range;
     use std::path::Path;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
-    use tantivy::Directory;
-    use tantivy::directory::RamDirectory;
+    use async_trait::async_trait;
+    use quickwit_storage::ByteRangeCache;
+    use tantivy::directory::{FileHandle, OwnedBytes, RamDirectory};
+    use tantivy::{Directory, HasLen};
 
-    use super::CachingDirectory;
+    use super::{CachingDirectory, CachingFileHandle, MemoryReserver, OutOfMemoryError};
     use crate::DebugProxyDirectory;
+
+    /// Reserves memory up to `limit` bytes.
+    struct LimitedMemoryReserver {
+        limit: u64,
+        reserved: AtomicU64,
+    }
+
+    impl LimitedMemoryReserver {
+        fn new(limit: u64) -> Arc<Self> {
+            Arc::new(LimitedMemoryReserver {
+                limit,
+                reserved: AtomicU64::new(0),
+            })
+        }
+
+        fn reserved(&self) -> u64 {
+            self.reserved.load(Ordering::Relaxed)
+        }
+    }
+
+    impl MemoryReserver for LimitedMemoryReserver {
+        fn try_reserve_memory(&self, num_bytes: u64) -> Result<(), OutOfMemoryError> {
+            self.reserved
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |reserved| {
+                    let new_reserved = reserved + num_bytes;
+                    (new_reserved <= self.limit).then_some(new_reserved)
+                })
+                .map_err(|_| OutOfMemoryError)?;
+            Ok(())
+        }
+
+        fn release_memory(&self, num_bytes: u64) {
+            self.reserved.fetch_sub(num_bytes, Ordering::Relaxed);
+        }
+    }
+
+    /// A file handle whose reads always fail.
+    #[derive(Debug)]
+    struct FailingFileHandle;
+
+    impl HasLen for FailingFileHandle {
+        fn len(&self) -> usize {
+            100
+        }
+    }
+
+    #[async_trait]
+    impl FileHandle for FailingFileHandle {
+        fn read_bytes(&self, _byte_range: Range<usize>) -> io::Result<OwnedBytes> {
+            Err(io::Error::other("read failed"))
+        }
+
+        async fn read_bytes_async(&self, _byte_range: Range<usize>) -> io::Result<OwnedBytes> {
+            Err(io::Error::other("read failed"))
+        }
+    }
+
+    fn failing_caching_file_handle(
+        memory_reserver: Arc<LimitedMemoryReserver>,
+    ) -> CachingFileHandle {
+        let path = Path::new("test");
+        CachingFileHandle {
+            path: path.to_path_buf(),
+            cache: ByteRangeCache::with_infinite_capacity().get_file_cache(path),
+            underlying_filehandle: Arc::new(FailingFileHandle),
+            memory_reserver,
+        }
+    }
+
+    #[test]
+    fn test_caching_file_handle_releases_memory_on_read_error() {
+        let memory_reserver = LimitedMemoryReserver::new(100);
+        let file_handle = failing_caching_file_handle(memory_reserver.clone());
+        assert!(file_handle.read_bytes(0..5).is_err());
+        assert_eq!(memory_reserver.reserved(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_caching_file_handle_releases_memory_on_async_read_error() {
+        let memory_reserver = LimitedMemoryReserver::new(100);
+        let file_handle = failing_caching_file_handle(memory_reserver.clone());
+        assert!(file_handle.read_bytes_async(0..5).await.is_err());
+        assert_eq!(memory_reserver.reserved(), 0);
+    }
+
+    fn debug_proxy_directory_with_file(
+        path: &Path,
+        content: &[u8],
+    ) -> Arc<DebugProxyDirectory<RamDirectory>> {
+        let ram_directory = RamDirectory::default();
+        ram_directory.atomic_write(path, content).unwrap();
+        Arc::new(DebugProxyDirectory::wrap(ram_directory))
+    }
 
     #[test]
     fn test_caching_directory() -> tantivy::Result<()> {
@@ -156,5 +317,56 @@ mod tests {
         caching_directory.atomic_read(test_path)?;
         assert_eq!(debug_proxy_directory.drain_read_operations().count(), 1);
         Ok(())
+    }
+
+    #[test]
+    fn test_caching_directory_reserves_memory_on_cache_miss() {
+        let test_path = Path::new("test");
+        let debug_proxy_directory = debug_proxy_directory_with_file(test_path, b"hello world");
+        let memory_reserver = LimitedMemoryReserver::new(100);
+        let caching_directory = CachingDirectory::new_unbounded(debug_proxy_directory.clone())
+            .with_memory_reserver(memory_reserver.clone());
+        let file_handle = caching_directory.get_file_handle(test_path).unwrap();
+
+        file_handle.read_bytes(0..5).unwrap();
+        assert_eq!(memory_reserver.reserved(), 5);
+        // A cache hit does not reserve memory.
+        file_handle.read_bytes(0..5).unwrap();
+        assert_eq!(memory_reserver.reserved(), 5);
+        assert_eq!(debug_proxy_directory.drain_read_operations().count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_caching_directory_reserves_memory_on_async_cache_miss() {
+        let test_path = Path::new("test");
+        let debug_proxy_directory = debug_proxy_directory_with_file(test_path, b"hello world");
+        let memory_reserver = LimitedMemoryReserver::new(100);
+        let caching_directory = CachingDirectory::new_unbounded(debug_proxy_directory.clone())
+            .with_memory_reserver(memory_reserver.clone());
+        let file_handle = caching_directory.get_file_handle(test_path).unwrap();
+
+        file_handle.read_bytes_async(0..5).await.unwrap();
+        assert_eq!(memory_reserver.reserved(), 5);
+        file_handle.read_bytes_async(0..5).await.unwrap();
+        assert_eq!(memory_reserver.reserved(), 5);
+        assert_eq!(debug_proxy_directory.drain_read_operations().count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_caching_directory_memory_reservation_failure() {
+        let test_path = Path::new("test");
+        let debug_proxy_directory = debug_proxy_directory_with_file(test_path, b"hello world");
+        let memory_reserver = LimitedMemoryReserver::new(4);
+        let caching_directory = CachingDirectory::new_unbounded(debug_proxy_directory.clone())
+            .with_memory_reserver(memory_reserver.clone());
+        let file_handle = caching_directory.get_file_handle(test_path).unwrap();
+
+        let io_error = file_handle.read_bytes_async(0..5).await.unwrap_err();
+        assert_eq!(io_error.kind(), io::ErrorKind::OutOfMemory);
+        assert_eq!(io_error.to_string(), "out of warmup memory");
+        assert!(file_handle.read_bytes(0..5).is_err());
+        // The underlying directory is never called and nothing is cached.
+        assert_eq!(debug_proxy_directory.drain_read_operations().count(), 0);
+        assert_eq!(memory_reserver.reserved(), 0);
     }
 }
