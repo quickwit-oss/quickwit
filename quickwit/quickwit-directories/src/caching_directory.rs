@@ -33,22 +33,77 @@ impl From<OutOfMemoryError> for io::Error {
     }
 }
 
+/// Memory reserved for a read in progress.
+///
+/// Released on drop, unless `keep` is called once the bytes are in the cache.
+/// So the memory is also released if the read fails, panics, or if its future is dropped.
+#[must_use = "dropping a memory reservation releases its memory right away"]
+pub struct MemoryReservation<'a> {
+    memory_reserver: &'a dyn MemoryReserver,
+    num_bytes: u64,
+    kept: bool,
+}
+
+impl<'a> MemoryReservation<'a> {
+    /// Creates a memory reservation that releases `num_bytes` on drop.
+    ///
+    /// Contract: only called by `memory_reserver`, from
+    /// [`MemoryReserver::try_reserve_memory`], for `num_bytes` it has just reserved. A reservation
+    /// created for bytes that were not reserved would release them anyway.
+    pub fn new(memory_reserver: &'a dyn MemoryReserver, num_bytes: u64) -> MemoryReservation<'a> {
+        MemoryReservation {
+            memory_reserver,
+            num_bytes,
+            kept: false,
+        }
+    }
+
+    /// The bytes are in the cache: the memory stays reserved.
+    fn keep(mut self) {
+        self.kept = true;
+    }
+}
+
+impl Drop for MemoryReservation<'_> {
+    fn drop(&mut self) {
+        if !self.kept {
+            self.memory_reserver.release_memory(self.num_bytes);
+        }
+    }
+}
+
 /// Reserves memory for the data a [`CachingDirectory`] downloads and keeps in its cache.
 pub trait MemoryReserver: Send + Sync + 'static {
     /// Called on each cache miss, before reading `num_bytes` from the underlying directory.
     ///
+    /// On success, returns a [`MemoryReservation`], which gives the memory back through
+    /// `release_memory` when dropped, unless the bytes were cached.
+    ///
     /// On error, the read fails with an `io::Error` of kind `OutOfMemory`: the underlying directory
     /// is not called and nothing is cached.
-    fn try_reserve_memory(&self, num_bytes: u64) -> Result<(), OutOfMemoryError>;
+    fn try_reserve_memory(&self, num_bytes: u64)
+    -> Result<MemoryReservation<'_>, OutOfMemoryError>;
+
+    /// Gives back `num_bytes` reserved by `try_reserve_memory` for a read whose bytes were not
+    /// cached: it failed, panicked, or its future was dropped.
+    ///
+    /// Contract: `num_bytes` were reserved by an earlier `try_reserve_memory` call, and are not
+    /// released twice. Called from `Drop`, possibly while a panic unwinds, so it must not panic.
+    fn release_memory(&self, num_bytes: u64);
 }
 
 /// A [`MemoryReserver`] that always succeeds. Used when the cache memory is not accounted for.
 struct NoopMemoryReserver;
 
 impl MemoryReserver for NoopMemoryReserver {
-    fn try_reserve_memory(&self, _num_bytes: u64) -> Result<(), OutOfMemoryError> {
-        Ok(())
+    fn try_reserve_memory(
+        &self,
+        num_bytes: u64,
+    ) -> Result<MemoryReservation<'_>, OutOfMemoryError> {
+        Ok(MemoryReservation::new(self, num_bytes))
     }
+
+    fn release_memory(&self, _num_bytes: u64) {}
 }
 
 /// The caching directory is a simple cache that wraps another directory.
@@ -124,10 +179,12 @@ impl FileHandle for CachingFileHandle {
         if let Some(bytes) = self.cache.get_slice(byte_range.clone()) {
             return Ok(bytes);
         }
-        self.memory_reserver
+        let read_reservation = self
+            .memory_reserver
             .try_reserve_memory(byte_range.len() as u64)?;
         let owned_bytes = self.underlying_filehandle.read_bytes(byte_range.clone())?;
         self.cache.put_slice(byte_range, owned_bytes.clone());
+        read_reservation.keep();
         Ok(owned_bytes)
     }
 
@@ -135,13 +192,15 @@ impl FileHandle for CachingFileHandle {
         if let Some(owned_bytes) = self.cache.get_slice(byte_range.clone()) {
             return Ok(owned_bytes);
         }
-        self.memory_reserver
+        let read_reservation = self
+            .memory_reserver
             .try_reserve_memory(byte_range.len() as u64)?;
         let read_bytes = self
             .underlying_filehandle
             .read_bytes_async(byte_range.clone())
             .await?;
         self.cache.put_slice(byte_range, read_bytes.clone());
+        read_reservation.keep();
         Ok(read_bytes)
     }
 }
@@ -187,15 +246,19 @@ impl Directory for CachingDirectory {
 mod tests {
 
     use std::io;
+    use std::ops::Range;
     use std::path::Path;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Duration;
 
-    use tantivy::Directory;
-    use tantivy::directory::RamDirectory;
+    use async_trait::async_trait;
+    use quickwit_storage::ByteRangeCache;
+    use tantivy::directory::{FileHandle, OwnedBytes, RamDirectory};
+    use tantivy::{Directory, HasLen};
 
-    use super::{CachingDirectory, MemoryReserver, OutOfMemoryError};
-    use crate::DebugProxyDirectory;
+    use super::{CachingDirectory, CachingFileHandle, MemoryReserver, OutOfMemoryError};
+    use crate::{DebugProxyDirectory, MemoryReservation};
 
     /// Reserves memory up to `limit` bytes.
     struct LimitedMemoryReserver {
@@ -217,15 +280,110 @@ mod tests {
     }
 
     impl MemoryReserver for LimitedMemoryReserver {
-        fn try_reserve_memory(&self, num_bytes: u64) -> Result<(), OutOfMemoryError> {
+        fn try_reserve_memory(
+            &self,
+            num_bytes: u64,
+        ) -> Result<MemoryReservation<'_>, OutOfMemoryError> {
             self.reserved
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |reserved| {
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |reserved| {
                     let new_reserved = reserved + num_bytes;
                     (new_reserved <= self.limit).then_some(new_reserved)
                 })
                 .map_err(|_| OutOfMemoryError)?;
-            Ok(())
+            Ok(MemoryReservation::new(self, num_bytes))
         }
+
+        fn release_memory(&self, num_bytes: u64) {
+            self.reserved.fetch_sub(num_bytes, Ordering::Relaxed);
+        }
+    }
+
+    /// How the reads of a [`FailingFileHandle`] fail.
+    #[derive(Debug, Clone, Copy)]
+    enum ReadFailure {
+        Error,
+        Panic,
+        /// The async read never completes. The sync read fails with an error.
+        Pending,
+    }
+
+    /// A file handle whose reads never succeed.
+    #[derive(Debug)]
+    struct FailingFileHandle(ReadFailure);
+
+    impl HasLen for FailingFileHandle {
+        fn len(&self) -> usize {
+            100
+        }
+    }
+
+    #[async_trait]
+    impl FileHandle for FailingFileHandle {
+        fn read_bytes(&self, _byte_range: Range<usize>) -> io::Result<OwnedBytes> {
+            match self.0 {
+                ReadFailure::Error | ReadFailure::Pending => Err(io::Error::other("read failed")),
+                ReadFailure::Panic => panic!("read panicked"),
+            }
+        }
+
+        async fn read_bytes_async(&self, byte_range: Range<usize>) -> io::Result<OwnedBytes> {
+            if let ReadFailure::Pending = self.0 {
+                std::future::pending::<()>().await;
+            }
+            self.read_bytes(byte_range)
+        }
+    }
+
+    fn failing_caching_file_handle(
+        read_failure: ReadFailure,
+        memory_reserver: Arc<LimitedMemoryReserver>,
+    ) -> CachingFileHandle {
+        let path = Path::new("test");
+        CachingFileHandle {
+            path: path.to_path_buf(),
+            cache: ByteRangeCache::with_infinite_capacity().get_file_cache(path),
+            underlying_filehandle: Arc::new(FailingFileHandle(read_failure)),
+            memory_reserver,
+        }
+    }
+
+    #[test]
+    fn test_caching_file_handle_releases_memory_on_read_error() {
+        let memory_reserver = LimitedMemoryReserver::new(100);
+        let file_handle = failing_caching_file_handle(ReadFailure::Error, memory_reserver.clone());
+        assert!(file_handle.read_bytes(0..5).is_err());
+        assert_eq!(memory_reserver.reserved(), 0);
+    }
+
+    #[test]
+    fn test_caching_file_handle_releases_memory_on_read_panic() {
+        let memory_reserver = LimitedMemoryReserver::new(100);
+        let file_handle = failing_caching_file_handle(ReadFailure::Panic, memory_reserver.clone());
+        let read_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            file_handle.read_bytes(0..5)
+        }));
+        assert!(read_res.is_err());
+        assert_eq!(memory_reserver.reserved(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_caching_file_handle_releases_memory_when_read_future_is_dropped() {
+        let memory_reserver = LimitedMemoryReserver::new(100);
+        let file_handle =
+            failing_caching_file_handle(ReadFailure::Pending, memory_reserver.clone());
+        let read_future = file_handle.read_bytes_async(0..5);
+        let timeout_res = tokio::time::timeout(Duration::from_millis(10), read_future).await;
+        assert!(timeout_res.is_err());
+        // The timeout dropped the read future.
+        assert_eq!(memory_reserver.reserved(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_caching_file_handle_releases_memory_on_async_read_error() {
+        let memory_reserver = LimitedMemoryReserver::new(100);
+        let file_handle = failing_caching_file_handle(ReadFailure::Error, memory_reserver.clone());
+        assert!(file_handle.read_bytes_async(0..5).await.is_err());
+        assert_eq!(memory_reserver.reserved(), 0);
     }
 
     fn debug_proxy_directory_with_file(

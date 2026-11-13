@@ -16,7 +16,7 @@
 
 use std::sync::{Mutex, MutexGuard};
 
-use quickwit_directories::{MemoryReserver, OutOfMemoryError};
+use quickwit_directories::{MemoryReservation, MemoryReserver, OutOfMemoryError};
 
 use crate::metrics::LEAF_SEARCH_SPLIT_WARMUP_OUT_OF_MEMORY_TOTAL;
 use crate::warmup_memory::WarmupMemoryGuard;
@@ -101,12 +101,34 @@ impl MemoryReserver for SplitWarmupMemory {
     /// Reserves memory for `num_bytes` of warmup data, growing the reservation if needed.
     ///
     /// Fails if the reservation cannot grow without going over the warmup memory limit.
-    fn try_reserve_memory(&self, num_bytes: u64) -> Result<(), OutOfMemoryError> {
+    fn try_reserve_memory(
+        &self,
+        num_bytes: u64,
+    ) -> Result<MemoryReservation<'_>, OutOfMemoryError> {
         let mut state = self.lock_state();
         let needed_num_bytes = state.in_use.saturating_add(num_bytes);
         state.grow_reservation(needed_num_bytes)?;
         state.in_use = needed_num_bytes;
-        Ok(())
+        Ok(MemoryReservation::new(self, num_bytes))
+    }
+
+    /// Gives back memory reserved for a read that failed. The reservation itself is not shrunk:
+    /// `release_unused_memory` does it after the warmup.
+    ///
+    /// Does not panic, because it is called from `Drop`, possibly while a panic unwinds. Releasing
+    /// more than the memory in use breaks the contract of [`MemoryReserver::release_memory`]: it
+    /// fails a debug assertion, and saturates at 0 in release builds.
+    fn release_memory(&self, num_bytes: u64) {
+        // Unlike `lock_state`, does not panic on a poisoned lock.
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        debug_assert!(
+            num_bytes <= state.in_use,
+            "cannot release more warmup memory than reserved"
+        );
+        state.in_use = state.in_use.saturating_sub(num_bytes);
     }
 }
 
@@ -146,8 +168,6 @@ impl SplitWarmupMemoryState {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use bytesize::ByteSize;
 
     use super::*;
@@ -167,8 +187,8 @@ mod tests {
     fn test_try_reserve_memory_within_reservation() {
         let global = GlobalWarmupMemory::with_limit_and_free_callback(ByteSize::mb(100), || {});
         let split_memory = split_warmup_memory(&global, 10 * MB);
-        split_memory.try_reserve_memory(4 * MB).unwrap();
-        split_memory.try_reserve_memory(6 * MB).unwrap();
+        let _reservation_1 = split_memory.try_reserve_memory(4 * MB).unwrap();
+        let _reservation_2 = split_memory.try_reserve_memory(6 * MB).unwrap();
         assert_eq!(split_memory.reserved_num_bytes(), 10 * MB);
         assert_eq!(global.allocated(), 10 * MB);
     }
@@ -178,13 +198,13 @@ mod tests {
         let global = GlobalWarmupMemory::with_limit_and_free_callback(ByteSize::mb(100), || {});
         let split_memory = split_warmup_memory(&global, 10 * MB);
         // 11MB does not fit in 10MB: the reservation grows to 1.7 x 10MB.
-        split_memory.try_reserve_memory(11 * MB).unwrap();
+        let _reservation_1 = split_memory.try_reserve_memory(11 * MB).unwrap();
         assert_eq!(split_memory.reserved_num_bytes(), 17 * MB);
         // 11MB + 6MB = 17MB still fits.
-        split_memory.try_reserve_memory(6 * MB).unwrap();
+        let _reservation_2 = split_memory.try_reserve_memory(6 * MB).unwrap();
         assert_eq!(split_memory.reserved_num_bytes(), 17 * MB);
         // 18MB does not fit: the reservation grows to 1.7 x 17MB.
-        split_memory.try_reserve_memory(MB).unwrap();
+        let _reservation_3 = split_memory.try_reserve_memory(MB).unwrap();
         assert_eq!(split_memory.reserved_num_bytes(), 28_900_000);
         assert_eq!(global.allocated(), 28_900_000);
     }
@@ -194,7 +214,7 @@ mod tests {
         let global = GlobalWarmupMemory::with_limit_and_free_callback(ByteSize::mb(15), || {});
         let split_memory = split_warmup_memory(&global, 10 * MB);
         // 1.7 x 10MB = 17MB would go over the limit, but the 12MB needed fit.
-        split_memory.try_reserve_memory(12 * MB).unwrap();
+        let _reservation = split_memory.try_reserve_memory(12 * MB).unwrap();
         assert_eq!(split_memory.reserved_num_bytes(), 12 * MB);
     }
 
@@ -211,7 +231,7 @@ mod tests {
         assert!(split_memory.has_run_out_of_memory());
         // A failed reservation changes neither the reservation nor the memory in use.
         assert_eq!(split_memory.reserved_num_bytes(), 10 * MB);
-        split_memory.try_reserve_memory(90 * MB).unwrap();
+        let _reservation = split_memory.try_reserve_memory(90 * MB).unwrap();
         assert_eq!(split_memory.reserved_num_bytes(), 90 * MB);
     }
 
@@ -219,7 +239,7 @@ mod tests {
     fn test_shrink_reservation_never_below_memory_in_use() {
         let global = GlobalWarmupMemory::with_limit_and_free_callback(ByteSize::mb(100), || {});
         let split_memory = split_warmup_memory(&global, 10 * MB);
-        split_memory.try_reserve_memory(4 * MB).unwrap();
+        let _reservation = split_memory.try_reserve_memory(4 * MB).unwrap();
         split_memory.shrink_reservation(MB);
         assert_eq!(split_memory.reserved_num_bytes(), 4 * MB);
         // Shrinking never grows the reservation.
@@ -229,10 +249,35 @@ mod tests {
     }
 
     #[test]
+    fn test_release_memory_of_failed_read() {
+        let global = GlobalWarmupMemory::with_limit_and_free_callback(ByteSize::mb(100), || {});
+        let split_memory = split_warmup_memory(&global, 10 * MB);
+        let _successful_read_reservation = split_memory.try_reserve_memory(4 * MB).unwrap();
+        let failed_read_reservation = split_memory.try_reserve_memory(3 * MB).unwrap();
+        // The second read failed: dropping its reservation releases its memory.
+        drop(failed_read_reservation);
+        // The reservation is kept until the warmup ends...
+        assert_eq!(split_memory.reserved_num_bytes(), 10 * MB);
+        // ...but only the memory of the successful read is still in use.
+        split_memory.release_unused_memory();
+        assert_eq!(split_memory.reserved_num_bytes(), 4 * MB);
+        assert_eq!(global.allocated(), 4 * MB);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot release more warmup memory than reserved")]
+    fn test_release_memory_above_memory_in_use_panics() {
+        let global = GlobalWarmupMemory::with_limit_and_free_callback(ByteSize::mb(100), || {});
+        let split_memory = split_warmup_memory(&global, 10 * MB);
+        let _reservation = split_memory.try_reserve_memory(MB).unwrap();
+        split_memory.release_memory(2 * MB);
+    }
+
+    #[test]
     fn test_release_unused_memory() {
         let global = GlobalWarmupMemory::with_limit_and_free_callback(ByteSize::mb(100), || {});
         let split_memory = split_warmup_memory(&global, 10 * MB);
-        split_memory.try_reserve_memory(11 * MB).unwrap();
+        let _reservation = split_memory.try_reserve_memory(11 * MB).unwrap();
         assert_eq!(split_memory.reserved_num_bytes(), 17 * MB);
         split_memory.release_unused_memory();
         assert_eq!(split_memory.reserved_num_bytes(), 11 * MB);
@@ -243,7 +288,9 @@ mod tests {
     fn test_drop_frees_reservation() {
         let global = GlobalWarmupMemory::with_limit_and_free_callback(ByteSize::mb(100), || {});
         let split_memory = split_warmup_memory(&global, 10 * MB);
-        split_memory.try_reserve_memory(11 * MB).unwrap();
+        // The reservation grows to 17MB. Releasing the memory in use does not shrink it.
+        let reservation = split_memory.try_reserve_memory(11 * MB).unwrap();
+        drop(reservation);
         drop(split_memory);
         assert_eq!(global.allocated(), 0);
     }
@@ -253,19 +300,31 @@ mod tests {
         const NUM_THREADS: usize = 8;
         const NUM_RESERVATIONS_PER_THREAD: usize = 10;
         let global = GlobalWarmupMemory::with_limit_and_free_callback(ByteSize::gb(1), || {});
-        let split_memory = Arc::new(split_warmup_memory(&global, 10 * MB));
+        let split_memory = split_warmup_memory(&global, 10 * MB);
         std::thread::scope(|scope| {
+            let mut join_handles = Vec::with_capacity(NUM_THREADS);
             for _ in 0..NUM_THREADS {
-                let split_memory = split_memory.clone();
-                scope.spawn(move || {
+                let split_memory = &split_memory;
+                join_handles.push(scope.spawn(move || {
+                    let mut reservations = Vec::with_capacity(NUM_RESERVATIONS_PER_THREAD);
                     for _ in 0..NUM_RESERVATIONS_PER_THREAD {
-                        split_memory.try_reserve_memory(MB).unwrap();
+                        reservations.push(split_memory.try_reserve_memory(MB).unwrap());
                     }
-                });
+                    reservations
+                }));
             }
+            // The reservations are kept alive, so all 80MB stay in use.
+            let reservations: Vec<_> = join_handles
+                .into_iter()
+                .flat_map(|join_handle| join_handle.join().unwrap())
+                .collect();
+            assert_eq!(
+                reservations.len(),
+                NUM_THREADS * NUM_RESERVATIONS_PER_THREAD
+            );
+            // All 80MB are in use, so the reservation cannot go below that.
+            split_memory.release_unused_memory();
+            assert_eq!(split_memory.reserved_num_bytes(), 80 * MB);
         });
-        // All 80MB are in use, so the reservation cannot go below that.
-        split_memory.release_unused_memory();
-        assert_eq!(split_memory.reserved_num_bytes(), 80 * MB);
     }
 }

@@ -1073,10 +1073,15 @@ mod tests {
     async fn test_reserved_memory_blocks_pending_permits_until_freed() {
         let permit_provider = SearchPermitProvider::new(10, ByteSize::mb(100));
         let permit = get_single_permit(&permit_provider, 10).await;
-        permit
-            .warmup_memory()
-            .try_reserve_memory(ByteSize::mb(95).as_u64())
-            .unwrap();
+        // Only the growth of the reservation matters here: the memory in use is released right
+        // away, but the permit keeps its 95MB reservation.
+        {
+            let warmup_memory = permit.warmup_memory();
+            let reservation = warmup_memory
+                .try_reserve_memory(ByteSize::mb(95).as_u64())
+                .unwrap();
+            drop(reservation);
+        }
         let mut pending_permit_futs = permit_provider
             .get_permits(make_splits(10, 2, 5, 0))
             .await
