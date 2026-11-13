@@ -70,8 +70,18 @@ impl HitSet {
         (self.size_hint() as usize).div_ceil(BLOCK_LEN)
     }
 
-    fn first_doc_in_block(&self, block: usize) -> u32 {
-        self.read_u32(4 + block * 8)
+    fn block_index(&self) -> &[[u8; 8]] {
+        self.buffer[4..4 + self.num_blocks() * 8].as_chunks::<8>().0
+    }
+
+    fn first_doc_in_block(entry: &[u8; 8]) -> DocId {
+        u32::from_ne_bytes(entry[..4].try_into().unwrap())
+    }
+
+    fn block_payload_offset(&self, block: usize) -> usize {
+        let entry = &self.block_index()[block];
+        let relative_offset = u32::from_ne_bytes(entry[4..].try_into().unwrap()) as usize;
+        4 + self.num_blocks() * 8 + relative_offset
     }
 
     fn load_block(&mut self, block: usize) {
@@ -82,7 +92,7 @@ impl HitSet {
             self.current_block.fill(TERMINATED);
             return;
         }
-        let offset = 4 + self.num_blocks() * 8 + self.read_u32(8 + block * 8) as usize;
+        let offset = self.block_payload_offset(block);
         let payload = &self.buffer[offset..];
         let len = (self.size_hint() as usize - block * BLOCK_LEN).min(BLOCK_LEN);
         if len < BLOCK_LEN {
@@ -94,7 +104,7 @@ impl HitSet {
             }
         } else {
             BitPacker4x::new().decompress_strictly_sorted(
-                self.first_doc_in_block(block).checked_sub(1),
+                Self::first_doc_in_block(&self.block_index()[block]).checked_sub(1),
                 &payload[1..],
                 &mut self.current_block,
                 payload[0],
@@ -109,11 +119,9 @@ impl HitSet {
         if self.current_block[BLOCK_LEN - 1] >= target {
             return;
         }
-        let (blocks, _) = self.buffer[4..4 + self.num_blocks() * 8].as_chunks::<8>();
         let block = self.block
-            + blocks[self.block + 1..].partition_point(|entry| {
-                u32::from_ne_bytes(entry[..4].try_into().unwrap()) <= target
-            });
+            + self.block_index()[self.block + 1..]
+                .partition_point(|entry| Self::first_doc_in_block(entry) <= target);
         if block > self.block {
             self.load_block(block);
         }
