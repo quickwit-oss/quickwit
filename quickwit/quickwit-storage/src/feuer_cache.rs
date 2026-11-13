@@ -53,13 +53,7 @@ impl FeuerIoQueues {
         scorer: Arc<dyn feuer::RetentionScorer>,
         payload_version: u64,
     ) -> anyhow::Result<feuer::Cache> {
-        // An invalid disk capacity must fail startup, even if the disk is unavailable
-        // and the cache would otherwise fall back to memory.
         let disk_capacity = config.disk_capacity.as_u64();
-        anyhow::ensure!(
-            disk_capacity == 0 || (2 * 1024 * 1024..=i64::MAX as u64).contains(&disk_capacity),
-            "disk cache capacity must be zero or between 2 MiB and i64::MAX bytes"
-        );
         let open = |disk_capacity: u64| -> anyhow::Result<feuer::Cache> {
             let directory = if disk_capacity == 0 {
                 Path::new("")
