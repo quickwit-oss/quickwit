@@ -108,6 +108,21 @@ impl MemoryReserver for SplitWarmupMemory {
         state.in_use = needed_num_bytes;
         Ok(())
     }
+
+    /// Gives back memory reserved for a read that failed. The reservation itself is not shrunk:
+    /// `release_unused_memory` does it after the warmup.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `num_bytes` is larger than the memory in use, which breaks the contract of
+    /// [`MemoryReserver::release_memory`].
+    fn release_memory(&self, num_bytes: u64) {
+        let mut state = self.lock_state();
+        state.in_use = state
+            .in_use
+            .checked_sub(num_bytes)
+            .expect("cannot release more warmup memory than reserved");
+    }
 }
 
 impl SplitWarmupMemoryState {
@@ -226,6 +241,31 @@ mod tests {
         split_memory.shrink_reservation(20 * MB);
         assert_eq!(split_memory.reserved_num_bytes(), 4 * MB);
         assert_eq!(global.allocated(), 4 * MB);
+    }
+
+    #[test]
+    fn test_release_memory_of_failed_read() {
+        let global = GlobalWarmupMemory::with_limit_and_free_callback(ByteSize::mb(100), || {});
+        let split_memory = split_warmup_memory(&global, 10 * MB);
+        split_memory.try_reserve_memory(4 * MB).unwrap();
+        split_memory.try_reserve_memory(3 * MB).unwrap();
+        // The second read failed.
+        split_memory.release_memory(3 * MB);
+        // The reservation is kept until the warmup ends...
+        assert_eq!(split_memory.reserved_num_bytes(), 10 * MB);
+        // ...but only the memory of the successful read is still in use.
+        split_memory.release_unused_memory();
+        assert_eq!(split_memory.reserved_num_bytes(), 4 * MB);
+        assert_eq!(global.allocated(), 4 * MB);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot release more warmup memory than reserved")]
+    fn test_release_memory_above_memory_in_use_panics() {
+        let global = GlobalWarmupMemory::with_limit_and_free_callback(ByteSize::mb(100), || {});
+        let split_memory = split_warmup_memory(&global, 10 * MB);
+        split_memory.try_reserve_memory(MB).unwrap();
+        split_memory.release_memory(2 * MB);
     }
 
     #[test]
