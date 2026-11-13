@@ -169,10 +169,16 @@ impl IndexedSplitBuilder {
         } else {
             self.index_writer.finalize()?
         };
-        if let Some(ram_directory) = &self.ram_directory_opt {
-            // The packager and uploader consume split files from the scratch directory.
+        let index = if let Some(ram_directory) = self.ram_directory_opt {
             ram_directory.persist(&self.controlled_directory)?;
-        }
+            // Persist copies files but leaves RAM intact. Return a disk-backed index so packaging
+            // does not retain the RAM files. The builder's RAM handle drops at this block's end;
+            // the original RAM-backed `index` (shadowed by this binding) drops when
+            // finalize returns.
+            tantivy::Index::open(self.controlled_directory.clone())?
+        } else {
+            index
+        };
         Ok(IndexedSplit {
             split_attrs,
             index,
@@ -240,4 +246,65 @@ pub struct EmptySplit {
     pub checkpoint_delta: IndexCheckpointDelta,
     pub publish_lock: PublishLock,
     pub batch_parent_span: Span,
+}
+
+#[cfg(test)]
+mod tests {
+    use quickwit_proto::types::NodeId;
+    use tantivy::schema::{STORED, Schema};
+    use tantivy::{Directory, DocAddress, TantivyDocument, doc};
+
+    use super::*;
+
+    #[test]
+    fn test_finalize_ram_split_uses_disk() -> anyhow::Result<()> {
+        let mut schema = Schema::builder();
+        let id = schema.add_u64_field("id", STORED);
+        let ram_directory = RamDirectory::default();
+        let mut index_writer = IndexBuilder::new()
+            .schema(schema.build())
+            .single_segment_index_writer(ram_directory.clone(), 15_000_000)?;
+        index_writer.add_document(doc!(id => 42u64))?;
+        let split_scratch_directory = TempDirectory::for_test();
+        let controlled_directory = ControlledDirectory::new(
+            Box::new(MmapDirectory::open(split_scratch_directory.path())?),
+            IoControls::default(),
+        );
+        // Select RAM directly: the production environment flag is cached process-wide.
+        let builder = IndexedSplitBuilder {
+            split_attrs: SplitAttrs {
+                node_id: NodeId::from_str("test-node"),
+                index_uid: IndexUid::new_with_random_ulid("test-index"),
+                source_id: "test-source".to_string(),
+                doc_mapping_uid: DocMappingUid::default(),
+                split_id: SplitId::new(),
+                partition_id: 0,
+                num_docs: 1,
+                uncompressed_docs_size_in_bytes: 0,
+                time_range: None,
+                replaced_split_ids: Vec::new(),
+                delete_opstamp: 0,
+                num_merge_ops: 0,
+            },
+            index_writer,
+            split_scratch_directory,
+            controlled_directory,
+            doc_id_clusterer_opt: None,
+            ram_directory_opt: Some(ram_directory.clone()),
+        };
+        let split = builder.finalize()?;
+        // A file added only after persistence must not be visible through the returned index.
+        let marker = Path::new("ram-only");
+        ram_directory.atomic_write(marker, b"not persisted")?;
+        assert!(!split.index.directory().exists(marker)?);
+        drop(ram_directory);
+
+        let reader = split.index.reader()?;
+        let searcher = reader.searcher();
+        assert_eq!(searcher.num_docs(), 1);
+        let id = split.index.schema().get_field("id")?;
+        let document: TantivyDocument = searcher.doc(DocAddress::new(0, 0))?;
+        assert_eq!(document, doc!(id => 42u64));
+        Ok(())
+    }
 }

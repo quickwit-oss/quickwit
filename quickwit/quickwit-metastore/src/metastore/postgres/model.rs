@@ -20,7 +20,7 @@ use std::str::FromStr;
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask, MetastoreError, MetastoreResult};
 use quickwit_proto::types::{DocMappingUid, IndexId, IndexUid, ShardId, SourceId};
-use sea_query::{Iden, Write};
+use sea_query::Iden;
 use tracing::error;
 
 use crate::{IndexMetadata, Split, SplitMetadata, SplitState};
@@ -93,8 +93,8 @@ pub enum Splits {
 pub(super) struct ToTimestampFunc;
 
 impl Iden for ToTimestampFunc {
-    fn unquoted(&self, s: &mut dyn Write) {
-        write!(s, "TO_TIMESTAMP").unwrap()
+    fn unquoted(&self) -> &str {
+        "TO_TIMESTAMP"
     }
 }
 

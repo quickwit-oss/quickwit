@@ -104,15 +104,15 @@ fn client_args() -> Vec<Arg> {
     ]
 }
 
-pub fn install_default_crypto_ring_provider() {
+pub fn install_default_crypto_provider() {
     static CALL_ONLY_ONCE: LazyLock<Result<(), ()>> = LazyLock::new(|| {
-        rustls::crypto::ring::default_provider()
+        rustls::crypto::aws_lc_rs::default_provider()
             .install_default()
             .map_err(|_| ())
     });
     CALL_ONLY_ONCE
         .as_ref()
-        .expect("rustls crypto ring default provider installation should not fail");
+        .expect("rustls default crypto provider installation should not fail");
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -406,7 +406,7 @@ pub mod busy_detector {
 
     fn emit_debug(delta: u64, now: u64) {
         if NEXT_DEBUG_TIMESTAMP
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next_debug| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |next_debug| {
                 if next_debug < now {
                     Some(now + DEBUG_SUPPRESSION_MICROS)
                 } else {

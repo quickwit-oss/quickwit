@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use bytes::{Buf, Bytes};
+use bytes::Buf;
 use quickwit_config::{INGEST_V2_SOURCE_ID, IngestApiConfig, validate_identifier};
 use quickwit_ingest::{
-    CommitType, DocBatchBuilder, DocBatchV2Builder, FetchResponse, IngestRequest, IngestService,
-    IngestServiceClient, IngestServiceError, TailRequest,
+    CommitType, DocBatchBuilder, FetchResponse, IngestRequest, IngestService, IngestServiceClient,
+    IngestServiceError, TailRequest, doc_batch_v2_from_ndjson, split_ndjson_lines,
 };
 use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::ingest::router::{
     IngestRequestV2, IngestRouterService, IngestRouterServiceClient, IngestSubrequest,
 };
-use quickwit_proto::types::{DocUidGenerator, IndexId};
+use quickwit_proto::types::IndexId;
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
@@ -94,10 +94,11 @@ fn ingest_filter(
 ) -> impl Filter<Extract = (String, Body, IngestOptions), Error = Rejection> + Clone {
     warp::path!(String / "ingest")
         .and(warp::post())
-        .and(warp::body::content_length_limit(
-            config.content_length_limit.as_u64(),
+        .and(get_body_bytes(
+            config.max_body_size,
+            config.max_decompressed_body_size,
+            "ingest",
         ))
-        .and(get_body_bytes())
         .and(warp::query::<IngestOptions>())
 }
 
@@ -176,7 +177,7 @@ async fn ingest_v1(
     // The size of the body should be an upper bound of the size of the batch. The removal of the
     // end of line character for each doc compensates the addition of the `DocCommand` header.
     let mut doc_batch_builder = DocBatchBuilder::with_capacity(index_id, body.content.remaining());
-    for line in lines(&body.content) {
+    for line in split_ndjson_lines(&body.content) {
         doc_batch_builder.ingest_doc(line);
     }
     let ingest_req = IngestRequest {
@@ -193,14 +194,7 @@ async fn ingest_v2(
     ingest_options: IngestOptions,
     ingest_router: IngestRouterServiceClient,
 ) -> Result<RestIngestResponse, IngestServiceError> {
-    let mut doc_batch_builder = DocBatchV2Builder::default();
-    let mut doc_uid_generator = DocUidGenerator::default();
-
-    for doc in lines(&body.content) {
-        doc_batch_builder.add_doc(doc_uid_generator.next_doc_uid(), doc);
-    }
-    drop(body);
-    let doc_batch_opt = doc_batch_builder.build();
+    let doc_batch_opt = doc_batch_v2_from_ndjson(body.content);
 
     let Some(doc_batch) = doc_batch_opt else {
         let response = RestIngestResponse::default();
@@ -274,22 +268,10 @@ async fn tail_endpoint(
     Ok(fetch_response)
 }
 
-pub(crate) fn lines(body: &Bytes) -> impl Iterator<Item = &[u8]> {
-    body.split(|byte| byte == &b'\n')
-        .filter(|line| !is_empty_or_blank_line(line))
-}
-
-#[inline]
-fn is_empty_or_blank_line(line: &[u8]) -> bool {
-    line.is_empty() || line.iter().all(|ch| ch.is_ascii_whitespace())
-}
-
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::str;
     use std::time::Duration;
 
-    use bytes::Bytes;
     use quickwit_actors::{Mailbox, Universe};
     use quickwit_config::IngestApiConfig;
     use quickwit_ingest::{
@@ -297,27 +279,9 @@ pub(crate) mod tests {
         IngestServiceClient, QUEUES_DIR_NAME, SuggestTruncateRequest, init_ingest_api,
     };
     use quickwit_proto::ingest::router::IngestRouterServiceClient;
+    use warp::Filter;
 
     use super::{RestIngestResponse, ingest_api_handlers};
-    use crate::ingest_api::lines;
-
-    #[test]
-    fn test_process_lines() {
-        let test_cases = [
-            // an empty line is inserted before the metadata action and the doc
-            (&b"\n{ \"create\" : { \"_index\" : \"my-index-1\", \"_id\" : \"1\"} }\n{\"id\": 1, \"message\": \"push\"}"[..], 2),
-            // a blank line is inserted before the metadata action and the doc
-            (&b"       \n{ \"create\" : { \"_index\" : \"my-index-1\", \"_id\" : \"1\"} }\n{\"id\": 1, \"message\": \"push\"}"[..], 2),
-            // an empty line is inserted after the metadata action and before the doc
-            (&b"{ \"create\" : { \"_index\" : \"my-index-1\", \"_id\" : \"1\"} }\n\n{\"id\": 1, \"message\": \"push\"}"[..], 2),
-            // a blank line is inserted after the metadata action and before the doc
-            (&b"{ \"create\" : { \"_index\" : \"my-index-1\", \"_id\" : \"1\"} }\n     \n{\"id\": 1, \"message\": \"push\"}"[..], 2),
-        ];
-
-        for &(input, expected_count) in &test_cases {
-            assert_eq!(lines(&Bytes::from(input)).count(), expected_count);
-        }
-    }
 
     pub(crate) async fn setup_ingest_v1_service(
         queues: &[&str],
@@ -444,13 +408,13 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_return_413_if_above_content_limit() {
-        let config: IngestApiConfig =
-            serde_json::from_str(r#"{ "content_length_limit": "1" }"#).unwrap();
+        let config: IngestApiConfig = serde_json::from_str(r#"{ "max_body_size": "1" }"#).unwrap();
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_v1_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let ingest_api_handlers =
-            ingest_api_handlers(ingest_router, ingest_service, config.clone(), true, false);
+            ingest_api_handlers(ingest_router, ingest_service, config.clone(), true, false)
+                .recover(crate::rest::recover_fn);
         let resp = warp::test::request()
             .path("/my-index/ingest")
             .method("POST")

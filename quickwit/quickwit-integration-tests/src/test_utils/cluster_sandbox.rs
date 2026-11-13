@@ -232,7 +232,7 @@ pub struct ResolvedClusterConfig {
 impl ResolvedClusterConfig {
     /// Start a cluster using this config and waits for the nodes to be ready
     pub async fn start(self) -> ClusterSandbox {
-        quickwit_cli::install_default_crypto_ring_provider();
+        quickwit_cli::install_default_crypto_provider();
 
         let mut sandbox = ClusterSandbox {
             cluster_id: self.cluster_id,
@@ -500,7 +500,7 @@ impl ClusterSandbox {
                     }
                 }
             },
-            Duration::from_secs(10),
+            Duration::from_secs(30),
             Duration::from_millis(100),
         )
         .await?;

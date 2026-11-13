@@ -67,7 +67,7 @@ impl fmt::Debug for CachingFileHandle {
         write!(
             f,
             "CachingFileHandle(path={:?}, underlying={:?})",
-            &self.path,
+            self.path,
             self.underlying_filehandle.as_ref()
         )
     }

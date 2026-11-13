@@ -39,36 +39,26 @@ where
     .await
 }
 
-/// Tries to connect at most 3 times to `SocketAddr`.
+/// Tries to connect to `SocketAddr` for up to 30 seconds.
 /// If not successful, returns an error.
 /// This is a convenient function to wait before sending gRPC requests
 /// to this `SocketAddr`.
 pub async fn wait_for_server_ready(socket_addr: SocketAddr) -> anyhow::Result<()> {
-    let mut num_attempts = 0;
-    let max_num_attempts = 10;
     let uri = Uri::builder()
         .scheme("http")
         .authority(socket_addr.to_string().as_str())
         .path_and_query("/")
         .build()?;
-
-    while num_attempts < max_num_attempts {
-        tokio::time::sleep(Duration::from_millis(50 * (num_attempts + 1))).await;
-        let mut http = hyper_util::client::legacy::connect::HttpConnector::new();
-        match http.call(uri.clone()).await {
-            Ok(_) => break,
-            Err(_) => {
-                println!(
-                    "Failed to connect to `{}` failed, retrying {}/{}",
-                    socket_addr,
-                    num_attempts + 1,
-                    max_num_attempts
-                );
-                num_attempts += 1;
-            }
-        }
-    }
-    if num_attempts == max_num_attempts {
+    let wait_result = wait_until_predicate(
+        || async {
+            let mut http = hyper_util::client::legacy::connect::HttpConnector::new();
+            http.call(uri.clone()).await.is_ok()
+        },
+        Duration::from_secs(30),
+        Duration::from_millis(100),
+    )
+    .await;
+    if wait_result.is_err() {
         anyhow::bail!("too many attempts to connect to `{}`", socket_addr);
     }
     Ok(())

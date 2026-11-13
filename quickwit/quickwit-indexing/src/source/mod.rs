@@ -74,7 +74,7 @@ mod void_source;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::LazyLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -96,7 +96,9 @@ use quickwit_common::metrics::{
     IN_FLIGHT_KINESIS_SOURCE, IN_FLIGHT_OTHER_SOURCE, IN_FLIGHT_PUBSUB_SOURCE,
     IN_FLIGHT_PULSAR_SOURCE,
 };
+use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::EventBroker;
+use quickwit_common::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{
     FileSourceNotification, FileSourceParams, IndexingSettings, SourceConfig, SourceParams,
@@ -307,6 +309,12 @@ pub trait Source: Send + 'static {
     /// A name identifying the type of source.
     fn name(&self) -> String;
 
+    /// Value of the `task` label on the Tokio task metrics of the source actor running this
+    /// source. See [`Actor::task_metrics_label`] for the contract.
+    fn task_metrics_label(&self) -> &'static str {
+        quickwit_actors::to_task_metrics_label(std::any::type_name::<Self>())
+    }
+
     /// Returns an observable_state for the actor.
     ///
     /// This object is simply a json object, and its content may vary depending on the
@@ -350,6 +358,10 @@ impl Actor for SourceActor {
 
     fn name(&self) -> String {
         self.source.name()
+    }
+
+    fn task_metrics_label(&self) -> &'static str {
+        self.source.task_metrics_label()
     }
 
     fn observable_state(&self) -> Self::ObservableState {
@@ -501,8 +513,23 @@ pub async fn check_source_connectivity(
     }
 }
 
+/// Suggest truncate messages processed later than this threshold trigger a warning.
+const SUGGEST_TRUNCATE_DELAY_WARN_THRESHOLD: Duration = Duration::from_millis(100);
+
 #[derive(Debug)]
-pub struct SuggestTruncate(pub SourceCheckpoint);
+pub struct SuggestTruncate {
+    pub checkpoint: SourceCheckpoint,
+    pub created_at: Instant,
+}
+
+impl SuggestTruncate {
+    pub fn new(checkpoint: SourceCheckpoint) -> Self {
+        Self {
+            checkpoint,
+            created_at: Instant::now(),
+        }
+    }
+}
 
 #[async_trait]
 impl Handler<SuggestTruncate> for SourceActor {
@@ -513,7 +540,21 @@ impl Handler<SuggestTruncate> for SourceActor {
         suggest_truncate: SuggestTruncate,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
-        let SuggestTruncate(checkpoint) = suggest_truncate;
+        let SuggestTruncate {
+            checkpoint,
+            created_at,
+        } = suggest_truncate;
+        let delay = created_at.elapsed();
+
+        if delay > SUGGEST_TRUNCATE_DELAY_WARN_THRESHOLD {
+            rate_limited_warn!(
+                limit_per_min = 6,
+                source = self.source.name(),
+                delay_ms = delay.as_millis() as u64,
+                "suggest truncate message processed with delay of {}",
+                delay.pretty_display()
+            );
+        }
 
         if let Err(error) = self.source.suggest_truncate(checkpoint, ctx).await {
             // Failing to process suggest truncate does not

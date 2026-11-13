@@ -147,6 +147,8 @@ impl CacheKey {
         search_request.count_hits = CountHits::CountAll.into();
         // Priority only affects scheduling, not search results.
         search_request.priority = 0;
+        // Query source only identifies the caller in logs.
+        search_request.query_source.clear();
 
         CacheKey {
             split_id: split_info.split_id,
@@ -329,6 +331,7 @@ mod tests {
             timestamp_start: None,
             timestamp_end: None,
             num_docs: 0,
+            is_mature: false,
         };
 
         let split_2 = SplitIdAndFooterOffsets {
@@ -338,6 +341,7 @@ mod tests {
             timestamp_start: None,
             timestamp_end: None,
             num_docs: 0,
+            is_mature: false,
         };
 
         let query_1 = SearchRequest {
@@ -408,6 +412,7 @@ mod tests {
             timestamp_start: Some(100),
             timestamp_end: Some(199),
             num_docs: 0,
+            is_mature: false,
         };
         let split_2 = SplitIdAndFooterOffsets {
             split_id: "split_2".to_string(),
@@ -416,9 +421,11 @@ mod tests {
             timestamp_start: Some(150),
             timestamp_end: Some(249),
             num_docs: 0,
+            is_mature: false,
         };
         let split_3 = SplitIdAndFooterOffsets {
             split_id: "split_3".to_string(),
+            is_mature: false,
             split_footer_start: 0,
             split_footer_end: 100,
             timestamp_start: Some(150),
@@ -603,6 +610,28 @@ mod tests {
                 .get("split-2".to_string(), "first-query".to_string())
                 .is_none()
         );
+    }
+
+    #[test]
+    fn test_leaf_search_cache_ignores_query_source() {
+        let cache = LeafSearchCache::new(&ByteSize::mb(64).into());
+        let split = SplitIdAndFooterOffsets {
+            split_id: "split".to_string(),
+            ..Default::default()
+        };
+        let request = SearchRequest {
+            query_source: "dashboard".to_string(),
+            ..Default::default()
+        };
+        cache.put(split.clone(), request, LeafSearchResponse::default());
+
+        for query_source in ["", "api", "dashboard"] {
+            let request = SearchRequest {
+                query_source: query_source.to_string(),
+                ..Default::default()
+            };
+            assert!(cache.get(split.clone(), request).is_some());
+        }
     }
 
     #[test]

@@ -40,7 +40,7 @@ pub(crate) static DOCS_CLUSTER_GROUP_SIZE: LazyHistogram = lazy_histogram!(
         name: "docs_cluster_group_size",
         description: "Document cluster group size when finalizing an indexed split.",
         subsystem: "indexing",
-        buckets: exponential_buckets(1.0, 10.0, 8).unwrap(),
+        buckets: exponential_buckets(1.0, 2.0, 18).unwrap(),
 );
 
 pub(crate) static PUBLISHED_SPLIT_BYTES_TOTAL: LazyCounter = lazy_counter!(

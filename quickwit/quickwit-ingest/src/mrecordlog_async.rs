@@ -27,6 +27,19 @@ use crate::ingest_v2::metrics::{
     WAL_BYTES_WRITTEN_TRUNCATE,
 };
 
+/// Default persist policy of the Quickwit WALs (ingest v1 queues and ingest v2 shards).
+///
+/// Every append and truncation is flushed from the process to the OS before it returns, so
+/// acknowledged records survive a process crash (OOM kill, SIGKILL, abort) as long as the OS and
+/// the WAL storage stay up. Without it, the last frame of an append stays in the process until the
+/// next write, and recovery drops a record whose last frame is missing: the whole append is lost.
+/// This does not fsync: a host failure or power loss can still lose acknowledged records. Queue
+/// creations and deletions are fsynced by mrecordlog regardless of this policy.
+///
+/// Defined in Quickwit rather than inherited from mrecordlog's default, so that a dependency
+/// upgrade cannot change it silently.
+pub const DEFAULT_WAL_PERSIST_POLICY: PersistPolicy = PersistPolicy::Always(PersistAction::Flush);
+
 /// A light wrapper to allow async operation in mrecordlog.
 pub struct MultiRecordLogAsync {
     mrecordlog_opt: Option<MultiRecordLog>,
@@ -49,8 +62,9 @@ impl MultiRecordLogAsync {
         mrecordlog
     }
 
+    /// Opens the WAL with the [`DEFAULT_WAL_PERSIST_POLICY`].
     pub async fn open(directory_path: &Path) -> Result<Self, ReadRecordError> {
-        Self::open_with_prefs(directory_path, PersistPolicy::Always(PersistAction::Flush)).await
+        Self::open_with_prefs(directory_path, DEFAULT_WAL_PERSIST_POLICY).await
     }
 
     #[instrument(name = "mrecordlog.open_async", skip_all, fields(directory_path = %directory_path.display(), ?persist_policy))]

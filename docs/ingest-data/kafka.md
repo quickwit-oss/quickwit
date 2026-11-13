@@ -224,6 +224,8 @@ params:
     sasl.password: your_sasl_password
 ```
 
+For Kerberos (`sasl.mechanisms: GSSAPI`), `client_params` cannot set the `kinit` command. Either refresh tickets outside Quickwit, or set the `QW_KAFKA_KINIT_CMD` environment variable on every node that creates or runs Kafka sources, for example `QW_KAFKA_KINIT_CMD="kinit -k -t /path/to/quickwit.keytab quickwit@EXAMPLE.COM"`. See the [source configuration](../configuration/source-config.md) page for details.
+
 :::note
 
 If you get the following error:

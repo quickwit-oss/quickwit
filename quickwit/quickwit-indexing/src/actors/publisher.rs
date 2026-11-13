@@ -138,12 +138,9 @@ async fn suggest_truncate(
     if let Some(source_mailbox) = source_mailbox_opt.as_ref()
         && let Some(checkpoint) = checkpoint_delta_opt
     {
-        let _ = ctx
-            .send_message(
-                source_mailbox,
-                SuggestTruncate(checkpoint.source_delta.get_source_checkpoint()),
-            )
-            .await;
+        let source_checkpoint = checkpoint.source_delta.get_source_checkpoint();
+        let message = SuggestTruncate::new(source_checkpoint);
+        let _ = ctx.send_message(source_mailbox, message).await;
     }
 }
 
@@ -193,6 +190,13 @@ impl Actor for Publisher {
 
     fn name(&self) -> String {
         self.publisher_type.actor_name().to_string()
+    }
+
+    fn task_metrics_label(&self) -> &'static str {
+        match self.publisher_type {
+            PublisherType::MainPublisher => "publisher",
+            PublisherType::MergePublisher => "merge_publisher",
+        }
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
@@ -396,7 +400,7 @@ mod tests {
         let suggest_truncate_checkpoints: Vec<SourceCheckpoint> = source_inbox
             .drain_for_test_typed::<SuggestTruncate>()
             .into_iter()
-            .map(|msg| msg.0)
+            .map(|msg| msg.checkpoint)
             .collect();
 
         assert_eq!(suggest_truncate_checkpoints.len(), 1);
@@ -474,7 +478,7 @@ mod tests {
         let suggest_truncate_checkpoints: Vec<SourceCheckpoint> = source_inbox
             .drain_for_test_typed::<SuggestTruncate>()
             .into_iter()
-            .map(|msg| msg.0)
+            .map(|msg| msg.checkpoint)
             .collect();
 
         assert_eq!(suggest_truncate_checkpoints.len(), 1);

@@ -13,41 +13,16 @@
 // limitations under the License.
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::sync::{LazyLock, OnceLock};
 
-use quickwit_metrics::{
-    Counter, Gauge, LazyCounter, LazyGauge, counter, gauge, labels, lazy_counter, lazy_gauge,
-};
 use tokio::runtime::Runtime;
-use tokio_metrics::{RuntimeMetrics, RuntimeMonitor};
+use tracing::warn;
+
+pub mod metrics;
 
 static RUNTIMES: OnceLock<HashMap<RuntimeType, tokio::runtime::Runtime>> = OnceLock::new();
-
-static TOKIO_SCHEDULED_TASKS: LazyGauge = lazy_gauge!(
-    name: "tokio_scheduled_tasks",
-    description: "The total number of tasks currently scheduled in workers' local queues.",
-    subsystem: "runtime",
-);
-
-static TOKIO_WORKER_BUSY_DURATION_MILLISECONDS_TOTAL: LazyCounter = lazy_counter!(
-    name: "tokio_worker_busy_duration_milliseconds_total",
-    description: " The total amount of time worker threads were busy.",
-    subsystem: "runtime",
-);
-
-static TOKIO_WORKER_BUSY_RATIO: LazyGauge = lazy_gauge!(
-    name: "tokio_worker_busy_ratio",
-    description: "The ratio of time worker threads were busy since the last time runtime metrics were collected.",
-    subsystem: "runtime",
-);
-
-static TOKIO_WORKER_THREADS: LazyGauge = lazy_gauge!(
-    name: "tokio_worker_threads",
-    description: "The number of worker threads used by the runtime.",
-    subsystem: "runtime",
-);
 
 /// Describes which runtime an actor should run on.
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
@@ -111,17 +86,76 @@ impl RuntimesConfig {
     }
 }
 
-impl Default for RuntimesConfig {
-    fn default() -> Self {
-        let num_cpus = crate::num_cpus();
-        Self::with_num_cpus(num_cpus)
+impl RuntimesConfig {
+    /// Returns the runtimes configuration of this process.
+    ///
+    /// Each runtime size can be overridden independently with the
+    /// `QW_TOKIO_BLOCKING_RUNTIME_NUM_THREADS` and `QW_TOKIO_NON_BLOCKING_RUNTIME_NUM_THREADS`
+    /// environment variables. Values must be strictly positive.
+    pub fn get() -> RuntimesConfig {
+        static RUNTIMES_CONFIG: LazyLock<RuntimesConfig> = LazyLock::new(RuntimesConfig::from_env);
+        *RUNTIMES_CONFIG
     }
+
+    fn from_env() -> RuntimesConfig {
+        let num_cpus = crate::num_cpus();
+        let default_config = Self::with_num_cpus(num_cpus);
+        let num_threads_blocking = get_num_threads_from_env(
+            "QW_TOKIO_BLOCKING_RUNTIME_NUM_THREADS",
+            default_config.num_threads_blocking,
+        );
+        let num_threads_non_blocking = get_num_threads_from_env(
+            "QW_TOKIO_NON_BLOCKING_RUNTIME_NUM_THREADS",
+            default_config.num_threads_non_blocking,
+        );
+        RuntimesConfig {
+            num_threads_blocking,
+            num_threads_non_blocking,
+        }
+    }
+}
+
+/// Tokio panics when a multi-threaded runtime is built with zero worker threads, so we parse the
+/// override as a `NonZeroUsize`.
+fn get_num_threads_from_env(key: &str, default_num_threads: usize) -> usize {
+    crate::get_from_env_opt::<NonZeroUsize>(key, false)
+        .map(NonZeroUsize::get)
+        .unwrap_or(default_num_threads)
+}
+
+const QW_TOKIO_DISABLE_LIFO_SLOT_ENV_KEY: &str = "QW_TOKIO_DISABLE_LIFO_SLOT";
+/// Deprecated alias of [`QW_TOKIO_DISABLE_LIFO_SLOT_ENV_KEY`], kept for backward compatibility.
+const QW_DISABLE_TOKIO_LIFO_SLOT_ENV_KEY: &str = "QW_DISABLE_TOKIO_LIFO_SLOT";
+
+/// Reads `QW_TOKIO_DISABLE_LIFO_SLOT`, falling back to the deprecated
+/// `QW_DISABLE_TOKIO_LIFO_SLOT`. The new key takes precedence when both are set. Defaults to
+/// `true`.
+fn get_disable_lifo_slot_from_env() -> bool {
+    let new_value_opt = crate::get_bool_from_env_opt(QW_TOKIO_DISABLE_LIFO_SLOT_ENV_KEY);
+    let deprecated_value_opt = crate::get_bool_from_env_opt(QW_DISABLE_TOKIO_LIFO_SLOT_ENV_KEY);
+
+    if deprecated_value_opt.is_some() {
+        warn!(
+            "environment variable `{QW_DISABLE_TOKIO_LIFO_SLOT_ENV_KEY}` is deprecated, use \
+             `{QW_TOKIO_DISABLE_LIFO_SLOT_ENV_KEY}` instead"
+        );
+    }
+    if let (Some(new_value), Some(deprecated_value)) = (new_value_opt, deprecated_value_opt)
+        && new_value != deprecated_value
+    {
+        warn!(
+            "environment variables `{QW_TOKIO_DISABLE_LIFO_SLOT_ENV_KEY}` and \
+             `{QW_DISABLE_TOKIO_LIFO_SLOT_ENV_KEY}` conflict, using \
+             `{QW_TOKIO_DISABLE_LIFO_SLOT_ENV_KEY}={new_value}`"
+        );
+    }
+    new_value_opt.or(deprecated_value_opt).unwrap_or(true)
 }
 
 fn start_runtimes(config: RuntimesConfig) -> HashMap<RuntimeType, Runtime> {
     let mut runtimes = HashMap::with_capacity(2);
 
-    let disable_lifo_slot = crate::get_bool_from_env("QW_DISABLE_TOKIO_LIFO_SLOT", true);
+    let disable_lifo_slot = get_disable_lifo_slot_from_env();
 
     let mut blocking_runtime_builder = tokio::runtime::Builder::new_multi_thread();
     if disable_lifo_slot {
@@ -138,7 +172,7 @@ fn start_runtimes(config: RuntimesConfig) -> HashMap<RuntimeType, Runtime> {
         .build()
         .unwrap();
 
-    scrape_tokio_runtime_metrics(blocking_runtime.handle(), "blocking");
+    metrics::register_runtime(blocking_runtime.handle(), "blocking");
     runtimes.insert(RuntimeType::Blocking, blocking_runtime);
 
     let non_blocking_runtime = tokio::runtime::Builder::new_multi_thread()
@@ -152,7 +186,7 @@ fn start_runtimes(config: RuntimesConfig) -> HashMap<RuntimeType, Runtime> {
         .build()
         .unwrap();
 
-    scrape_tokio_runtime_metrics(non_blocking_runtime.handle(), "non_blocking");
+    metrics::register_runtime(non_blocking_runtime.handle(), "non_blocking");
     runtimes.insert(RuntimeType::NonBlocking, non_blocking_runtime);
 
     runtimes
@@ -169,7 +203,7 @@ impl RuntimeType {
             .get_or_init(|| {
                 #[cfg(any(test, feature = "testsuite"))]
                 {
-                    tracing::warn!("starting Tokio actor runtimes for tests");
+                    warn!("starting Tokio actor runtimes for tests");
                     start_runtimes(RuntimesConfig::light_for_tests())
                 }
                 #[cfg(not(any(test, feature = "testsuite")))]
@@ -184,58 +218,13 @@ impl RuntimeType {
     }
 }
 
-/// Spawns a background task
-pub fn scrape_tokio_runtime_metrics(handle: &tokio::runtime::Handle, label: &'static str) {
-    let runtime_monitor = RuntimeMonitor::new(handle);
-    handle.spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(1));
-        let mut runtime_metrics_recorder = RuntimeMetricsRecorder::new(label);
-
-        for tokio_runtime_metrics in runtime_monitor.intervals() {
-            interval.tick().await;
-            runtime_metrics_recorder.update(&tokio_runtime_metrics);
-        }
-    });
-}
-
-struct RuntimeMetricsRecorder {
-    scheduled_tasks: Gauge,
-    worker_busy_duration_milliseconds_total: Counter,
-    worker_busy_ratio: Gauge,
-    worker_threads: Gauge,
-}
-
-impl RuntimeMetricsRecorder {
-    pub fn new(label: &'static str) -> Self {
-        let labels = labels!("runtime_type" => label);
-        Self {
-            scheduled_tasks: gauge!(parent: TOKIO_SCHEDULED_TASKS, labels: [labels]),
-            worker_busy_duration_milliseconds_total: counter!(
-                parent: TOKIO_WORKER_BUSY_DURATION_MILLISECONDS_TOTAL,
-                labels: [labels]),
-            worker_busy_ratio: gauge!(parent: TOKIO_WORKER_BUSY_RATIO, labels: [labels]),
-            worker_threads: gauge!(parent: TOKIO_WORKER_THREADS, labels: [labels]),
-        }
-    }
-
-    pub fn update(&mut self, runtime_metrics: &RuntimeMetrics) {
-        self.scheduled_tasks
-            .set(runtime_metrics.total_local_queue_depth as f64);
-        self.worker_busy_duration_milliseconds_total
-            .inc_by(runtime_metrics.total_busy_duration.as_millis() as u64);
-        self.worker_busy_ratio.set(runtime_metrics.busy_ratio());
-        self.worker_threads
-            .set(runtime_metrics.workers_count as f64);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_runtimes_config_default() {
-        let runtime_default = RuntimesConfig::default();
+    fn test_runtimes_config_get() {
+        let runtime_default = RuntimesConfig::get();
         assert!(runtime_default.num_threads_non_blocking <= runtime_default.num_threads_blocking);
         assert!(runtime_default.num_threads_non_blocking <= 2);
     }

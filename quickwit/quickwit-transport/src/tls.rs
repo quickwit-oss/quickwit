@@ -84,8 +84,8 @@ fn load_private_key(filename: &str) -> io::Result<PrivateKeyDer<'static>> {
 }
 
 /// Reads the certificate chain and private key from disk and assembles a [`CertifiedKey`] using the
-/// process-wide default crypto provider (ring, see
-/// `quickwit_cli::install_default_crypto_ring_provider`).
+/// process-wide default crypto provider (aws-lc, see
+/// `quickwit_cli::install_default_crypto_provider`).
 fn load_certified_key(cert_path: &str, key_path: &str) -> anyhow::Result<CertifiedKey> {
     let certs = load_certs(cert_path)?;
     if certs.is_empty() {
@@ -341,9 +341,8 @@ mod tests {
     const CA_KEY_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../resources/tests/tls/ca.key");
 
     /// `load_certified_key` needs the process-wide crypto provider to turn the private key into a
-    /// signing key. In the binary this is installed by `quickwit_cli` (ring); tests install
-    /// aws-lc-rs, which is rustls' default feature. Either provider works here. Installing twice is
-    /// harmless, hence the ignored error.
+    /// signing key. In the binary this is installed by `quickwit_cli`; tests install the same
+    /// aws-lc-rs provider directly. Installing twice is harmless, hence the ignored error.
     fn install_crypto_provider() {
         let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     }

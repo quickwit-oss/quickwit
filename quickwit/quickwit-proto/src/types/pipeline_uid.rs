@@ -42,7 +42,7 @@ impl Display for PipelineUid {
 impl PipelineUid {
     /// Creates a new random pipeline UID.
     pub fn random() -> Self {
-        Self(Ulid::new())
+        Self(Ulid::generate())
     }
 
     #[cfg(any(test, feature = "testsuite"))]

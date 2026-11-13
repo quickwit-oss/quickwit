@@ -103,6 +103,8 @@ A tutorial is available [here](/docs/ingest-data/kafka.md).
 
 The Kafka source consumes a `topic` using the client library [librdkafka](https://github.com/edenhill/librdkafka) and forwards the key-value pairs carried by the parameter `client_params` to the underlying librdkafka consumer. Common `client_params` options are bootstrap servers (`bootstrap.servers`), or security protocol (`security.protocol`). Please, refer to [Kafka](https://kafka.apache.org/documentation/#consumerconfigs) and [librdkafka](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md) documentation pages for more advanced options.
 
+For security reasons, `client_params` cannot set `sasl.kerberos.kinit.cmd`, `sasl.kerberos.min.time.before.relogin`, `plugin.library.paths`, `ssl.engine.location`, or `ssl.providers`. By default, librdkafka does not run `kinit` to acquire or refresh Kerberos tickets. To enable it, set the `QW_KAFKA_KINIT_CMD` environment variable to the `kinit` command on every node that creates or runs Kafka sources. The command cannot contain `%{...}` placeholders, so `sasl.kerberos.keytab` and `sasl.kerberos.principal` must be written into the command directly.
+
 | Property | Description | Default value |
 | --- | --- | --- |
 | `topic` | Name of the topic to consume. | required |
@@ -243,6 +245,8 @@ For all source types but the `ingest-api`, ingested documents can be transformed
 | --- | --- | --- |
 | `script` | Source code of the VRL program executed to transform documents. | required |
 | `timezone` | Timezone used in the VRL program for date and time manipulations. It must be a valid name in the [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) | `UTC` |
+
+Quickwit compiles the script when the source is created or updated, and each time one of its indexing pipelines starts. If a Quickwit upgrade brings a VRL version that rejects the script, the source's indexing pipelines fail to start and log the compilation error until you update the source with a fixed script.
 
 ```yaml
 # Your source config here

@@ -75,6 +75,17 @@ impl SourceConfig {
         self.source_params.source_type()
     }
 
+    /// Checks that the VRL transform, if any, compiles.
+    ///
+    /// Deserialization does not compile it, so that a source stored with an older VRL stays
+    /// readable. This must be called wherever a new or updated source config is accepted.
+    pub fn validate_transform(&self) -> anyhow::Result<()> {
+        let Some(transform_config) = &self.transform_config else {
+            return Ok(());
+        };
+        transform_config.validate_vrl_script()
+    }
+
     // TODO: Remove after source factory refactor.
     pub fn params(&self) -> JsonValue {
         match &self.source_params {
@@ -1458,6 +1469,32 @@ mod tests {
             let error = transform_config.compile_vrl_script().unwrap_err();
             assert!(error.to_string().starts_with("failed to compile"));
         }
+    }
+
+    #[cfg(feature = "vrl")]
+    #[test]
+    fn test_source_config_transform_compiled_on_load_not_on_deserialize() {
+        let current_source_config = SourceConfig::for_test("void-source", SourceParams::void());
+        let mut source_config = current_source_config.clone();
+        source_config.transform_config = Some(TransformConfig::for_test("foo"));
+        let source_config_json = serde_json::to_string(&source_config).unwrap();
+
+        let deserialized_source_config: SourceConfig =
+            serde_json::from_str(&source_config_json).unwrap();
+        assert_eq!(deserialized_source_config, source_config);
+
+        let error =
+            load_source_config_from_user_config(ConfigFormat::Json, source_config_json.as_bytes())
+                .unwrap_err();
+        assert!(error.to_string().starts_with("failed to compile"));
+
+        let error = load_source_config_update(
+            ConfigFormat::Json,
+            source_config_json.as_bytes(),
+            &current_source_config,
+        )
+        .unwrap_err();
+        assert!(error.to_string().starts_with("failed to compile"));
     }
 
     #[tokio::test]

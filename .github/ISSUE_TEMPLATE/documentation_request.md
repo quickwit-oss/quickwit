@@ -2,7 +2,7 @@
 name: Documentation request
 about: Suggest a documentation enhancement
 title: "[Documentation topic]"
-labels: documentation
+type: Task
 assignees: ""
 ---
 

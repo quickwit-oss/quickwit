@@ -240,14 +240,13 @@ impl Handler<Loop> for GarbageCollector {
 }
 
 #[cfg(test)]
-#[allow(clippy::result_large_err)] // BulkDeleteError is large; acceptable in mock closures
 mod tests {
     use std::collections::HashSet;
     use std::ops::Bound;
     use std::path::Path;
     use std::sync::Arc;
 
-    use quickwit_actors::Universe;
+    use quickwit_actors::{ActorHandle, ObservationType, Universe};
     use quickwit_common::ServiceStream;
     use quickwit_common::shared_consts::split_deletion_grace_period;
     use quickwit_metastore::{
@@ -263,6 +262,19 @@ mod tests {
     use time::OffsetDateTime;
 
     use super::*;
+
+    async fn observe_after_pass(
+        handle: &ActorHandle<GarbageCollector>,
+    ) -> GarbageCollectorCounters {
+        loop {
+            let observation = handle.process_pending_and_observe().await;
+            match observation.obs_type {
+                ObservationType::Alive => return observation.state,
+                ObservationType::Timeout => continue,
+                ObservationType::PostMortem => panic!("the garbage collector exited"),
+            }
+        }
+    }
 
     fn hashmap<K: Eq + std::hash::Hash, V>(key: K, value: V) -> HashMap<K, V> {
         let mut map = HashMap::new();
@@ -763,7 +775,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (_mailbox, handle) = universe.spawn_builder().spawn(garbage_collect_actor);
 
-        let counters = handle.process_pending_and_observe().await.state;
+        let counters = observe_after_pass(&handle).await;
         assert_eq!(counters.num_passes, 1);
         assert_eq!(counters.num_deleted_files, 14000);
         assert_eq!(counters.num_deleted_bytes, 20 * 14000);

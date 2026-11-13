@@ -372,6 +372,15 @@ impl HotDirectory {
     pub fn get_file_lengths(&self) -> Vec<(PathBuf, u64)> {
         self.inner.cache.get_file_lengths()
     }
+
+    /// Sum of the file lengths, the doc store files excluded.
+    pub fn num_bytes_without_doc_store(&self) -> u64 {
+        self.get_file_lengths()
+            .iter()
+            .filter(|(path, _)| !path.to_string_lossy().ends_with("store"))
+            .map(|(_, file_length)| *file_length)
+            .sum()
+    }
 }
 
 struct FileSliceWithCache {
@@ -399,7 +408,7 @@ impl FileHandle for FileSliceWithCache {
 
 impl fmt::Debug for FileSliceWithCache {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "FileSliceWithCache({:?})", &self.underlying)
+        write!(f, "FileSliceWithCache({:?})", self.underlying)
     }
 }
 
@@ -537,6 +546,13 @@ pub fn write_hotcache<D: Directory>(
 
 #[cfg(test)]
 mod tests {
+    use rand::RngExt;
+    use tantivy::directory::RamDirectory;
+    use tantivy::schema::{
+        BytesOptions, FieldEntry, Schema, TextFieldIndexing, TextOptions, Value,
+    };
+    use tantivy::{Index, TantivyDocument};
+
     use super::*;
 
     #[test]
@@ -710,5 +726,98 @@ mod tests {
                 .as_ref(),
             b"name"
         );
+    }
+
+    fn create_tantivy_dir_with_hotcache<'a, V>(
+        field_entry: FieldEntry,
+        field_value: V,
+    ) -> (HotDirectory, usize)
+    where
+        V: Value<'a>,
+    {
+        let field_name = field_entry.name().to_string();
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_field(field_entry);
+        let schema = schema_builder.build();
+
+        let ram_directory = RamDirectory::create();
+        let index = Index::open_or_create(ram_directory.clone(), schema.clone()).unwrap();
+
+        let mut index_writer = index.writer(15_000_000).unwrap();
+        let field = schema.get_field(&field_name).unwrap();
+        let mut new_doc = TantivyDocument::default();
+        new_doc.add_field_value(field, field_value);
+        index_writer.add_document(new_doc).unwrap();
+        index_writer.commit().unwrap();
+
+        let mut hotcache_bytes: Vec<u8> = Vec::new();
+        write_hotcache(ram_directory.clone(), &mut hotcache_bytes).unwrap();
+        let hotcache_bytes = OwnedBytes::new(hotcache_bytes);
+        let hot_directory = HotDirectory::open(ram_directory.clone(), hotcache_bytes).unwrap();
+        (hot_directory, ram_directory.total_mem_usage())
+    }
+
+    #[test]
+    fn test_num_bytes_without_doc_store_excludes_store() {
+        // We don't want to make assertions on absolute index sizes (it might
+        // change in future Tantivy versions), but rather verify that the store
+        // is properly excluded from the computed size.
+
+        // We use random bytes so that the store can't compress them
+        let mut payload = vec![0u8; 1024];
+        rand::rng().fill(&mut payload[..]);
+
+        let (hotcache_directory_stored_payload, directory_size_stored_payload) =
+            create_tantivy_dir_with_hotcache(
+                FieldEntry::new_bytes("payload".to_string(), BytesOptions::default().set_stored()),
+                &payload,
+            );
+        let size_with_stored_payload =
+            hotcache_directory_stored_payload.num_bytes_without_doc_store();
+
+        let (hotcache_directory_index_only, directory_size_index_only) =
+            create_tantivy_dir_with_hotcache(
+                FieldEntry::new_bytes("payload".to_string(), BytesOptions::default()),
+                &payload,
+            );
+        let size_index_only = hotcache_directory_index_only.num_bytes_without_doc_store();
+
+        assert!(directory_size_stored_payload > directory_size_index_only + 1000);
+        assert!(size_with_stored_payload.abs_diff(size_index_only) < 10);
+    }
+
+    #[test]
+    fn test_num_bytes_without_doc_store_varies_with_data() {
+        // We don't want to make assertions on absolute index sizes (it might
+        // change in future Tantivy versions), but rather verify that an index
+        // with more data is indeed bigger.
+
+        let indexing_options =
+            TextOptions::default().set_indexing_options(TextFieldIndexing::default());
+
+        let (hotcache_directory_larger, directory_size_larger) = create_tantivy_dir_with_hotcache(
+            FieldEntry::new_text("text".to_string(), indexing_options.clone()),
+            "Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium \
+             doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore \
+             veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam \
+             voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur \
+             magni dolores eos qui ratione voluptatem sequi nesciunt. Neque porro quisquam est, \
+             qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non \
+             numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat \
+             voluptatem. Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis \
+             suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur? Quis autem vel eum \
+             iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae consequatur, \
+             vel illum qui dolorem eum fugiat quo voluptas nulla pariatur?",
+        );
+        let larger_size = hotcache_directory_larger.num_bytes_without_doc_store();
+
+        let (hotcache_directory_smaller, directory_size_smaller) = create_tantivy_dir_with_hotcache(
+            FieldEntry::new_text("text".to_string(), indexing_options),
+            "hi",
+        );
+        let smaller_size = hotcache_directory_smaller.num_bytes_without_doc_store();
+
+        assert!(directory_size_larger > directory_size_smaller + 100);
+        assert!(larger_size > smaller_size + 100);
     }
 }
