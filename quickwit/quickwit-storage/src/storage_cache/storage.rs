@@ -82,14 +82,20 @@ impl Storage for FeuerStorage {
         let cache = self.cache.clone();
         let storage = self.inner.clone();
         let path = path.to_owned();
+        let download_size = byte_range.len();
         self.cache
-            .get_or_fetch(&cache_key, move || async move {
-                let mut buffer = cache.allocate_buffer(byte_range.len())?;
-                storage
-                    .get_slice_into(&path, byte_range, buffer.as_mut())
-                    .await?;
-                Ok(buffer)
-            })
+            .get_or_fetch_with_disk_fallthrough(
+                &cache_key,
+                // Under disk queue pressure, prefer downloading ranges of at least 10 MB.
+                move || download_size >= 10_000_000,
+                move || async move {
+                    let mut buffer = cache.allocate_buffer(download_size)?;
+                    storage
+                        .get_slice_into(&path, byte_range, buffer.as_mut())
+                        .await?;
+                    Ok(buffer)
+                },
+            )
             .await
             .map(into_owned_bytes)
             .map_err(|GetOrFetchError::Callback(error)| error)
