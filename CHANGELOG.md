@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ingest endpoints (Elasticsearch `_bulk`, OTLP, native ingest) no longer require a `Content-Length` header: `ingest_api.max_body_size` is enforced while the body is read, so chunked and HTTP/2 requests without the header are accepted instead of being rejected with HTTP 411.
 - Renamed `ingest_api.content_length_limit` to `ingest_api.max_body_size`; the former name is still accepted as a config alias.
 - **Breaking**: `ingest_api.max_decompressed_body_size` must be between `ingest_api.max_body_size` and 4 GiB; node configs outside this range now fail validation at startup. Configs that set `content_length_limit` (or `max_body_size`) above 256 MiB must also raise `max_decompressed_body_size`.
+- **Breaking**: the `metastore` section of the node config is now validated at startup. Node configs with `metastore.postgres.min_connections` greater than `max_connections`, which were previously accepted, now fail to load; set `min_connections` to at most `max_connections`. Invalid PostgreSQL metastore durations (`acquire_connection_timeout`, `idle_connection_timeout`, `max_connection_lifetime`) are now reported as config errors instead of crashing the metastore during initialization.
 
 ### Deprecated
 
