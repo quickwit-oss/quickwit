@@ -109,18 +109,13 @@ impl HitSet {
         if self.current_block[BLOCK_LEN - 1] >= target {
             return;
         }
-        let mut start = self.block + 1;
-        let mut end = self.num_blocks();
-        while start < end {
-            let mid = start + (end - start) / 2;
-            if self.block_first(mid) <= target {
-                start = mid + 1;
-            } else {
-                end = mid;
-            }
-        }
-        if start - 1 > self.block {
-            self.load_block(start - 1);
+        let (blocks, _) = self.buffer[4..4 + self.num_blocks() * 8].as_chunks::<8>();
+        let block = self.block
+            + blocks[self.block + 1..].partition_point(|entry| {
+                u32::from_ne_bytes(entry[..4].try_into().unwrap()) <= target
+            });
+        if block > self.block {
+            self.load_block(block);
         }
         if self.current_block[BLOCK_LEN - 1] < target {
             self.load_block(self.block + 1);
