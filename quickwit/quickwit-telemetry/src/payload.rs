@@ -90,7 +90,8 @@ pub struct ClientInfo {
     hashed_host_username: String,
     kubernetes: bool,
     cpus: String,
-    memory: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    memory: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -168,7 +169,8 @@ impl Default for ClientInfo {
             hashed_host_username: hashed_host_username(),
             kubernetes: std::env::var_os("KUBERNETES_SERVICE_HOST").is_some(),
             cpus: cpu_count_bucket(quickwit_common::num_cpus()).to_string(),
-            memory: memory_bucket(available_memory_num_bytes()).to_string(),
+            memory: available_memory_num_bytes()
+                .map(|num_bytes| memory_bucket(num_bytes).to_string()),
         }
     }
 }

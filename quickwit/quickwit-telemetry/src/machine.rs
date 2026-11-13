@@ -42,14 +42,16 @@ pub(crate) fn memory_bucket(num_bytes: u64) -> &'static str {
     }
 }
 
-pub(crate) fn available_memory_num_bytes() -> u64 {
+pub(crate) fn available_memory_num_bytes() -> Option<u64> {
     let system = System::new_with_specifics(
         RefreshKind::nothing().with_memory(MemoryRefreshKind::nothing().with_ram()),
-    );
-    match system.cgroup_limits() {
+    )
+    .ok()?;
+    let num_bytes = match system.cgroup_limits() {
         Some(cgroup_limits) => cgroup_limits.total_memory,
         None => system.total_memory(),
-    }
+    };
+    Some(num_bytes)
 }
 
 #[cfg(test)]
