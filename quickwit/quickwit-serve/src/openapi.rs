@@ -223,7 +223,7 @@ mod openapi_schema_tests {
                     let location = match &parameter.schema {
                         Some(RefOr::Ref(r)) => &r.ref_location,
                         Some(RefOr::T(schema)) => {
-                            let parent = format!("param: {}", &parameter.name);
+                            let parent = format!("param: {}", parameter.name);
                             check_schema(
                                 &method,
                                 path,

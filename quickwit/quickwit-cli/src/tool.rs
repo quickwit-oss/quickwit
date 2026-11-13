@@ -443,7 +443,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
-    let runtimes_config = RuntimesConfig::default();
+    let runtimes_config = RuntimesConfig::get();
     start_actor_runtimes(
         runtimes_config,
         &HashSet::from_iter([QuickwitService::Indexer]),
@@ -589,7 +589,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     // aware of the running tasks. We thus create a fake cluster to instantiate the indexing service
     // and avoid impacting potential control plane running on the cluster.
     let cluster = create_empty_cluster(&config).await?;
-    let runtimes_config = RuntimesConfig::default();
+    let runtimes_config = RuntimesConfig::get();
     start_actor_runtimes(
         runtimes_config,
         &HashSet::from_iter([QuickwitService::Indexer]),

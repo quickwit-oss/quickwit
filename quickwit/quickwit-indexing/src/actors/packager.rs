@@ -78,7 +78,7 @@ impl Packager {
         }
     }
 
-    pub async fn process_indexed_split(
+    pub fn process_indexed_split(
         &self,
         split: IndexedSplit,
         ctx: &ActorContext<Self>,
@@ -105,6 +105,10 @@ impl Actor for Packager {
 
     fn name(&self) -> String {
         self.actor_name.to_string()
+    }
+
+    fn task_metrics_label(&self) -> &'static str {
+        quickwit_actors::to_task_metrics_label(self.actor_name)
     }
 
     fn runtime_handle(&self) -> Handle {
@@ -142,7 +146,7 @@ impl Handler<IndexedSplitBatch> for Packager {
                 );
                 return Ok(());
             }
-            let packaged_split = self.process_indexed_split(split, ctx).await?;
+            let packaged_split = self.process_indexed_split(split, ctx)?;
             packaged_splits.push(packaged_split);
         }
         ctx.send_message(

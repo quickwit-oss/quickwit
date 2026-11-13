@@ -113,6 +113,7 @@ impl ScrollContext {
         searcher_context: &SearcherContext,
     ) -> crate::Result<Option<RootResourceStats>> {
         self.search_request.search_after = Some(previous_last_hit);
+        let mut progress = crate::root::RootSearchProgress::default();
         let (leaf_search_response, root_resource_stats): (
             LeafSearchResponse,
             Option<RootResourceStats>,
@@ -122,6 +123,7 @@ impl ScrollContext {
             &self.search_request,
             &self.split_metadatas[..],
             cluster_client,
+            &mut progress,
         )
         .await?;
         self.cached_partial_hits_start_offset = start_offset;

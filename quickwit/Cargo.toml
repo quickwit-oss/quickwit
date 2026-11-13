@@ -92,10 +92,10 @@ fnv = "1"
 futures = "0.3"
 futures-util = { version = "0.3", default-features = false }
 glob = "0.3"
-# We can't directly update google-cloud-auth to 1.3 and google-cloud-gax to 1.4, because the latest version
-# of google-cloud-pubsub is "0.30" which explicitly depends on: google-cloud-auth ^0.17 and google-cloud-gax ^0.19.
+# These are yoshidan's google-cloud-rust crates. Their crates.io names now belong to Google's official SDK,
+# with an unrelated API from google-cloud-auth 0.18, google-cloud-gax 0.20 and google-cloud-pubsub 0.31 on,
+# so they can't be bumped past google-cloud-pubsub 0.30 (which requires google-cloud-auth ^0.17).
 google-cloud-auth = { version = "0.17", default-features = false, features = ["rustls-tls"] }
-google-cloud-gax = "0.19"
 google-cloud-googleapis = { version = "0.16", features = ["pubsub"] }
 google-cloud-pubsub = { version = "0.30", default-features = false, features = ["auth", "rustls-tls"] }
 governor = "0.10"
@@ -208,8 +208,9 @@ rust-embed = "8.13"
 rustc-hash = "2.1"
 rustls = "0.23"
 rustls-pemfile = "2.2"
-sea-query = { version = "0.32" }
-sea-query-binder = { version = "0.7", features = [
+sea-query = { version = "1.0" }
+# sea-query-sqlx 0.8.0 requires sqlx 0.9; 0.8.1 is the sqlx 0.8 release.
+sea-query-sqlx = { version = "0.8.1", features = [
   "postgres-array",
   "runtime-tokio-rustls",
   "sqlx-postgres",
@@ -234,7 +235,7 @@ sqlx = { version = "0.8", features = [
 ] }
 syn = { version = "3.0", features = ["extra-traits", "full", "parsing"] }
 sync_wrapper = "1"
-sysinfo = { version = "0.39", default-features = false, features = ["disk"] }
+sysinfo = { version = "0.40", default-features = false, features = ["disk"] }
 tabled = { version = "0.22", features = ["ansi"] }
 tempfile = "3"
 thiserror = "2"
@@ -244,7 +245,7 @@ tikv-jemallocator = "0.7"
 time = { version = "0.3", features = ["std", "formatting", "macros"] }
 time-fmt = "0.3.8"
 tokio = { version = "1.54", features = ["full"] }
-tokio-metrics = { version = "0.5", features = ["rt"] }
+tokio-metrics = { version = "0.5", default-features = false }
 tokio-rustls = { version = "0.26", default-features = false }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", default-features = false, features = [

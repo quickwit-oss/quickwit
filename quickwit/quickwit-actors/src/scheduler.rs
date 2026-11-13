@@ -143,17 +143,14 @@ impl SchedulerClient {
         let _ = oneshot_rx.await;
     }
 
-    pub async fn timeout<O>(
-        &self,
-        duration: Duration,
-        fut: impl Future<Output = O>,
-    ) -> Result<O, ()> {
+    /// Returns `None` if `duration` elapses before `fut` completes.
+    pub async fn timeout<O>(&self, duration: Duration, fut: impl Future<Output = O>) -> Option<O> {
         tokio::select! {
             _ = self.sleep(duration) => {
-                Err(())
+                None
             },
             future_output = fut => {
-                Ok(future_output)
+                Some(future_output)
             }
         }
     }

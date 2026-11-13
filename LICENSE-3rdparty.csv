@@ -359,7 +359,6 @@ indoc,https://github.com/dtolnay/indoc,MIT OR Apache-2.0,David Tolnay <dtolnay@g
 infer,https://github.com/bojand/infer,MIT,Bojan <dbojan@gmail.com>
 inferno,https://github.com/jonhoo/inferno,CDDL-1.0,Jon Gjengset <jon@thesquareplanet.com>
 influxdb-line-protocol,https://github.com/influxdata/influxdb_iox/tree/main/influxdb_line_protocol,MIT OR Apache-2.0,InfluxDB IOx Project Developers
-inherent,https://github.com/dtolnay/inherent,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 inout,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developers
 instant,https://github.com/sebcrozet/instant,BSD-3-Clause,sebcrozet <developer@crozet.re>
 inventory,https://github.com/dtolnay/inventory,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
@@ -372,6 +371,7 @@ itertools,https://github.com/rust-itertools/itertools,MIT OR Apache-2.0,bluss
 itoa,https://github.com/dtolnay/itoa,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 jiff,https://github.com/BurntSushi/jiff,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 jiff-core,https://github.com/BurntSushi/jiff,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
+jiff-sqlx,https://github.com/BurntSushi/jiff,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 jiff-static,https://github.com/BurntSushi/jiff,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 jiff-tzdb,https://github.com/BurntSushi/jiff,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 jiff-tzdb-platform,https://github.com/BurntSushi/jiff,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
@@ -674,8 +674,8 @@ scopeguard,https://github.com/bluss/scopeguard,MIT OR Apache-2.0,bluss
 scrypt,https://github.com/RustCrypto/password-hashes/tree/master/scrypt,MIT OR Apache-2.0,RustCrypto Developers
 sct,https://github.com/rustls/sct.rs,Apache-2.0 OR ISC OR MIT,Joseph Birr-Pixton <jpixton@gmail.com>
 sea-query,https://github.com/SeaQL/sea-query,MIT OR Apache-2.0,"Chris Tsang <chris.2y3@outlook.com>, Billy Chan <ccw.billy.123@gmail.com>, Ivan Krivosheev <py.krivosheev@gmail.com>"
-sea-query-binder,https://github.com/SeaQL/sea-query,MIT OR Apache-2.0,"Valentin Tolmer <valentin@tolmer.fr>, Ivan Krivosheev <py.krivosheev@gmail.com>"
 sea-query-derive,https://github.com/SeaQL/sea-query,MIT OR Apache-2.0,"Follpvosten <wolfi@karpador.xyz>, Rene Leveille <rene@nestingsafe.com>"
+sea-query-sqlx,https://github.com/SeaQL/sea-query,MIT OR Apache-2.0,"Valentin Tolmer <valentin@tolmer.fr>, Ivan Krivosheev <py.krivosheev@gmail.com>"
 seahash,https://gitlab.redox-os.org/redox-os/seahash,MIT,"ticki <ticki@users.noreply.github.com>, Tom Almeida <tom@tommoa.me>"
 sec1,https://github.com/RustCrypto/formats,Apache-2.0 OR MIT,RustCrypto Developers
 sec1,https://github.com/RustCrypto/formats/tree/master/sec1,Apache-2.0 OR MIT,RustCrypto Developers

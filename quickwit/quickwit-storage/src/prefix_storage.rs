@@ -234,7 +234,7 @@ fn strip_prefix_from_error(error: BulkDeleteError, prefix: &Path) -> BulkDeleteE
 #[cfg(test)]
 mod tests {
 
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
     use std::time::SystemTime;
 
     use futures::{TryStreamExt, stream};
@@ -336,7 +336,7 @@ mod tests {
                 error: None,
                 successes: vec![PathBuf::from("ram:///indexes/foo")],
                 unattempted: vec![PathBuf::from("ram:///indexes/bar")],
-                failures: HashMap::from_iter([(
+                failures: BTreeMap::from_iter([(
                     PathBuf::from("ram:///indexes/baz"),
                     DeleteFailure::default(),
                 )]),
@@ -361,7 +361,7 @@ mod tests {
                 error: None,
                 successes: vec![PathBuf::from("ram:///indexes/foo")],
                 unattempted: vec![PathBuf::from("ram:///indexes/bar")],
-                failures: HashMap::from_iter([(
+                failures: BTreeMap::from_iter([(
                     PathBuf::from("ram:///indexes/baz"),
                     DeleteFailure::default(),
                 )]),
@@ -380,7 +380,7 @@ mod tests {
                 error: None,
                 successes: vec![PathBuf::from("ram:///indexes/foo")],
                 unattempted: vec![PathBuf::from("ram:///indexes/bar")],
-                failures: HashMap::from_iter([(
+                failures: BTreeMap::from_iter([(
                     PathBuf::from("ram:///indexes/baz"),
                     DeleteFailure::default(),
                 )]),

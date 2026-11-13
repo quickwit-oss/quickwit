@@ -31,7 +31,7 @@ use quickwit_common::thread_pool::with_priority::Priority;
 use quickwit_common::uri::Uri;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{Automaton, DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo};
-use quickwit_metrics::{GaugeGuard, HistogramTimer};
+use quickwit_metrics::HistogramTimer;
 use quickwit_proto::search::lambda_single_split_result::Outcome;
 use quickwit_proto::search::{
     CountHits, LeafResourceStats, LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest,
@@ -63,7 +63,7 @@ use crate::cost::{compute_query_cost, compute_split_query_cost};
 use crate::leaf_cache::LeafSearchCache;
 use crate::metrics::{
     LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES, LEAF_SEARCH_SPLIT_DURATION_SECS,
-    LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES, SPLIT_SEARCH_OUTCOME_TOTAL, SplitSearchOutcomeCounters,
+    SPLIT_SEARCH_OUTCOME_TOTAL, SplitSearchOutcomeCounters,
 };
 use crate::root::is_metadata_count_request_with_ast;
 use crate::search_permit_provider::{
@@ -643,17 +643,6 @@ fn leaf_resource_stats_for_split(split_stats: SplitResourceStats) -> LeafResourc
     }
 }
 
-/// Compute the size of the index, store excluded.
-fn compute_index_size(hot_directory: &HotDirectory) -> ByteSize {
-    let size_bytes = hot_directory
-        .get_file_lengths()
-        .iter()
-        .filter(|(path, _)| !path.to_string_lossy().ends_with("store"))
-        .map(|(_, size)| *size)
-        .sum();
-    ByteSize(size_bytes)
-}
-
 /// Cache key under which "this term has no posting list in this split" is recorded in
 /// the shared predicate cache.
 ///
@@ -734,7 +723,7 @@ async fn leaf_search_single_split(
             .set_state(SplitSearchState::Error(SplitSearchErrorKind::CreateReader))
     })?;
 
-    let index_size = compute_index_size(&hot_directory);
+    let index_size = ByteSize(hot_directory.num_bytes_without_doc_store());
     if index_size < search_permit.memory_allocation() {
         search_permit.update_memory_usage(index_size);
     }
@@ -870,10 +859,6 @@ async fn leaf_search_single_split(
         );
     }
     LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES.observe(warmup_size.as_u64() as f64);
-    let _warmup_bytes_guard = GaugeGuard::new(
-        &LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES,
-        warmup_size.as_u64() as f64,
-    );
     search_permit.update_memory_usage(warmup_size);
     search_permit.free_warmup_slot();
 
@@ -1174,9 +1159,13 @@ fn normalize_timestamp_range(
     let is_time_bounded =
         visitor.start_timestamp != Bound::Unbounded || visitor.end_timestamp != Bound::Unbounded;
 
+    // Overflowing split bounds cannot prove a timestamp filter redundant.
     let final_start_timestamp = match (
         visitor.start_timestamp,
-        split.timestamp_start.map(DateTime::from_timestamp_secs),
+        split
+            .timestamp_start
+            .and_then(|timestamp| timestamp.checked_mul(1_000_000_000))
+            .map(DateTime::from_timestamp_nanos),
     ) {
         (Bound::Included(query_ts), Some(split_ts)) => {
             if query_ts > split_ts {
@@ -1195,14 +1184,17 @@ fn normalize_timestamp_range(
         (Bound::Unbounded, Some(_)) => Bound::Unbounded,
         (query_bound, None) => query_bound,
     };
-    let final_end_timestamp = match (visitor.end_timestamp, split.timestamp_end) {
+    // Add one second to turn the inclusive metadata end into an exclusive bound.
+    let split_end_exclusive = split
+        .timestamp_end
+        .and_then(|timestamp| timestamp.checked_add(1))
+        .and_then(|timestamp| timestamp.checked_mul(1_000_000_000))
+        .map(DateTime::from_timestamp_nanos);
+    let final_end_timestamp = match (visitor.end_timestamp, split_end_exclusive) {
         (
             query_bound @ (Bound::Included(query_ts) | Bound::Excluded(query_ts)),
-            Some(split_end),
+            Some(split_end_exclusive),
         ) => {
-            // split.timestamp_end is the truncation of the highest timestamp in the split,
-            // so the actual known bound for the split is split.timestamp_end+1 (exclusive)
-            let split_end_exclusive = DateTime::from_timestamp_secs(split_end + 1);
             if query_ts < split_end_exclusive {
                 query_bound
             } else {
@@ -2456,16 +2448,10 @@ mod tests {
     use std::ops::Bound;
 
     use async_trait::async_trait;
-    use bytes::BufMut;
     use quickwit_config::{LambdaConfig, SearcherConfig};
-    use quickwit_directories::write_hotcache;
     use quickwit_proto::search::LambdaSingleSplitResult;
-    use rand::RngExt;
     use tantivy::TantivyDocument;
-    use tantivy::directory::RamDirectory;
-    use tantivy::schema::{
-        BytesOptions, FieldEntry, Schema, TextFieldIndexing, TextOptions, Value,
-    };
+    use tantivy::schema::Schema;
 
     use super::*;
     use crate::LambdaLeafSearchInvoker;
@@ -2535,6 +2521,56 @@ mod tests {
             upper_bound: upper_bound.map(Into::into),
         }
         .into()
+    }
+
+    #[test]
+    fn test_normalize_timestamp_range_preserves_filters_on_split_bound_overflow() {
+        for (start, end) in [
+            (-9_223_372_037, 1_800_000_000),
+            (0, 9_223_372_037),
+            (0, 9_223_372_036), // The exclusive end overflows after adding one second.
+            (i64::MIN, 1_800_000_000),
+            (0, i64::MAX),
+        ] {
+            let split = SplitIdAndFooterOffsets {
+                timestamp_start: Some(start),
+                timestamp_end: Some(end),
+                ..Default::default()
+            };
+            for (query_ast, start_timestamp, end_timestamp) in [
+                (QueryAst::MatchAll, None, None),
+                (QueryAst::MatchAll, Some(1_700_000_000), Some(1_700_001_000)),
+                (
+                    timestamp_range(
+                        Bound::Included(1_700_000_000),
+                        Bound::Excluded(1_700_001_000),
+                    ),
+                    None,
+                    None,
+                ),
+            ] {
+                let expected_range = if query_ast == QueryAst::MatchAll && start_timestamp.is_none()
+                {
+                    None
+                } else {
+                    Some(RangeQuery {
+                        field: "timestamp".to_string(),
+                        lower_bound: Bound::Included(1_700_000_000_000_000_000i64.into()),
+                        upper_bound: Bound::Excluded(1_700_001_000_000_000_000i64.into()),
+                    })
+                };
+                assert_normalized_timestamp_range(
+                    SearchRequest {
+                        query_ast: serde_json::to_string(&query_ast).unwrap(),
+                        start_timestamp,
+                        end_timestamp,
+                        ..Default::default()
+                    },
+                    &split,
+                    expected_range,
+                );
+            }
+        }
     }
 
     #[test]
@@ -2909,99 +2945,6 @@ mod tests {
         }
     }
 
-    fn create_tantivy_dir_with_hotcache<'a, V>(
-        field_entry: FieldEntry,
-        field_value: V,
-    ) -> (HotDirectory, usize)
-    where
-        V: Value<'a>,
-    {
-        let field_name = field_entry.name().to_string();
-        let mut schema_builder = Schema::builder();
-        schema_builder.add_field(field_entry);
-        let schema = schema_builder.build();
-
-        let ram_directory = RamDirectory::create();
-        let index = Index::open_or_create(ram_directory.clone(), schema.clone()).unwrap();
-
-        let mut index_writer = index.writer(15_000_000).unwrap();
-        let field = schema.get_field(&field_name).unwrap();
-        let mut new_doc = TantivyDocument::default();
-        new_doc.add_field_value(field, field_value);
-        index_writer.add_document(new_doc).unwrap();
-        index_writer.commit().unwrap();
-
-        let mut hotcache_bytes_writer = Vec::new().writer();
-        write_hotcache(ram_directory.clone(), &mut hotcache_bytes_writer).unwrap();
-        let hotcache_bytes = OwnedBytes::new(hotcache_bytes_writer.into_inner());
-        let hot_directory = HotDirectory::open(ram_directory.clone(), hotcache_bytes).unwrap();
-        (hot_directory, ram_directory.total_mem_usage())
-    }
-
-    #[test]
-    fn test_compute_index_size_without_store() {
-        // We don't want to make assertions on absolute index sizes (it might
-        // change in future Tantivy versions), but rather verify that the store
-        // is properly excluded from the computed size.
-
-        // We use random bytes so that the store can't compress them
-        let mut payload = vec![0u8; 1024];
-        rand::rng().fill(&mut payload[..]);
-
-        let (hotcache_directory_stored_payload, directory_size_stored_payload) =
-            create_tantivy_dir_with_hotcache(
-                FieldEntry::new_bytes("payload".to_string(), BytesOptions::default().set_stored()),
-                &payload,
-            );
-        let size_with_stored_payload =
-            compute_index_size(&hotcache_directory_stored_payload).as_u64();
-
-        let (hotcache_directory_index_only, directory_size_index_only) =
-            create_tantivy_dir_with_hotcache(
-                FieldEntry::new_bytes("payload".to_string(), BytesOptions::default()),
-                &payload,
-            );
-        let size_index_only = compute_index_size(&hotcache_directory_index_only).as_u64();
-
-        assert!(directory_size_stored_payload > directory_size_index_only + 1000);
-        assert!(size_with_stored_payload.abs_diff(size_index_only) < 10);
-    }
-
-    #[test]
-    fn test_compute_index_size_varies_with_data() {
-        // We don't want to make assertions on absolute index sizes (it might
-        // change in future Tantivy versions), but rather verify that an index
-        // with more data is indeed bigger.
-
-        let indexing_options =
-            TextOptions::default().set_indexing_options(TextFieldIndexing::default());
-
-        let (hotcache_directory_larger, directory_size_larger) = create_tantivy_dir_with_hotcache(
-            FieldEntry::new_text("text".to_string(), indexing_options.clone()),
-            "Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium \
-             doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore \
-             veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam \
-             voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur \
-             magni dolores eos qui ratione voluptatem sequi nesciunt. Neque porro quisquam est, \
-             qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non \
-             numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat \
-             voluptatem. Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis \
-             suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur? Quis autem vel eum \
-             iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae consequatur, \
-             vel illum qui dolorem eum fugiat quo voluptas nulla pariatur?",
-        );
-        let larger_size = compute_index_size(&hotcache_directory_larger).as_u64();
-
-        let (hotcache_directory_smaller, directory_size_smaller) = create_tantivy_dir_with_hotcache(
-            FieldEntry::new_text("text".to_string(), indexing_options),
-            "hi",
-        );
-        let smaller_size = compute_index_size(&hotcache_directory_smaller).as_u64();
-
-        assert!(directory_size_larger > directory_size_smaller + 100);
-        assert!(larger_size > smaller_size + 100);
-    }
-
     /// Builds a single-segment in-RAM searcher with one text field, one document
     /// per provided value.
     fn ram_searcher_with_text(field_name: &str, docs: &[&str]) -> (Searcher, Field) {
@@ -3295,6 +3238,66 @@ mod tests {
         let result = super::schedule_search_tasks(Vec::new(), &searcher_context, 1.0, 1).await;
         assert!(result.local_search_tasks.is_empty());
         assert!(result.offloaded_search_tasks.is_empty());
+    }
+
+    #[test]
+    fn test_can_split_do_better_with_outward_rounded_metadata() {
+        use quickwit_indexing::merge_policy::{MergePolicy, NopMergePolicy};
+        use quickwit_indexing::models::{SplitAttrs, create_split_metadata};
+        use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId, SplitId};
+
+        let merge_policy: Arc<dyn MergePolicy> = Arc::new(NopMergePolicy);
+        for (start_ns, end_ns, worst_ns) in [
+            (1_601_100_000_000, 1_601_900_000_000, 1_601_758_000_000),
+            (-1_900_000_000, -1_100_000_000, -1_500_000_000),
+            (-600_000_000, -100_000_000, -500_000_000),
+        ] {
+            let split_attrs = SplitAttrs {
+                node_id: NodeId::from_str("test-node"),
+                index_uid: IndexUid::new_with_random_ulid("test-index"),
+                source_id: "test-source".to_string(),
+                doc_mapping_uid: DocMappingUid::default(),
+                split_id: SplitId::new(),
+                partition_id: 0,
+                num_docs: 2,
+                uncompressed_docs_size_in_bytes: 0,
+                time_range: Some(
+                    DateTime::from_timestamp_nanos(start_ns)
+                        ..=DateTime::from_timestamp_nanos(end_ns),
+                ),
+                replaced_split_ids: Vec::new(),
+                delete_opstamp: 0,
+                num_merge_ops: 0,
+            };
+            let metadata =
+                create_split_metadata(&merge_policy, None, &split_attrs, Default::default(), 0..0);
+            let split = crate::extract_split_and_footer_offsets(&metadata);
+            let hit = |timestamp_ns| PartialHit {
+                sort_value: Some(quickwit_proto::search::SortByValue {
+                    sort_value: Some(SortValue::I64(timestamp_ns)),
+                }),
+                ..Default::default()
+            };
+
+            // A split with a better document in the same second must not be pruned.
+            for mut pruning in [
+                CanSplitDoBetter::SplitTimestampHigher {
+                    timestamp: None,
+                    split_id_excluded_from_pruning: None,
+                },
+                CanSplitDoBetter::FindTraceIdsAggregation(None),
+            ] {
+                pruning.record_new_worst_hit(&hit(worst_ns));
+                assert!(pruning.should_collect_hits(&split));
+                pruning.record_new_worst_hit(&hit(end_ns + 2_000_000_000));
+                assert!(!pruning.should_collect_hits(&split));
+            }
+            let mut ascending = CanSplitDoBetter::SplitTimestampLower(None);
+            ascending.record_new_worst_hit(&hit(worst_ns));
+            assert!(ascending.should_collect_hits(&split));
+            ascending.record_new_worst_hit(&hit(start_ns - 2_000_000_000));
+            assert!(!ascending.should_collect_hits(&split));
+        }
     }
 
     mod proptest_greedy_batch {

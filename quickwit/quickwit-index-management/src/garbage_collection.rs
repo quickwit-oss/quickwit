@@ -28,11 +28,11 @@ use quickwit_metastore::{
 };
 use quickwit_metrics::Counter;
 use quickwit_proto::metastore::{
-    DeleteSplitsRequest, ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
-    MetastoreService, MetastoreServiceClient,
+    DeleteSplitsRequest, ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreService,
+    MetastoreServiceClient,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
-use quickwit_storage::{BulkDeleteError, Storage};
+use quickwit_storage::Storage;
 use thiserror::Error;
 use time::OffsetDateTime;
 use tracing::{error, instrument};
@@ -66,9 +66,7 @@ impl RecordGcMetrics for Option<GcMetrics> {
 #[error("failed to delete splits from storage and/or metastore")]
 pub struct DeleteSplitsError {
     successes: Vec<SplitInfo>,
-    storage_error: Option<BulkDeleteError>,
     storage_failures: Vec<SplitInfo>,
-    metastore_error: Option<MetastoreError>,
     metastore_failures: Vec<SplitInfo>,
 }
 
@@ -442,7 +440,6 @@ pub async fn delete_splits_from_storage_and_metastore(
         progress.record_progress();
     }
     let mut successes = Vec::with_capacity(split_infos.len());
-    let mut storage_error: Option<BulkDeleteError> = None;
     let mut storage_failures = Vec::new();
 
     match delete_result {
@@ -463,11 +460,11 @@ pub async fn delete_splits_from_storage_and_metastore(
                 .collect::<Vec<_>>();
             error!(
                 error=?bulk_delete_error.error,
+                failures=?PrettySample::new(&bulk_delete_error.failures, 5),
                 index_id=index_uid.index_id,
                 "failed to delete split file(s) {:?} from storage",
                 PrettySample::new(&failed_split_paths, 5),
             );
-            storage_error = Some(bulk_delete_error);
         }
     };
     if !successes.is_empty() {
@@ -491,9 +488,7 @@ pub async fn delete_splits_from_storage_and_metastore(
             );
             let delete_splits_error = DeleteSplitsError {
                 successes: Vec::new(),
-                storage_error,
                 storage_failures,
-                metastore_error: Some(metastore_error),
                 metastore_failures: successes,
             };
             return Err(delete_splits_error);
@@ -502,9 +497,7 @@ pub async fn delete_splits_from_storage_and_metastore(
     if !storage_failures.is_empty() {
         let delete_splits_error = DeleteSplitsError {
             successes,
-            storage_error,
             storage_failures,
-            metastore_error: None,
             metastore_failures: Vec::new(),
         };
         return Err(delete_splits_error);
@@ -513,8 +506,8 @@ pub async fn delete_splits_from_storage_and_metastore(
 }
 
 #[cfg(test)]
-#[allow(clippy::result_large_err)] // BulkDeleteError is large; acceptable in mock closures
 mod tests {
+    use std::collections::BTreeMap;
     use std::time::Duration;
 
     use itertools::Itertools;
@@ -525,7 +518,7 @@ mod tests {
         SplitState, StageSplitsRequestExt, metastore_for_test,
     };
     use quickwit_proto::metastore::{
-        CreateIndexRequest, EntityKind, MockMetastoreService, StageSplitsRequest,
+        CreateIndexRequest, EntityKind, MetastoreError, MockMetastoreService, StageSplitsRequest,
     };
     use quickwit_proto::types::IndexUid;
     use quickwit_storage::{
@@ -870,7 +863,7 @@ mod tests {
                     code: Some("AccessDenied".to_string()),
                     ..Default::default()
                 };
-                let failures = HashMap::from_iter([(split_path, delete_failure)]);
+                let failures = BTreeMap::from_iter([(split_path, delete_failure)]);
                 let bulk_delete_error = BulkDeleteError {
                     successes,
                     failures,
@@ -961,7 +954,7 @@ mod tests {
                     code: Some("AccessDenied".to_string()),
                     ..Default::default()
                 };
-                let failures = HashMap::from_iter([(split_path, delete_failure)]);
+                let failures = BTreeMap::from_iter([(split_path, delete_failure)]);
                 let bulk_delete_error = BulkDeleteError {
                     successes,
                     failures,

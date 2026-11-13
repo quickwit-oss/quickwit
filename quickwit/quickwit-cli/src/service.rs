@@ -131,7 +131,7 @@ impl RunCliCommand {
             quickwit_telemetry::start_telemetry_loop(telemetry_info, &node_config.data_dir_path);
         quickwit_telemetry::send_telemetry_event(TelemetryEvent::RunCommand);
         // TODO move in serve quickwit?
-        let runtimes_config = RuntimesConfig::default();
+        let runtimes_config = RuntimesConfig::get();
         start_actor_runtimes(runtimes_config, &node_config.enabled_services)?;
         let shutdown_signal = Box::pin(async {
             select(pin!(listen_interrupt()), pin!(listen_sigterm())).await;

@@ -13,15 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - (Jaeger) Query resource attributes when Jaeger request carries tags
+- A source whose VRL transform no longer compiles, for example after a VRL upgrade, no longer makes its index metadata unreadable, which failed index listing and control plane startup. Transforms are compiled when a source is created or updated and when its indexing pipeline starts
 
 ### Changed
 - Ingest V2 flushes every WAL write to the OS before acknowledging it, instead of keeping the tail of the last write buffered in the process, so acknowledged documents survive an indexer process crash
+- The `quickwit_search_leaf_search_warmup_ongoing_num_bytes` gauge now reports the warmup memory reserved by split searches, including the initial allocation of granted permits, instead of the bytes held in warmup caches once the warmup is done
+- **Breaking**: ingest requests whose body decompresses to more than `ingest_api.max_decompressed_body_size` (default 256 MiB) are now rejected with HTTP 413 `Payload Too Large`. Previously only the *compressed* request size was bounded, so a small highly-compressible payload could inflate to many gigabytes. Affects the Elasticsearch `_bulk`, OpenTelemetry (OTLP), and native ingest endpoints. Split large batches into smaller requests, or raise the limit.
+- **Breaking**: OTLP REST endpoints (`/otlp/v1/logs`, `/otlp/v1/traces`, and their `/{index}/...` variants) now enforce request-size limits (previously unbounded): requests whose body exceeds `ingest_api.max_body_size` (default 10 MiB) on the wire, or `ingest_api.max_decompressed_body_size` (default 256 MiB) after decompression, are rejected with HTTP 413 `Payload Too Large`. Exporters sending large uncompressed batches should enable compression (e.g. gzip or zstd), reduce their batch size, or raise the limits.
+- Ingest endpoints (Elasticsearch `_bulk`, OTLP, native ingest) no longer require a `Content-Length` header: `ingest_api.max_body_size` is enforced while the body is read, so chunked and HTTP/2 requests without the header are accepted instead of being rejected with HTTP 411.
+- Renamed `ingest_api.content_length_limit` to `ingest_api.max_body_size`; the former name is still accepted as a config alias.
+- **Breaking**: `ingest_api.max_decompressed_body_size` must be between `ingest_api.max_body_size` and 4 GiB; node configs outside this range now fail validation at startup. Configs that set `content_length_limit` (or `max_body_size`) above 256 MiB must also raise `max_decompressed_body_size`.
+- **Breaking**: the `metastore` section of the node config is now validated at startup. Node configs with `metastore.postgres.min_connections` greater than `max_connections`, which were previously accepted, now fail to load; set `min_connections` to at most `max_connections`. Invalid PostgreSQL metastore durations (`acquire_connection_timeout`, `idle_connection_timeout`, `max_connection_lifetime`) are now reported as config errors instead of crashing the metastore during initialization.
 
 ### Deprecated
 
 ### Removed
 
 ### Security
+- Bound the size of decompressed ingest request bodies (`ingest_api.max_decompressed_body_size`, default 256 MiB) so a single decompression-bomb request can no longer exhaust memory. The limit is enforced as the body is inflated, so an oversized payload is never fully decompressed. The limit is per request: to bound total memory across concurrent requests, set `QW_INGEST_MAX_CONCURRENCY` and/or `QW_INGEST_MAX_IN_FLIGHT`.
 
 --->
 

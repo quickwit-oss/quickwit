@@ -148,7 +148,7 @@ impl SplitsUpdateSender {
                 {
                     bail!(
                         "failed to send upload split `{:?}`. the publisher is probably dead",
-                        &publisher_message
+                        publisher_message
                     );
                 }
             }
@@ -256,6 +256,14 @@ impl Actor for Uploader {
 
     fn name(&self) -> String {
         format!("{:?}", self.uploader_type)
+    }
+
+    fn task_metrics_label(&self) -> &'static str {
+        match self.uploader_type {
+            UploaderType::IndexUploader => "index_uploader",
+            UploaderType::MergeUploader => "merge_uploader",
+            UploaderType::DeleteUploader => "delete_uploader",
+        }
     }
 }
 

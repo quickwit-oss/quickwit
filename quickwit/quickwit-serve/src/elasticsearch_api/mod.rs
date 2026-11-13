@@ -68,14 +68,16 @@ pub fn elastic_api_handlers(
     enable_ingest_v1: bool,
     enable_ingest_v2: bool,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    let ingest_content_length_limit = node_config.ingest_api_config.content_length_limit;
+    let max_body_size = node_config.ingest_api_config.max_body_size;
+    let max_decompressed_body_size = node_config.ingest_api_config.max_decompressed_body_size;
     es_compat_cluster_info_handler(node_config.clone(), BuildInfo::get())
         .or(es_compat_nodes_handler(node_config.clone()))
         .or(es_compat_search_handler(search_service.clone()))
         .or(es_compat_bulk_handler(
             ingest_service.clone(),
             ingest_router.clone(),
-            ingest_content_length_limit,
+            max_body_size,
+            max_decompressed_body_size,
             enable_ingest_v1,
             enable_ingest_v2,
         ))
@@ -83,7 +85,8 @@ pub fn elastic_api_handlers(
         .or(es_compat_index_bulk_handler(
             ingest_service,
             ingest_router,
-            ingest_content_length_limit,
+            max_body_size,
+            max_decompressed_body_size,
             enable_ingest_v1,
             enable_ingest_v2,
         ))
@@ -357,7 +360,6 @@ mod tests {
             es_error
                 .error
                 .reason
-                .unwrap()
                 .starts_with("Invalid argument: failed to parse request header")
         );
     }
@@ -397,7 +399,6 @@ mod tests {
             es_error
                 .error
                 .reason
-                .unwrap()
                 .starts_with("Invalid argument: failed to parse request body")
         );
     }
@@ -436,7 +437,6 @@ mod tests {
             es_error
                 .error
                 .reason
-                .unwrap()
                 .starts_with("Invalid argument: expect request body after request header")
         );
     }
@@ -473,7 +473,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let es_error: ElasticsearchError = serde_json::from_slice(resp.body()).unwrap();
         assert_eq!(
-            es_error.error.reason.unwrap(),
+            es_error.error.reason,
             "Invalid argument: `_msearch` request header must define at least one index"
         );
     }

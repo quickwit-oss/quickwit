@@ -609,7 +609,7 @@ mod pulsar_broker_tests {
         checkpoint
             .try_apply_delta(checkpoints!(partition => truncate_to))
             .expect("Create checkpoint");
-        let truncate = SuggestTruncate(checkpoint);
+        let truncate = SuggestTruncate::new(checkpoint);
         source_handle
             .mailbox()
             .send_message(truncate)

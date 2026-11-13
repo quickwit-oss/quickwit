@@ -523,21 +523,41 @@ quickwit_request_duration_secs:
   kind: histogram
   description: Response time in seconds
 quickwit_runtime_tokio_scheduled_tasks:
-  module: quickwit_common::runtimes
+  module: quickwit_common::runtimes::metrics
   kind: gauge
-  description: The total number of tasks currently scheduled in workers' local queues.
-quickwit_runtime_tokio_worker_busy_duration_milliseconds_total:
-  module: quickwit_common::runtimes
+  description: Runnable tasks in local worker queues, excluding the global queue and LIFO slots.
+quickwit_runtime_tokio_task_idle_duration_microseconds_total:
+  module: quickwit_common::runtimes::metrics
   kind: counter
-  description: ' The total amount of time worker threads were busy.'
-quickwit_runtime_tokio_worker_busy_ratio:
-  module: quickwit_common::runtimes
-  kind: gauge
-  description: The ratio of time worker threads were busy since the last time runtime metrics were collected.
+  description: Cumulative time tasks of this type spent idle, waiting to be woken up by an external event.
+quickwit_runtime_tokio_task_poll_duration_microseconds_total:
+  module: quickwit_common::runtimes::metrics
+  kind: counter
+  description: Wall-clock time spent polling instrumented futures, excluding separately spawned tasks.
+quickwit_runtime_tokio_task_polls_total:
+  module: quickwit_common::runtimes::metrics
+  kind: counter
+  description: Number of times tasks of this type were polled.
+quickwit_runtime_tokio_task_scheduled_duration_microseconds_total:
+  module: quickwit_common::runtimes::metrics
+  kind: counter
+  description: Cumulative time tasks of this type spent waiting for a worker thread after being woken up.
+quickwit_runtime_tokio_task_schedules_total:
+  module: quickwit_common::runtimes::metrics
+  kind: counter
+  description: Number of observed wake-to-poll intervals.
+quickwit_runtime_tokio_task_slow_polls_total:
+  module: quickwit_common::runtimes::metrics
+  kind: counter
+  description: Number of polls lasting at least 50 microseconds.
+quickwit_runtime_tokio_worker_busy_duration_milliseconds_total:
+  module: quickwit_common::runtimes::metrics
+  kind: counter
+  description: Cumulative busy time summed over all runtime workers.
 quickwit_runtime_tokio_worker_threads:
-  module: quickwit_common::runtimes
+  module: quickwit_common::runtimes::metrics
   kind: gauge
-  description: The number of worker threads used by the runtime.
+  description: Number of runtime worker threads.
 quickwit_search_job_assigned_total:
   module: quickwit_search::metrics
   kind: counter
@@ -573,7 +593,7 @@ quickwit_search_leaf_search_targeted_splits:
 quickwit_search_leaf_search_warmup_ongoing_num_bytes:
   module: quickwit_search::metrics
   kind: gauge
-  description: Total bytes currently held in warmup caches across all in-flight split searches.
+  description: Warmup memory currently reserved by split searches, including the initial allocation of granted permits.
 quickwit_search_root_search_request_duration_seconds:
   module: quickwit_search::metrics
   kind: histogram

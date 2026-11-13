@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -693,6 +693,7 @@ impl S3CompatibleObjectStorage {
         Ok(())
     }
 
+    #[allow(clippy::result_large_err)] // AWS SDK error type
     async fn get_object(
         &self,
         path: &Path,
@@ -742,7 +743,7 @@ impl S3CompatibleObjectStorage {
     /// <https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObject.html>
     async fn bulk_delete_single(&self, paths: &[&Path]) -> Result<(), BulkDeleteError> {
         let mut successes = Vec::with_capacity(paths.len());
-        let mut failures = HashMap::new();
+        let mut failures = BTreeMap::new();
 
         let futures = paths
             .iter()
@@ -795,7 +796,7 @@ impl S3CompatibleObjectStorage {
 
         let mut error = None;
         let mut successes = Vec::with_capacity(paths.len());
-        let mut failures = HashMap::new();
+        let mut failures = BTreeMap::new();
         let mut unattempted = Vec::new();
 
         let mut delete_requests_it = delete_requests.iter();
