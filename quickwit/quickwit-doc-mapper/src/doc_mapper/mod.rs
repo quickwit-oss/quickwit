@@ -88,6 +88,8 @@ pub enum AutomatonWarmup {
     /// Load postings without caching hits. Calculated-field prefilters match any indexed value
     /// in a multivalued column, but the predicate evaluates only the first value. Prefilter hits
     /// therefore cannot be cached as final calculated-field predicate hits.
+    /// TODO: Revisit calculated-field multivalue behavior to merge the postings-only and
+    /// hitset-caching code paths.
     PostingsOnly,
     /// Also cache final predicate hits under these serialized predicate keys.
     CacheHits(HashSet<String>),
