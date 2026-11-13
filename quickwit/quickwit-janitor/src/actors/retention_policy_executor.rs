@@ -56,13 +56,7 @@ struct Execute {
 /// in a cache and periodically update this list.
 pub struct RetentionPolicyExecutor {
     metastore: MetastoreServiceClient,
-    /// A map of index UID to index config that are managed by this executor.
-    /// This act as local cache that is periodically updated while taking into
-    /// account deleted indexes, updated or removed retention policy on indexes.
-    ///
-    /// The key is the full index UID: an index that is deleted and recreated under the same
-    /// `index_id` is a new incarnation, and queued executions from the previous incarnation
-    /// must not keep rescheduling themselves.
+    /// Caches retention configs by index UID to distinguish recreated indexes.
     index_configs: HashMap<IndexUid, IndexConfig>,
     counters: RetentionPolicyExecutorCounters,
 }
