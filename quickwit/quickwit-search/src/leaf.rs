@@ -320,8 +320,11 @@ async fn run_cancellable(
 /// the (immutable, query-independent) absence — see [`term_absence_cache_key`]. It only ever
 /// fires for a single-segment split, where "absent in the split" is sound.
 ///
-/// `priority` schedules automaton compilation, term enumeration, postings decoding, and hitset
-/// compression. Callers without a request priority to forward pass [`Priority::default`].
+/// `priority` schedules the CPU-intensive part of warmup. Warmup is mostly IO-bound, but
+/// resolving automatons walks the term dictionary on the search thread pool, so the originating
+/// request's priority has to be forwarded for that work to be scheduled against the rest of the
+/// queue. Callers without a request priority to forward pass [`Priority::default`].
+/// Automaton compilation, postings decoding, and hitset compression also use this priority.
 ///
 /// The warmup plan determines whether to cache complete individual regex/wildcard hitsets
 /// in `predicate_cache` under `split_id`, so execution can avoid another term enumeration.
