@@ -23,7 +23,7 @@ use quickwit_metrics::{GaugeGuard, label_values};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::types::{DocMappingUid, IndexUid, SplitId};
 use tantivy::IndexBuilder;
-use tantivy::directory::{MmapDirectory, RamDirectory};
+use tantivy::directory::{Advice, RamDirectory};
 use tracing::{Span, error, instrument};
 
 use crate::controlled_directory::ControlledDirectory;
@@ -31,6 +31,7 @@ use crate::docs_clustering::DocIdClusterer;
 use crate::merge_policy::MergeTask;
 use crate::metrics::INDEX_SOURCE;
 use crate::models::{PublishLock, SplitAttrs};
+use crate::no_fsync_mmap_directory::open_split_scratch_directory;
 
 pub struct IndexedSplitBuilder {
     pub split_attrs: SplitAttrs,
@@ -99,8 +100,10 @@ impl IndexedSplitBuilder {
         let use_ram_directory =
             quickwit_common::get_bool_from_env_cached!("QW_ENABLE_IN_MEMORY_INDEXING", false);
         let ram_directory_opt = use_ram_directory.then(RamDirectory::default);
-        let mmap_directory = MmapDirectory::open(split_scratch_directory.path())?;
-        let controlled_directory = ControlledDirectory::new(Box::new(mmap_directory), io_controls);
+        let split_scratch_mmap_directory =
+            open_split_scratch_directory(split_scratch_directory.path(), Advice::Normal)?;
+        let controlled_directory =
+            ControlledDirectory::new(split_scratch_mmap_directory, io_controls);
         let indexing_directory: Box<dyn tantivy::Directory> =
             if let Some(ram_directory) = &ram_directory_opt {
                 Box::new(ram_directory.clone())
@@ -267,7 +270,7 @@ mod tests {
         index_writer.add_document(doc!(id => 42u64))?;
         let split_scratch_directory = TempDirectory::for_test();
         let controlled_directory = ControlledDirectory::new(
-            Box::new(MmapDirectory::open(split_scratch_directory.path())?),
+            open_split_scratch_directory(split_scratch_directory.path(), Advice::Normal)?,
             IoControls::default(),
         );
         // Select RAM directly: the production environment flag is cached process-wide.

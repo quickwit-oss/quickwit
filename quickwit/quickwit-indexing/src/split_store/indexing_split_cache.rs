@@ -32,6 +32,7 @@ use tracing::{debug, error, warn};
 use ulid::Ulid;
 
 use super::SplitStoreQuota;
+use crate::no_fsync_mmap_directory::is_split_scratch_fsync_enabled;
 
 // TODO Make this configurable.
 const SPLIT_MAX_AGE: Duration = Duration::from_hours(48); // 2 days
@@ -68,6 +69,22 @@ async fn num_bytes_in_folder(directory_path: &Path) -> io::Result<ByteSize> {
         }
     }
     Ok(ByteSize(total_bytes))
+}
+
+/// Syncs the files held in a given directory, then the directory itself.
+async fn sync_folder(directory_path: &Path) -> io::Result<()> {
+    let mut read_dir = tokio::fs::read_dir(directory_path).await?;
+
+    while let Some(dir_entry) = read_dir.next_entry().await? {
+        if dir_entry.file_type().await?.is_file() {
+            let file = tokio::fs::File::open(dir_entry.path()).await?;
+            file.sync_data().await?;
+        }
+    }
+    tokio::fs::File::open(directory_path)
+        .await?
+        .sync_data()
+        .await
 }
 
 /// Recovers the creation time of a split from its id.
@@ -552,6 +569,12 @@ impl IndexingSplitCache {
         split_path: &Path,
     ) -> io::Result<bool> {
         assert!(split_path.is_dir());
+        // When scratch fsync is disabled, split files may not be durable yet. The cache is
+        // reloaded from disk after a restart, so we sync them here to avoid caching truncated or
+        // corrupted splits after a crash.
+        if !is_split_scratch_fsync_enabled() {
+            sync_folder(split_path).await?;
+        }
         let mut inner = self.inner.lock().await;
         inner.move_into_cache(split_id, split_path).await
     }
