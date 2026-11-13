@@ -35,6 +35,9 @@ pub enum RuntimeType {
     /// io operations.
     ///
     /// Tasks are allowed to block for an arbitrary amount of time.
+    ///
+    /// This runtime must stay multi-threaded: some actors call
+    /// `tokio::task::block_in_place`, which panics on a current-thread runtime.
     Blocking,
 
     /// The non-blocking runtime is closer to what one would expect from
@@ -227,6 +230,12 @@ mod tests {
         let runtime_default = RuntimesConfig::get();
         assert!(runtime_default.num_threads_non_blocking <= runtime_default.num_threads_blocking);
         assert!(runtime_default.num_threads_non_blocking <= 2);
+    }
+
+    #[test]
+    fn test_blocking_runtime_is_multi_threaded() {
+        let runtime_flavor = RuntimeType::Blocking.get_runtime_handle().runtime_flavor();
+        assert_eq!(runtime_flavor, tokio::runtime::RuntimeFlavor::MultiThread);
     }
 
     #[test]

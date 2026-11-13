@@ -17,6 +17,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::io::{IoControls, Limiter};
 use quickwit_common::runtimes::RuntimeType;
 use tokio::runtime::Handle;
+use tokio::task::block_in_place;
 use tracing::instrument;
 
 use crate::actors::Packager;
@@ -90,7 +91,10 @@ impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
             split_builder
                 .controlled_directory
                 .set_io_controls(io_controls);
-            let split = split_builder.finalize()?;
+            // `finalize` can block for seconds. `block_in_place` hands this worker off to another
+            // thread so its queued tasks keep running. Requires a multi-threaded runtime (see
+            // `RuntimeType::Blocking`).
+            let split = block_in_place(|| split_builder.finalize())?;
             splits.push(split);
         }
         let indexed_split_batch = IndexedSplitBatch {
