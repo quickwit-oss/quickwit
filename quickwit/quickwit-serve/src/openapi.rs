@@ -177,6 +177,39 @@ mod openapi_schema_tests {
         resolve_openapi_schemas(&docs).expect("All schemas should be resolved.");
     }
 
+    #[test]
+    fn elasticsearch_paths_are_documented() {
+        let docs = build_docs();
+        for path in [
+            "/api/v1/_elastic",
+            "/api/v1/_elastic/_search",
+            "/api/v1/_elastic/_bulk",
+            "/api/v1/_elastic/{index}/_bulk",
+            "/api/v1/_elastic/{index}/_field_caps",
+            "/api/v1/_elastic/_field_caps",
+            "/api/v1/_elastic/_resolve/index/{index}",
+            "/api/v1/_elastic/{index}/_count",
+            "/api/v1/_elastic/{index}",
+            "/api/v1/_elastic/{index}/_stats",
+            "/api/v1/_elastic/_stats",
+            "/api/v1/_elastic/_cluster/health",
+            "/api/v1/_elastic/_cat/indices/{index}",
+            "/api/v1/_elastic/_cat/indices",
+            "/api/v1/_elastic/{index}/_search",
+            "/api/v1/_elastic/_msearch",
+            "/api/v1/_elastic/_search/scroll",
+            "/api/v1/_elastic/_nodes/http",
+            "/api/v1/_elastic/{index}/_search_shards",
+            "/api/v1/_elastic/_aliases",
+            "/api/v1/_elastic/{index}/_mapping",
+        ] {
+            assert!(
+                docs.paths.paths.contains_key(path),
+                "missing Elasticsearch-compatible path {path}"
+            );
+        }
+    }
+
     fn resolve_openapi_schemas(openapi: &utoipa::openapi::OpenApi) -> anyhow::Result<()> {
         let schemas_lookup = if let Some(components) = &openapi.components {
             resolve_component_schemas(components)?

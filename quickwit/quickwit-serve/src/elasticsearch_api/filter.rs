@@ -25,16 +25,40 @@ use super::model::{
 use crate::Body;
 use crate::decompression::get_body_bytes;
 use crate::elasticsearch_api::model::{
-    ElasticBulkOptions, ScrollQueryParams, SearchBody, SearchQueryParams,
+    ElasticBulkOptions, ElasticRefresh, ScrollQueryParams, SearchBody, SearchQueryParams,
 };
 use crate::search_api::{extract_index_id_patterns, extract_index_id_patterns_default};
 
 const BODY_LENGTH_LIMIT: ByteSize = ByteSize::mib(1);
 
-// TODO: Make all elastic endpoint models `utoipa` compatible
-// and register them here.
 #[derive(utoipa::OpenApi)]
-#[openapi(paths(elastic_cluster_info_filter,))]
+#[openapi(
+    paths(
+        elastic_cluster_info_filter,
+        elasticsearch_filter,
+        elastic_bulk_filter,
+        elastic_index_bulk_filter,
+        elastic_index_field_capabilities_filter,
+        elastic_field_capabilities_filter,
+        elastic_resolve_index_filter,
+        elastic_index_count_filter,
+        elastic_delete_index_filter,
+        elastic_index_stats_filter,
+        elastic_stats_filter,
+        elastic_cluster_health_filter,
+        elastic_index_cat_indices_filter,
+        elastic_cat_indices_filter,
+        elastic_index_search_filter,
+        elastic_multi_search_filter,
+        elastic_scroll_filter,
+        elastic_nodes_filter,
+        elastic_search_shards_filter,
+        elastic_delete_scroll_filter,
+        elastic_aliases_filter,
+        elastic_index_mapping_filter,
+    ),
+    components(schemas(ElasticRefresh))
+)]
 pub struct ElasticCompatibleApi;
 
 #[utoipa::path(get, tag = "Cluster Info", path = "/_elastic")]
@@ -45,7 +69,7 @@ pub(crate) fn elastic_cluster_info_filter() -> impl Filter<Extract = (), Error =
         .and(warp::path::end())
 }
 
-#[utoipa::path(get, tag = "Search", path = "/_search")]
+#[utoipa::path(get, tag = "Search", path = "/_elastic/_search")]
 pub(crate) fn elasticsearch_filter()
 -> impl Filter<Extract = (SearchQueryParams,), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_search")
@@ -56,7 +80,7 @@ pub(crate) fn elasticsearch_filter()
 #[utoipa::path(
     post,
     tag = "Ingest",
-    path = "/_bulk",
+    path = "/_elastic/_bulk",
     request_body(content = String, description = "Elasticsearch compatible bulk request body limited to 10MB", content_type = "application/json"),
     responses(
         (status = 200, description = "Successfully ingested documents.", body = IngestResponse)
@@ -80,7 +104,7 @@ pub(crate) fn elastic_bulk_filter(
 #[utoipa::path(
     post,
     tag = "Ingest",
-    path = "/{index}/_bulk",
+    path = "/_elastic/{index}/_bulk",
     request_body(content = String, description = "Elasticsearch compatible bulk request body limited to 10MB", content_type = "application/json"),
     responses(
         (status = 200, description = "Successfully ingested documents.", body = IngestResponse)
@@ -124,7 +148,7 @@ fn json_or_empty<T: DeserializeOwned + Send + Default>()
         .unify()
 }
 
-#[utoipa::path(get, tag = "Metadata", path = "/{index}/_field_caps")]
+#[utoipa::path(get, tag = "Metadata", path = "/_elastic/{index}/_field_caps")]
 pub(crate) fn elastic_index_field_capabilities_filter() -> impl Filter<
     Extract = (
         Vec<String>,
@@ -140,7 +164,7 @@ pub(crate) fn elastic_index_field_capabilities_filter() -> impl Filter<
         .and(json_or_empty())
 }
 
-#[utoipa::path(get, tag = "Metadata", path = "/_field_caps")]
+#[utoipa::path(get, tag = "Metadata", path = "/_elastic/_field_caps")]
 pub(crate) fn elastic_field_capabilities_filter() -> impl Filter<
     Extract = (
         Vec<String>,
@@ -156,7 +180,7 @@ pub(crate) fn elastic_field_capabilities_filter() -> impl Filter<
         .and(json_or_empty())
 }
 
-#[utoipa::path(get, tag = "Metadata", path = "/_resolve/index/{index}")]
+#[utoipa::path(get, tag = "Metadata", path = "/_elastic/_resolve/index/{index}")]
 pub(crate) fn elastic_resolve_index_filter()
 -> impl Filter<Extract = (Vec<String>,), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_resolve" / "index" / String)
@@ -164,7 +188,7 @@ pub(crate) fn elastic_resolve_index_filter()
         .and(warp::get())
 }
 
-#[utoipa::path(get, tag = "Count", path = "/{index}/_count")]
+#[utoipa::path(get, tag = "Count", path = "/_elastic/{index}/_count")]
 pub(crate) fn elastic_index_count_filter()
 -> impl Filter<Extract = (Vec<String>, SearchQueryParamsCount, SearchBody), Error = Rejection> + Clone
 {
@@ -175,7 +199,7 @@ pub(crate) fn elastic_index_count_filter()
         .and(json_or_empty())
 }
 
-#[utoipa::path(delete, tag = "Indexes", path = "/{index}")]
+#[utoipa::path(delete, tag = "Indexes", path = "/_elastic/{index}")]
 pub(crate) fn elastic_delete_index_filter()
 -> impl Filter<Extract = (Vec<String>, DeleteQueryParams), Error = Rejection> + Clone {
     warp::path!("_elastic" / String)
@@ -185,7 +209,7 @@ pub(crate) fn elastic_delete_index_filter()
 }
 
 // No support for any query parameters for now.
-#[utoipa::path(get, tag = "Search", path = "/{index}/_stats")]
+#[utoipa::path(get, tag = "Search", path = "/_elastic/{index}/_stats")]
 pub(crate) fn elastic_index_stats_filter()
 -> impl Filter<Extract = (Vec<String>,), Error = Rejection> + Clone {
     warp::path!("_elastic" / String / "_stats")
@@ -193,18 +217,18 @@ pub(crate) fn elastic_index_stats_filter()
         .and(warp::get())
 }
 
-#[utoipa::path(get, tag = "Search", path = "/_stats")]
+#[utoipa::path(get, tag = "Search", path = "/_elastic/_stats")]
 pub(crate) fn elastic_stats_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_stats").and(warp::get())
 }
 
-#[utoipa::path(get, tag = "Search", path = "/_cluster/health")]
+#[utoipa::path(get, tag = "Search", path = "/_elastic/_cluster/health")]
 pub(crate) fn elastic_cluster_health_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone
 {
     warp::path!("_elastic" / "_cluster" / "health").and(warp::get())
 }
 
-#[utoipa::path(get, tag = "Search", path = "/_cat/indices/{index}")]
+#[utoipa::path(get, tag = "Search", path = "/_elastic/_cat/indices/{index}")]
 pub(crate) fn elastic_index_cat_indices_filter()
 -> impl Filter<Extract = (Vec<String>, CatIndexQueryParams), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_cat" / "indices" / String)
@@ -213,7 +237,7 @@ pub(crate) fn elastic_index_cat_indices_filter()
         .and(warp::query())
 }
 
-#[utoipa::path(get, tag = "Search", path = "/_cat/indices")]
+#[utoipa::path(get, tag = "Search", path = "/_elastic/_cat/indices")]
 pub(crate) fn elastic_cat_indices_filter()
 -> impl Filter<Extract = (CatIndexQueryParams,), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_cat" / "indices")
@@ -221,7 +245,7 @@ pub(crate) fn elastic_cat_indices_filter()
         .and(warp::query())
 }
 
-#[utoipa::path(get, tag = "Search", path = "/{index}/_search")]
+#[utoipa::path(get, tag = "Search", path = "/_elastic/{index}/_search")]
 pub(crate) fn elastic_index_search_filter()
 -> impl Filter<Extract = (Vec<String>, SearchQueryParams, SearchBody), Error = Rejection> + Clone {
     warp::path!("_elastic" / String / "_search")
@@ -231,7 +255,7 @@ pub(crate) fn elastic_index_search_filter()
         .and(json_or_empty())
 }
 
-#[utoipa::path(post, tag = "Search", path = "/_msearch")]
+#[utoipa::path(post, tag = "Search", path = "/_elastic/_msearch")]
 pub(crate) fn elastic_multi_search_filter()
 -> impl Filter<Extract = (Bytes, MultiSearchQueryParams), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_msearch")
@@ -251,16 +275,18 @@ fn merge_scroll_body_params(
     }
 }
 
+#[utoipa::path(get, tag = "Cluster Info", path = "/_elastic/_nodes/http")]
 pub(crate) fn elastic_nodes_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_nodes" / "http").and(warp::get())
 }
 
+#[utoipa::path(get, tag = "Search", path = "/_elastic/{index}/_search_shards")]
 pub(crate) fn elastic_search_shards_filter()
 -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
     warp::path!("_elastic" / String / "_search_shards").and(warp::get())
 }
 
-#[utoipa::path(post, tag = "Search", path = "/_search/scroll")]
+#[utoipa::path(post, tag = "Search", path = "/_elastic/_search/scroll")]
 pub(crate) fn elastic_scroll_filter()
 -> impl Filter<Extract = (ScrollQueryParams,), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_search" / "scroll")
@@ -275,15 +301,18 @@ pub(crate) fn elastic_scroll_filter()
         )
 }
 
+#[utoipa::path(delete, tag = "Search", path = "/_elastic/_search/scroll")]
 pub(crate) fn elastic_delete_scroll_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone
 {
     warp::path!("_elastic" / "_search" / "scroll").and(warp::delete())
 }
 
+#[utoipa::path(get, tag = "Metadata", path = "/_elastic/_aliases")]
 pub(crate) fn elastic_aliases_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_aliases").and(warp::get())
 }
 
+#[utoipa::path(get, tag = "Metadata", path = "/_elastic/{index}/_mapping")]
 pub(crate) fn elastic_index_mapping_filter()
 -> impl Filter<Extract = (String, IndexMappingQueryParams), Error = Rejection> + Clone {
     warp::path!("_elastic" / String / "_mapping")
