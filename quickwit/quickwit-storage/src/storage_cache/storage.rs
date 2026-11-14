@@ -15,12 +15,14 @@
 use std::io;
 use std::ops::Range;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use async_trait::async_trait;
 use feuer::GetOrFetchError;
+use quickwit_common::get_from_env;
 use quickwit_common::uri::Uri;
 use tokio::io::AsyncRead;
+use tokio::sync::Semaphore;
 use tracing::error;
 
 use crate::stable_deref_bytes::into_owned_bytes;
@@ -28,6 +30,16 @@ use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, OwnedBytes, PutPayload, Storage, StorageError, StorageErrorKind, StorageResult,
 };
+
+static FALLTHROUGH_MIN_BYTES: LazyLock<usize> =
+    LazyLock::new(|| get_from_env("QW_STORAGE_CACHE_FALLTHROUGH_MIN_BYTES", 20_000_000, false));
+static FALLTHROUGH_DOWNLOADS: LazyLock<Semaphore> = LazyLock::new(|| {
+    Semaphore::new(get_from_env(
+        "QW_STORAGE_CACHE_FALLTHROUGH_MAX_IN_FLIGHT",
+        32,
+        false,
+    ))
+});
 
 /// Read-only storage decorator caching exact slices of immutable split objects.
 #[derive(Debug)]
@@ -83,12 +95,24 @@ impl Storage for FeuerStorage {
         let storage = self.inner.clone();
         let path = path.to_owned();
         let download_size = byte_range.len();
+        let permit_slot = Arc::new(Mutex::new(None));
+        let decision_slot = permit_slot.clone();
         self.cache
             .get_or_fetch_with_disk_fallthrough(
                 &cache_key,
-                // Under disk queue pressure, prefer downloading ranges of at least 20 MB.
-                move || download_size >= 20_000_000,
+                move || {
+                    if download_size < *FALLTHROUGH_MIN_BYTES {
+                        return false;
+                    }
+                    let Ok(permit) = FALLTHROUGH_DOWNLOADS.try_acquire() else {
+                        return false;
+                    };
+                    *decision_slot.lock().unwrap() = Some(permit);
+                    true
+                },
                 move || async move {
+                    // Ordinary misses have no fallthrough permit.
+                    let _permit = permit_slot.lock().unwrap().take();
                     let mut buffer = cache.allocate_buffer(download_size)?;
                     storage
                         .get_slice_into(&path, byte_range, buffer.as_mut())
@@ -160,6 +184,34 @@ fn split_slice_key<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn test_cache_miss_does_not_wait_for_fallthrough_capacity() {
+        let mut permits = Vec::new();
+        while let Ok(permit) = FALLTHROUGH_DOWNLOADS.try_acquire() {
+            permits.push(permit);
+        }
+        let payload = vec![42; 20_000_000];
+        let storage = wrap_storage_with_storage_cache(
+            feuer::Cache::builder()
+                .memory_capacity(1024)
+                .open()
+                .unwrap(),
+            Arc::new(
+                crate::RamStorageBuilder::default()
+                    .put("split", &payload)
+                    .build(),
+            ),
+        );
+        let bytes = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            storage.get_slice(Path::new("split"), 0..payload.len()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(bytes.as_slice(), payload);
+    }
 
     #[test]
     fn test_split_slice_keys_include_uri_and_both_bounds() {
