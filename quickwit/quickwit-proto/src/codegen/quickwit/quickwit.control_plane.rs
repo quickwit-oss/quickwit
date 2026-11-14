@@ -73,6 +73,55 @@ pub struct AdviseResetShardsResponse {
     pub shards_to_truncate: ::prost::alloc::vec::Vec<super::ingest::ShardIdPositions>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReportIndexerStateRequest {
+    #[prost(string, tag = "1")]
+    pub node_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "2")]
+    pub generation_id: u64,
+    #[prost(message, optional, tag = "3")]
+    pub shards_update: ::core::option::Option<ShardsUpdate>,
+    #[prost(message, optional, tag = "4")]
+    pub indexing_tasks_update: ::core::option::Option<IndexingTasksUpdate>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IndexingTasksUpdate {
+    #[prost(message, repeated, tag = "1")]
+    pub indexing_tasks: ::prost::alloc::vec::Vec<super::indexing::IndexingTask>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardsUpdate {
+    #[prost(message, repeated, tag = "1")]
+    pub shard_infos_by_source: ::prost::alloc::vec::Vec<ShardInfosBySource>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardInfosBySource {
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "3")]
+    pub shard_infos: ::prost::alloc::vec::Vec<ShardInfo>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ShardInfo {
+    #[prost(message, optional, tag = "1")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
+    #[prost(enumeration = "super::ingest::ShardState", tag = "2")]
+    pub shard_state: i32,
+    #[prost(uint64, tag = "3")]
+    pub short_term_ingestion_rate_bytes_per_sec: u64,
+    #[prost(uint64, tag = "4")]
+    pub long_term_ingestion_rate_bytes_per_sec: u64,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReportIndexerStateResponse {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -180,6 +229,10 @@ pub trait ControlPlaneService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: super::metastore::PruneShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
+    async fn report_indexer_state(
+        &self,
+        request: ReportIndexerStateRequest,
+    ) -> crate::control_plane::ControlPlaneResult<ReportIndexerStateResponse>;
 }
 #[derive(Debug, Clone)]
 pub struct ControlPlaneServiceClient {
@@ -362,6 +415,13 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.inner.0.prune_shards(request).await
     }
+    #[tracing::instrument(skip_all, name = "control_plane.report_indexer_state")]
+    async fn report_indexer_state(
+        &self,
+        request: ReportIndexerStateRequest,
+    ) -> crate::control_plane::ControlPlaneResult<ReportIndexerStateResponse> {
+        self.inner.0.report_indexer_state(request).await
+    }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_control_plane_service {
@@ -449,6 +509,14 @@ pub mod mock_control_plane_service {
             super::super::metastore::EmptyResponse,
         > {
             self.inner.lock().await.prune_shards(request).await
+        }
+        async fn report_indexer_state(
+            &self,
+            request: super::ReportIndexerStateRequest,
+        ) -> crate::control_plane::ControlPlaneResult<
+            super::ReportIndexerStateResponse,
+        > {
+            self.inner.lock().await.report_indexer_state(request).await
         }
     }
 }
@@ -623,6 +691,22 @@ for InnerControlPlaneServiceClient {
         Box::pin(fut)
     }
 }
+impl tower::Service<ReportIndexerStateRequest> for InnerControlPlaneServiceClient {
+    type Response = ReportIndexerStateResponse;
+    type Error = crate::control_plane::ControlPlaneError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: ReportIndexerStateRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.report_indexer_state(request).await };
+        Box::pin(fut)
+    }
+}
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct ControlPlaneServiceTowerServiceStack {
@@ -676,6 +760,11 @@ struct ControlPlaneServiceTowerServiceStack {
     prune_shards_svc: quickwit_common::tower::BoxService<
         super::metastore::PruneShardsRequest,
         super::metastore::EmptyResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    report_indexer_state_svc: quickwit_common::tower::BoxService<
+        ReportIndexerStateRequest,
+        ReportIndexerStateResponse,
         crate::control_plane::ControlPlaneError,
     >,
 }
@@ -744,6 +833,12 @@ impl ControlPlaneService for ControlPlaneServiceTowerServiceStack {
         request: super::metastore::PruneShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.prune_shards_svc.clone().ready().await?.call(request).await
+    }
+    async fn report_indexer_state(
+        &self,
+        request: ReportIndexerStateRequest,
+    ) -> crate::control_plane::ControlPlaneResult<ReportIndexerStateResponse> {
+        self.report_indexer_state_svc.clone().ready().await?.call(request).await
     }
 }
 type CreateIndexLayer = quickwit_common::tower::BoxLayer<
@@ -846,6 +941,16 @@ type PruneShardsLayer = quickwit_common::tower::BoxLayer<
     super::metastore::EmptyResponse,
     crate::control_plane::ControlPlaneError,
 >;
+type ReportIndexerStateLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        ReportIndexerStateRequest,
+        ReportIndexerStateResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    ReportIndexerStateRequest,
+    ReportIndexerStateResponse,
+    crate::control_plane::ControlPlaneError,
+>;
 #[derive(Debug, Default)]
 pub struct ControlPlaneServiceTowerLayerStack {
     create_index_layers: Vec<CreateIndexLayer>,
@@ -858,6 +963,7 @@ pub struct ControlPlaneServiceTowerLayerStack {
     get_or_create_open_shards_layers: Vec<GetOrCreateOpenShardsLayer>,
     advise_reset_shards_layers: Vec<AdviseResetShardsLayer>,
     prune_shards_layers: Vec<PruneShardsLayer>,
+    report_indexer_state_layers: Vec<ReportIndexerStateLayer>,
 }
 impl ControlPlaneServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -1130,6 +1236,33 @@ impl ControlPlaneServiceTowerLayerStack {
         >>::Service as tower::Service<
             super::metastore::PruneShardsRequest,
         >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ReportIndexerStateRequest,
+                    ReportIndexerStateResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ReportIndexerStateRequest,
+                ReportIndexerStateResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service: tower::Service<
+                ReportIndexerStateRequest,
+                Response = ReportIndexerStateResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ReportIndexerStateRequest,
+                ReportIndexerStateResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service as tower::Service<
+            ReportIndexerStateRequest,
+        >>::Future: Send + 'static,
     {
         self.create_index_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -1150,6 +1283,8 @@ impl ControlPlaneServiceTowerLayerStack {
         self.advise_reset_shards_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.prune_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.report_indexer_state_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
@@ -1363,6 +1498,28 @@ impl ControlPlaneServiceTowerLayerStack {
         self.prune_shards_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
+    pub fn stack_report_indexer_state_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ReportIndexerStateRequest,
+                    ReportIndexerStateResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                ReportIndexerStateRequest,
+                Response = ReportIndexerStateResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            ReportIndexerStateRequest,
+        >>::Future: Send + 'static,
+    {
+        self.report_indexer_state_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
     pub fn build<T>(self, instance: T) -> ControlPlaneServiceClient
     where
         T: ControlPlaneService,
@@ -1506,6 +1663,14 @@ impl ControlPlaneServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let report_indexer_state_svc = self
+            .report_indexer_state_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let tower_svc_stack = ControlPlaneServiceTowerServiceStack {
             inner: inner_client,
             create_index_svc,
@@ -1518,6 +1683,7 @@ impl ControlPlaneServiceTowerLayerStack {
             get_or_create_open_shards_svc,
             advise_reset_shards_svc,
             prune_shards_svc,
+            report_indexer_state_svc,
         };
         ControlPlaneServiceClient::new(tower_svc_stack)
     }
@@ -1683,6 +1849,15 @@ where
                 super::metastore::EmptyResponse,
                 crate::control_plane::ControlPlaneError,
             >,
+        >
+        + tower::Service<
+            ReportIndexerStateRequest,
+            Response = ReportIndexerStateResponse,
+            Error = crate::control_plane::ControlPlaneError,
+            Future = BoxFuture<
+                ReportIndexerStateResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
         >,
 {
     async fn create_index(
@@ -1747,6 +1922,12 @@ where
         &self,
         request: super::metastore::PruneShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.clone().call(request).await
+    }
+    async fn report_indexer_state(
+        &self,
+        request: ReportIndexerStateRequest,
+    ) -> crate::control_plane::ControlPlaneResult<ReportIndexerStateResponse> {
         self.clone().call(request).await
     }
 }
@@ -1966,6 +2147,24 @@ where
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
                 super::metastore::PruneShardsRequest::rpc_name(),
+            ))
+    }
+    async fn report_indexer_state(
+        &self,
+        request: ReportIndexerStateRequest,
+    ) -> crate::control_plane::ControlPlaneResult<ReportIndexerStateResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
+        self.inner
+            .clone()
+            .report_indexer_state(tonic_request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                ReportIndexerStateRequest::rpc_name(),
             ))
     }
 }
@@ -2213,6 +2412,29 @@ for ControlPlaneServiceGrpcServerAdapter {
             self.inner
                 .0
                 .prune_shards(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
+    }
+    async fn report_indexer_state(
+        &self,
+        tonic_request: tonic::Request<ReportIndexerStateRequest>,
+    ) -> Result<tonic::Response<ReportIndexerStateResponse>, tonic::Status> {
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("control_plane.report_indexer_state");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .report_indexer_state(request)
                 .await
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
@@ -2620,6 +2842,35 @@ pub mod control_plane_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn report_indexer_state(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ReportIndexerStateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ReportIndexerStateResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.control_plane.ControlPlaneService/ReportIndexerState",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.control_plane.ControlPlaneService",
+                        "ReportIndexerState",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -2714,6 +2965,13 @@ pub mod control_plane_service_grpc_server {
             request: tonic::Request<super::super::metastore::PruneShardsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::metastore::EmptyResponse>,
+            tonic::Status,
+        >;
+        async fn report_indexer_state(
+            &self,
+            request: tonic::Request<super::ReportIndexerStateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ReportIndexerStateResponse>,
             tonic::Status,
         >;
     }
@@ -3292,6 +3550,55 @@ pub mod control_plane_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = PruneShardsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.control_plane.ControlPlaneService/ReportIndexerState" => {
+                    #[allow(non_camel_case_types)]
+                    struct ReportIndexerStateSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: ControlPlaneServiceGrpc,
+                    > tonic::server::UnaryService<super::ReportIndexerStateRequest>
+                    for ReportIndexerStateSvc<T> {
+                        type Response = super::ReportIndexerStateResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ReportIndexerStateRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ControlPlaneServiceGrpc>::report_indexer_state(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ReportIndexerStateSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

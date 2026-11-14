@@ -25,17 +25,15 @@ use super::{
     Eligibility, IndexerInfo, SourceToSchedule, compute_max_num_shards_per_pipeline,
     shard_availability_zone,
 };
-use crate::IndexerPoolEntry;
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::{
-    IndexingSchedulerState, MIN_DURATION_BETWEEN_SCHEDULING, build_indexer_tasks,
-    get_indexing_plans_diff,
+    IndexingSchedulerState, MIN_DURATION_BETWEEN_SCHEDULING, get_indexing_plans_diff,
 };
 use crate::metrics::LOCALITY_REPAIRS_TOTAL;
 use crate::model::ShardLocations;
 
 pub(in crate::indexing_scheduler) fn is_plan_eligible_for_optimization(
-    indexers: &[IndexerPoolEntry],
+    running_indexer_tasks: &FnvHashMap<NodeId, Vec<IndexingTask>>,
     indexer_statuses: &FnvHashMap<NodeId, IngesterStatus>,
     locality_aware: bool,
     state: &mut IndexingSchedulerState,
@@ -43,8 +41,7 @@ pub(in crate::indexing_scheduler) fn is_plan_eligible_for_optimization(
     if !locality_aware || !is_plan_improvement_due(state) {
         return false;
     }
-    let running_indexer_tasks = build_indexer_tasks(indexers);
-    if !is_running_plan_stable(&running_indexer_tasks, indexer_statuses, state) {
+    if !is_running_plan_stable(running_indexer_tasks, indexer_statuses, state) {
         return false;
     }
     state.last_plan_improvement_attempt_timestamp = Some(Instant::now());
