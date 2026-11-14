@@ -41,7 +41,7 @@ pub enum CacheState {
     // This is the state a CacheNode should be before
     #[default]
     Uninitialized,
-    CacheHit(CacheEntry),
+    CacheHit(Box<CacheEntry>),
     CacheMiss(CacheFiller),
 }
 
@@ -81,7 +81,7 @@ impl CacheNode {
             return;
         };
         if let Some((segment_id, hits)) = cache.get(split_id.to_string(), query.clone()) {
-            self.state = CacheState::CacheHit(CacheEntry { segment_id, hits });
+            self.state = CacheState::CacheHit(Box::new(CacheEntry { segment_id, hits }));
         } else {
             self.state = CacheState::CacheMiss(CacheFiller {
                 cache: cache.clone(),
@@ -100,7 +100,7 @@ impl BuildTantivyAst for CacheNode {
         match &self.state {
             CacheState::Uninitialized => self.inner.build_tantivy_ast_call(context),
             CacheState::CacheHit(cache_entry) => Ok(CacheHitQuery {
-                cache_entry: cache_entry.clone(),
+                cache_entry: cache_entry.as_ref().clone(),
             }
             .into()),
             CacheState::CacheMiss(cache_filler) => {
@@ -403,7 +403,7 @@ mod tests {
             };
             let ast = CacheNode {
                 inner: Box::new(term_query.clone()),
-                state: CacheState::CacheHit(cache_entry),
+                state: CacheState::CacheHit(Box::new(cache_entry)),
             };
             let cache_hit_query: Box<dyn TantivyQuery> = ast
                 .build_tantivy_ast_impl(&BuildTantivyAstContext::for_test(&schema))
@@ -481,7 +481,7 @@ mod tests {
             };
             let ast = CacheNode {
                 inner: Box::new(term_query.clone()),
-                state: CacheState::CacheHit(cache_entry),
+                state: CacheState::CacheHit(Box::new(cache_entry)),
             }
             .into();
 
@@ -656,7 +656,7 @@ mod tests {
         };
         let ast = CacheNode {
             inner: Box::new(term_query.clone()),
-            state: CacheState::CacheHit(cache_entry),
+            state: CacheState::CacheHit(Box::new(cache_entry)),
         };
         let cache_hit_query: Box<dyn TantivyQuery> = ast
             .build_tantivy_ast_impl(&BuildTantivyAstContext::for_test(&schema))

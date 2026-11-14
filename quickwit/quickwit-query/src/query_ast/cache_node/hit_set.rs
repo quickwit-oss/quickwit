@@ -98,9 +98,9 @@ impl HitSet {
         if len < BLOCK_LEN {
             for (doc, bytes) in self.current_block[..len]
                 .iter_mut()
-                .zip(payload.chunks_exact(4))
+                .zip(payload.as_chunks::<4>().0)
             {
-                *doc = u32::from_ne_bytes(bytes.try_into().unwrap());
+                *doc = u32::from_ne_bytes(*bytes);
             }
         } else {
             BitPacker4x::new().decompress_strictly_sorted(
