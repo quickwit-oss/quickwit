@@ -685,16 +685,14 @@ pub async fn serve_quickwit(
     .await
     .context("failed to start ingest v2 service")?;
 
-    if node_config.is_service_enabled(QuickwitService::Indexer)
-        || node_config.is_service_enabled(QuickwitService::ControlPlane)
-    {
-        start_shard_positions_service(
-            ingester_opt.clone(),
-            cluster.clone(),
-            event_broker.clone(),
-            universe.spawn_ctx().clone(),
-        );
-    }
+    // Every node has an ingest router, which needs local shard publication notifications to
+    // complete WaitFor and Force requests, including when publication happens on another node.
+    start_shard_positions_service(
+        ingester_opt.clone(),
+        cluster.clone(),
+        event_broker.clone(),
+        universe.spawn_ctx().clone(),
+    );
 
     // Any node can serve index management requests (create/update/delete index, add/remove source,
     // etc.), so we always instantiate an index manager.
