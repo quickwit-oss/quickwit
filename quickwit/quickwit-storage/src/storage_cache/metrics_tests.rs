@@ -56,7 +56,7 @@ fn test_complete_inventory_and_buckets() {
             assert!(!buckets.contains_key(declaration.name));
         }
     }
-    assert_eq!(counts, [12, 11, 6]);
+    assert_eq!(counts, [13, 11, 6]);
     assert_eq!(buckets.len(), counts[2]);
 }
 
@@ -364,6 +364,7 @@ fn test_native_memory_registration_and_values_without_runtime() {
             declaration.name.starts_with("feuer_memory_")
                 || declaration.name.starts_with("feuer_lookup_")
                 || declaration.name == "feuer_io_buffer_pool_bytes"
+                || declaration.name == "feuer_admission_filter_total"
                 || (cfg!(target_os = "linux") && declaration.name == "feuer_disk_write_queue_total")
         })
         .map(|declaration| declaration.name)

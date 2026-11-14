@@ -53,6 +53,7 @@ impl FeuerIoQueues {
         scorer: Arc<dyn feuer::RetentionScorer>,
         payload_version: u64,
     ) -> anyhow::Result<feuer::Cache> {
+        let memory_capacity = config.memory_capacity.as_u64();
         let disk_capacity = config.disk_capacity.as_u64();
         let open = |disk_capacity: u64| -> anyhow::Result<feuer::Cache> {
             let directory = if disk_capacity == 0 {
@@ -64,7 +65,9 @@ impl FeuerIoQueues {
             let builder = feuer::Cache::builder()
                 .directory(directory)
                 .disk_capacity(disk_capacity)
-                .memory_capacity(config.memory_capacity.as_u64())
+                .memory_capacity(memory_capacity)
+                .with_memory_admission_filter(move |_, size, _| size <= memory_capacity)
+                .with_disk_admission_filter(move |_, size, _| size <= disk_capacity)
                 .file_name(file_name)
                 .payload_version(payload_version)
                 .with_metrics(&registry)
@@ -76,7 +79,9 @@ impl FeuerIoQueues {
             } else {
                 let mut queues = self.queues.lock().unwrap();
                 if queues.is_none() {
-                    *queues = Some(feuer::IoQueues::new()?);
+                    *queues = Some(feuer::IoQueues::with_config(feuer::IoQueuesConfig {
+                        fallthrough_waiters: 256,
+                    })?);
                 }
                 builder.with_io_queues(queues.as_ref().unwrap().clone())
             };
@@ -167,6 +172,15 @@ impl FeuerCache {
         })
     }
 
+    /// Hash a key with this cache's seed for retention-scorer metadata.
+    /// Panics if caching is disabled.
+    pub fn hash_key(&self, key: &(impl Hash + ?Sized)) -> feuer::ObjectKeyHash {
+        self.cache
+            .as_ref()
+            .expect("cannot hash keys for a disabled cache")
+            .hash_key(key)
+    }
+
     /// Retrieve an entire object from memory or disk, returning `None` on a miss.
     pub async fn get(&self, key: &(impl Hash + ?Sized)) -> Option<OwnedBytes> {
         self.cache.as_ref()?.get(key).await.map(into_owned_bytes)
@@ -188,6 +202,15 @@ mod startup_tests {
     use metrics_util::debugging::{DebugValue, DebuggingRecorder};
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_oversized_values_do_not_evict_cached_entries() {
+        let cache = FeuerCache::memory(8, "test_size_limit").unwrap();
+        cache.put("fits", OwnedBytes::new(&b"12345678"[..]));
+        cache.put("oversized", OwnedBytes::new(&b"123456789"[..]));
+        assert!(cache.get("oversized").await.is_none());
+        assert_eq!(cache.get("fits").await.unwrap().as_slice(), b"12345678");
+    }
 
     #[test]
     fn test_custom_scorer_is_used_for_eviction() {
@@ -211,7 +234,7 @@ mod startup_tests {
         let scorer = Arc::new(Scorer::default());
         let config = StorageCacheConfig {
             directory: None,
-            memory_capacity: ByteSize::b(1),
+            memory_capacity: ByteSize::b(5),
             disk_capacity: ByteSize::b(0),
         };
         let cache = FeuerCache::open(

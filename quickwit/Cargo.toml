@@ -88,7 +88,7 @@ env_logger = { version = "0.11", default-features = false, features = ["auto-col
 fail = "0.5"
 flate2 = "1.1"
 flume = "0.12"
-feuer = { git = "https://github.com/PSeitz/feuer", rev = "e825541abafd7615451947d52423dde0fd48d7da" }
+feuer = { git = "https://github.com/PSeitz/feuer", rev = "452e992491ef5183070a5bca71bf28bb0a69682e" }
 fnv = "1"
 futures = "0.3"
 futures-util = { version = "0.3", default-features = false }

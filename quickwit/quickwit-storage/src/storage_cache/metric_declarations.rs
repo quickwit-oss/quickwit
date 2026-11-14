@@ -73,6 +73,10 @@ declare_metrics! {
         "Object payload bytes returned by successful Feuer lookups",
         ["source" => source];
 
+        ADMISSION_FILTER: "feuer_admission_filter_total",
+        "Completed caller-supplied admission filter decisions",
+        ["tier" => tier, "outcome" => outcome];
+
         MEMORY_OPERATIONS: "feuer_memory_operations_total",
         "Operations completed by Feuer's in-memory object tier",
         ["operation" => operation];

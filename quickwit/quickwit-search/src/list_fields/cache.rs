@@ -88,11 +88,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_fields_cache_repeated_put_above_capacity() {
+    async fn list_fields_cache_rejects_values_above_capacity() {
         let cache = ListFieldsCache::new(&ByteSize::b(1).into());
         for _ in 0..2 {
             cache.put("split".to_string(), OwnedBytes::new(&b"fields"[..]));
-            assert_eq!(cache.get("split").await.unwrap().as_slice(), b"fields");
+            assert!(cache.get("split").await.is_none());
         }
     }
 

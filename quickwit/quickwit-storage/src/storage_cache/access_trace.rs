@@ -14,7 +14,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use bytes::Bytes;
@@ -23,8 +23,6 @@ use quickwit_config::StorageCacheConfig;
 use tracing::{error, info};
 
 use crate::{Storage, StorageResolver};
-
-const RETRY_INTERVAL: Duration = Duration::from_secs(5);
 
 pub(super) async fn open_run(
     destination: &str,
@@ -71,19 +69,12 @@ pub(super) fn attach(cache: feuer::Cache, storage: Arc<dyn Storage>, run: PathBu
 }
 
 async fn upload(storage: Arc<dyn Storage>, path: PathBuf, package: Bytes) {
-    // Keep the same key and payload across retries. Returning an error to Feuer
-    // would stop delivery and silently discard subsequent events.
-    let payload = package.to_vec();
-    loop {
-        match storage.put(&path, Box::new(payload.clone())).await {
-            Ok(()) => {
-                info!(uri = %storage.uri(), path = %path.display(), bytes = payload.len(), "Feuer access trace batch uploaded");
-                return;
-            }
-            Err(error) => {
-                error!(?error, uri = %storage.uri(), path = %path.display(), "Feuer access trace upload failed; retrying with reader backpressure");
-                tokio::time::sleep(RETRY_INTERVAL).await;
-            }
+    match storage.put(&path, Box::new(package.to_vec())).await {
+        Ok(()) => {
+            info!(uri = %storage.uri(), path = %path.display(), bytes = package.len(), "Feuer access trace batch uploaded");
+        }
+        Err(error) => {
+            error!(?error, uri = %storage.uri(), path = %path.display(), "Feuer access trace upload failed; dropping batch");
         }
     }
 }
@@ -91,6 +82,7 @@ async fn upload(storage: Arc<dyn Storage>, path: PathBuf, package: Bytes) {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+    use std::time::Duration;
 
     use bytesize::ByteSize;
 
@@ -144,22 +136,20 @@ mod tests {
         assert!(open_run(&destination, &resolver, &config()).await.is_err());
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn test_upload_preserves_key_and_package_with_or_without_retry() {
-        for failures in [0, 1] {
+    #[tokio::test]
+    async fn test_upload_preserves_key_and_package_and_drops_failures() {
+        for fail in [false, true] {
             let mut storage = MockStorage::new();
-            let mut attempts = 0;
             storage
                 .expect_put()
-                .times(failures + 1)
+                .times(1)
                 .returning(move |path, payload| {
                     assert_eq!(path, Path::new("run/000000000000.feuer"));
                     let bytes = futures::executor::block_on(payload.read_all()).unwrap();
                     assert_eq!(&bytes[..], b"FETR\x01\0\0\0package");
-                    attempts += 1;
-                    if attempts <= failures {
-                        return Err(StorageErrorKind::Io
-                            .with_error(anyhow::anyhow!("temporary upload failure")));
+                    if fail {
+                        return Err(StorageErrorKind::Unauthorized
+                            .with_error(anyhow::anyhow!("access denied")));
                     }
                     Ok(())
                 });

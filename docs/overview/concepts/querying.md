@@ -91,8 +91,8 @@ Quickwit does caching in many places to deliver a highly performing query engine
 
 In memory:
 
-- Storage caching: `storage_cache` retains split footers, hotcache bytes, fast fields, and other split body ranges in one shared cache. Hotcache is static data embedded in each split footer that speeds up opening the split. `storage_cache` defaults to memory-only operation with a 1.5GB budget. When the shared disk read queue reaches 64 waiting payload reads, ranges of at least 10 MB (10,000,000 bytes) fall through to the underlying storage instead of waiting for disk.
-- Partial request caching: In some cases, like when using dashboards, some very similar requests might be issued, with only timestamp bounds changing. Some partial results can be cached to make these requests faster and issue less requests to the storage. They are cached in a RAM whose size can be limited by the `partial_request_cache_capacity` configuration value.
+- Storage caching: `storage_cache` retains split footers, hotcache bytes, fast fields, and other split body ranges in one shared cache. Hotcache is static data embedded in each split footer that speeds up opening the split. `storage_cache` defaults to memory-only operation with a 1.5GB budget. When the shared disk read queue reaches 256 waiting payload reads, ranges of at least 20 MB (20,000,000 bytes) fall through to the underlying storage instead of waiting for disk.
+- Partial request caching: In some cases, like when using dashboards, some very similar requests might be issued, with only timestamp bounds changing. Some partial results can be cached to make these requests faster and issue less requests to the storage. The `partial_request_cache` configuration controls its memory and optional disk budgets. Split cache lookups run concurrently before uncached searches are scheduled.
 - Predicate caching: `predicate_cache` retains predicate hit sets and known-absent terms, with independent memory and optional disk budgets. Hit sets are scored for retention by decayed request frequency × fill CPU time / encoded entry size. Each predicate's fill time includes evaluation and hit-set construction, excludes warmup, and includes nested predicate fills. Known-absent terms discovered during warmup use an estimated CPU-equivalent cost of 10 ms in the same scoring formula, reflecting the future warmup and search they can avoid.
 - List-fields caching: Field metadata uses an independent memory cache with the same memory capacity as `partial_request_cache_capacity`.
 
@@ -100,7 +100,7 @@ Predicate fill costs are stored with the cached hit sets. An in-memory cache kee
 
 On disk:
 
-- Configure `storage_cache` with a positive `disk_capacity` and a directory to enable its disk tier. Set `disk_capacity: 0` for memory-only operation without a directory. Predicate and partial-response caches can also use independent disk tiers.
+- Configure `storage_cache` with a positive `disk_capacity` and a directory to enable its disk tier. Set `disk_capacity: 0` for memory-only operation without a directory. Predicate and partial-response caches can also use independent disk tiers. Each tier skips caching payloads larger than its configured capacity. These payloads are still returned to callers.
 - The split cache stores entire splits on disk. It can be enabled by setting the `split_cache` configuration fields. This cache can help reduce object store costs and load. Searchers populate this cache when splits are created or queried and evict them with a simple LRU strategy.
 
 If a storage, partial-request, or predicate disk cache cannot be opened at startup,

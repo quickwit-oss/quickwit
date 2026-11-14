@@ -3326,7 +3326,7 @@ dependencies = [
 [[package]]
 name = "feuer"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=e825541abafd7615451947d52423dde0fd48d7da#e825541abafd7615451947d52423dde0fd48d7da"
+source = "git+https://github.com/PSeitz/feuer?rev=452e992491ef5183070a5bca71bf28bb0a69682e#452e992491ef5183070a5bca71bf28bb0a69682e"
 dependencies = [
  "bytes",
  "feuer-historian",
@@ -3342,7 +3342,7 @@ dependencies = [
 [[package]]
 name = "feuer-historian"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=e825541abafd7615451947d52423dde0fd48d7da#e825541abafd7615451947d52423dde0fd48d7da"
+source = "git+https://github.com/PSeitz/feuer?rev=452e992491ef5183070a5bca71bf28bb0a69682e#452e992491ef5183070a5bca71bf28bb0a69682e"
 dependencies = [
  "feuer-utils",
  "parking_lot",
@@ -3352,7 +3352,7 @@ dependencies = [
 [[package]]
 name = "feuer-memory"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=e825541abafd7615451947d52423dde0fd48d7da#e825541abafd7615451947d52423dde0fd48d7da"
+source = "git+https://github.com/PSeitz/feuer?rev=452e992491ef5183070a5bca71bf28bb0a69682e#452e992491ef5183070a5bca71bf28bb0a69682e"
 dependencies = [
  "bytes",
  "bytesize",
@@ -3367,7 +3367,7 @@ dependencies = [
 [[package]]
 name = "feuer-storage"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=e825541abafd7615451947d52423dde0fd48d7da#e825541abafd7615451947d52423dde0fd48d7da"
+source = "git+https://github.com/PSeitz/feuer?rev=452e992491ef5183070a5bca71bf28bb0a69682e#452e992491ef5183070a5bca71bf28bb0a69682e"
 dependencies = [
  "bytes",
  "feuer-historian",
@@ -3387,10 +3387,11 @@ dependencies = [
 [[package]]
 name = "feuer-utils"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=e825541abafd7615451947d52423dde0fd48d7da#e825541abafd7615451947d52423dde0fd48d7da"
+source = "git+https://github.com/PSeitz/feuer?rev=452e992491ef5183070a5bca71bf28bb0a69682e#452e992491ef5183070a5bca71bf28bb0a69682e"
 dependencies = [
  "bytesize",
- "xxhash-rust",
+ "getrandom 0.4.3",
+ "siphasher",
 ]
 
 [[package]]

@@ -326,7 +326,7 @@ impl PredicateCache for PredicateCacheImpl {
         let (segment, hits, cpu_nanos) = entry?;
         self.scorer
             .cpu_times
-            .insert(ObjectKeyHash::from_hash(&key), cpu_nanos);
+            .insert(self.cache.hash_key(&key), cpu_nanos);
         Some((segment, hits))
     }
 
@@ -351,7 +351,7 @@ impl PredicateCache for PredicateCacheImpl {
         let key = (split_id.as_str(), query_ast_json.as_str());
         self.scorer
             .cpu_times
-            .insert(ObjectKeyHash::from_hash(&key), cpu_nanos);
+            .insert(self.cache.hash_key(&key), cpu_nanos);
         self.cache.put(&key, OwnedBytes::new(buffer));
     }
 }
@@ -689,7 +689,7 @@ mod tests {
 
     #[test]
     fn test_memory_caches_without_tokio_runtime() {
-        // Zero disables caching. Feuer admits values larger than a positive capacity target.
+        // Zero disables caching. A one-byte budget rejects these larger encoded values.
         for (capacity, supplied) in [(0, false), (1, false), (1_000_000, true)] {
             let config = ByteSize::b(capacity).into();
             let split = SplitIdAndFooterOffsets::default();
@@ -719,11 +719,11 @@ mod tests {
             let key = CacheKey::from_split_meta_and_request(split.clone(), request.clone());
             assert_eq!(
                 futures::executor::block_on(cache.cache.get(&key)).is_some(),
-                capacity > 0
+                capacity > 1
             );
             assert_eq!(
                 get(&cache, split, request).map(|response| response.num_hits),
-                (capacity > 0).then_some(7),
+                (capacity > 1).then_some(7),
             );
 
             let cache = PredicateCacheImpl::new(&config);
@@ -749,7 +749,7 @@ mod tests {
                         segment
                     }
                 ),
-                (capacity > 0).then_some(segment),
+                (capacity > 1).then_some(segment),
             );
         }
     }
@@ -822,8 +822,8 @@ mod tests {
             cpu_times: Cache::new(1),
         };
         let histories = ObjectAccessHistories::new();
-        let first = ObjectKeyHash::from_hash(&"first");
-        let second = ObjectKeyHash::from_hash(&"second");
+        let first = ObjectKeyHash(1);
+        let second = ObjectKeyHash(2);
         histories.record_request(&first);
         histories.record_request(&second);
         scorer.cpu_times.insert(first, 100);
@@ -849,7 +849,7 @@ mod tests {
             ("known_absent", Duration::from_millis(10)),
         ] {
             let key = ("split", query);
-            let hash = ObjectKeyHash::from_hash(&key);
+            let hash = cache.cache.hash_key(&key);
             histories.record_request(&hash);
             cache.put(
                 "split".into(),
@@ -865,6 +865,11 @@ mod tests {
             assert_eq!(cache.scorer.score(&hash, size, &histories), expected);
 
             // Simulate a recovered disk payload with no in-memory cost metadata.
+            // This separate cache has its own hash seed.
+            let hash = restored.cache.hash_key(&key);
+            histories.record_request(&hash);
+            let expected =
+                histories.decayed_request_count(&hash) * cpu_time.as_nanos() as f64 / size as f64;
             restored.cache.put(&key, bytes);
             assert_eq!(restored.scorer.score(&hash, size, &histories), 0.0);
             let (cached_segment, hits) = restored.get("split".into(), query.into()).await.unwrap();

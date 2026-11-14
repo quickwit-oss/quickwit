@@ -86,8 +86,8 @@ impl Storage for FeuerStorage {
         self.cache
             .get_or_fetch_with_disk_fallthrough(
                 &cache_key,
-                // Under disk queue pressure, prefer downloading ranges of at least 10 MB.
-                move || download_size >= 10_000_000,
+                // Under disk queue pressure, prefer downloading ranges of at least 20 MB.
+                move || download_size >= 20_000_000,
                 move || async move {
                     let mut buffer = cache.allocate_buffer(download_size)?;
                     storage
@@ -163,9 +163,12 @@ mod tests {
 
     #[test]
     fn test_split_slice_keys_include_uri_and_both_bounds() {
-        let hash_key = |uri: &str, range: &Range<usize>| {
-            feuer::ObjectKeyHash::from_hash(&split_slice_key(uri, range))
-        };
+        let cache = feuer::Cache::builder()
+            .memory_capacity(1024)
+            .open()
+            .unwrap();
+        let hash_key =
+            |uri: &str, range: &Range<usize>| cache.hash_key(&split_slice_key(uri, range));
         let key = hash_key("s3://bucket/a.split", &(1..4));
         assert_eq!(key, hash_key("s3://bucket/a.split", &(1..4)));
         for (uri, range) in [
@@ -176,6 +179,6 @@ mod tests {
         ] {
             assert_ne!(key, hash_key(uri, &range));
         }
-        assert_ne!(key, feuer::ObjectKeyHash::from_hash("s3://bucket/a.split"));
+        assert_ne!(key, cache.hash_key("s3://bucket/a.split"));
     }
 }
