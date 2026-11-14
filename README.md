@@ -34,6 +34,7 @@ Open-source search engine for observability (logs, traces, and soon metrics!).
 - [Log management](https://quickwit.io/docs/log-management/overview)
 - [Distributed tracing](https://quickwit.io/docs/distributed-tracing/overview)
 - Metrics support is on the roadmap
+- [Tokenizers, filters, and tokenizer API](https://quickwit.io/docs/configuration/tokenizers)
 
 ### 🚀 Quickstart
 
