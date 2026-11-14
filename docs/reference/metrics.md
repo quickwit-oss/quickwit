@@ -33,6 +33,7 @@ The `feuer_*` metrics use a `cache` label to identify the instance: `storage`, `
 | `feuer_lookup_total` | counter | `outcome`: `memory_hit`, `disk_hit`, `callback`, `callback_error`, `miss` | Completed lookups. Lookup-only misses use `miss`. |
 | `feuer_lookup_bytes_total` | counter | `source`: `memory`, `disk`, `callback` | Payload bytes returned by successful lookups. |
 | `feuer_lookup_duration_seconds` | histogram | `outcome`: `disk_hit`, `callback`; `size_range`: `lt_100kib`, `lt_1mib`, `lt_10mib`, `lt_32mib`, `gte_32mib` | Successful lookup duration after a memory miss, including callback work. Payload-size ranges are mutually exclusive. |
+| `feuer_admission_filter_total` | counter | `tier`: `memory`, `disk`; `outcome`: `accepted`, `rejected` | Completed caller-supplied admission filter decisions. |
 | `feuer_memory_operations_total` | counter | `operation`: `insert`, `redundant`, `remove` | Internal memory-tier operations. |
 | `feuer_memory_eviction_triggering_insertions_total` | counter | — | Insertion attempts that evicted at least one entry under capacity pressure. |
 | `feuer_memory_used_bytes` | gauge | — | Cached allocation charges plus idle allocation capacity. |
