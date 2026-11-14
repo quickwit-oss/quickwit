@@ -67,7 +67,7 @@ impl Queue for SqsQueue {
         // state that it starts when the message is returned.
         let initial_deadline = Instant::now() + suggested_deadline;
         let clamped_max_messages = std::cmp::min(max_messages, 10) as i32;
-        let receive_output = aws_retry(&self.receive_retries, || async {
+        let receive_output = aws_retry("sqs.receive_message", &self.receive_retries, || async {
             self.sqs_client
                 .receive_message()
                 .queue_url(&self.queue_url)
@@ -133,13 +133,17 @@ impl Queue for SqsQueue {
         let mut batch_errors = Vec::new();
         let mut message_errors = Vec::new();
         for batch in entry_batches {
-            let res = aws_retry(&self.acknowledge_retries, || {
-                self.sqs_client
-                    .delete_message_batch()
-                    .queue_url(&self.queue_url)
-                    .set_entries(Some(batch.clone()))
-                    .send()
-            })
+            let res = aws_retry(
+                "sqs.delete_message_batch",
+                &self.acknowledge_retries,
+                || {
+                    self.sqs_client
+                        .delete_message_batch()
+                        .queue_url(&self.queue_url)
+                        .set_entries(Some(batch.clone()))
+                        .send()
+                },
+            )
             .await;
             match res {
                 Ok(res) => {
@@ -187,14 +191,18 @@ impl Queue for SqsQueue {
     ) -> anyhow::Result<Instant> {
         let visibility_timeout = std::cmp::min(suggested_deadline.as_secs() as i32, 43200);
         let new_deadline = Instant::now() + suggested_deadline;
-        aws_retry(&self.modify_deadline_retries, || {
-            self.sqs_client
-                .change_message_visibility()
-                .queue_url(&self.queue_url)
-                .visibility_timeout(visibility_timeout)
-                .receipt_handle(ack_id)
-                .send()
-        })
+        aws_retry(
+            "sqs.change_message_visibility",
+            &self.modify_deadline_retries,
+            || {
+                self.sqs_client
+                    .change_message_visibility()
+                    .queue_url(&self.queue_url)
+                    .visibility_timeout(visibility_timeout)
+                    .receipt_handle(ack_id)
+                    .send()
+            },
+        )
         .await?;
         Ok(new_deadline)
     }
