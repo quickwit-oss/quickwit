@@ -627,7 +627,7 @@ pub struct StorageTimeoutPolicy {
 }
 
 impl StorageTimeoutPolicy {
-    pub fn compute_timeout(&self, num_bytes: usize) -> impl Iterator<Item = Duration> {
+    pub fn compute_timeout(&self, num_bytes: usize) -> impl Iterator<Item = Duration> + use<> {
         let min_download_time_secs: f64 = if self.min_throughtput_bytes_per_secs == 0 {
             0.0f64
         } else {

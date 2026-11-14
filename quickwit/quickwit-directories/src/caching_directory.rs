@@ -95,6 +95,27 @@ impl FileHandle for CachingFileHandle {
         self.cache.put_slice(byte_range, read_bytes.clone());
         Ok(read_bytes)
     }
+
+    async fn read_bytes_batch_async(
+        &self,
+        byte_ranges: Vec<Range<usize>>,
+    ) -> io::Result<Vec<OwnedBytes>> {
+        quickwit_storage::read_batch_with_cache(
+            byte_ranges,
+            |range| self.cache.get_slice(range),
+            |ranges| async move {
+                let payloads = self
+                    .underlying_filehandle
+                    .read_bytes_batch_async(ranges.clone())
+                    .await?;
+                for (range, bytes) in ranges.into_iter().zip(&payloads) {
+                    self.cache.put_slice(range, bytes.clone());
+                }
+                Ok(payloads)
+            },
+        )
+        .await
+    }
 }
 
 impl HasLen for CachingFileHandle {

@@ -67,6 +67,31 @@ impl Storage for StorageWithCache {
         }
     }
 
+    async fn get_slices(
+        &self,
+        path: &Path,
+        requested_ranges: Vec<Range<usize>>,
+    ) -> StorageResult<Vec<OwnedBytes>> {
+        super::read_batch_with_async_cache(
+            requested_ranges,
+            |requested_range| self.cache.get(path, requested_range),
+            |missing_ranges| async move {
+                let downloaded = self
+                    .storage
+                    .get_slices(path, missing_ranges.clone())
+                    .await?;
+                assert_eq!(downloaded.len(), missing_ranges.len());
+                for (missing_range, bytes) in missing_ranges.into_iter().zip(&downloaded) {
+                    self.cache
+                        .put(path.to_owned(), missing_range, bytes.clone())
+                        .await;
+                }
+                Ok(downloaded)
+            },
+        )
+        .await
+    }
+
     async fn get_slice_stream(
         &self,
         path: &Path,
@@ -121,6 +146,72 @@ mod tests {
 
     use super::*;
     use crate::{MockStorage, MockStorageCache, OwnedBytes};
+
+    #[tokio::test(start_paused = true)]
+    async fn test_cache_lookups_overlap_and_forward_all_misses_together() {
+        use std::time::Duration;
+
+        struct DelayedCache {
+            bytes_by_range: Mutex<HashMap<Range<usize>, OwnedBytes>>,
+        }
+
+        #[async_trait]
+        impl StorageCache for DelayedCache {
+            async fn get(&self, _: &Path, range: Range<usize>) -> Option<OwnedBytes> {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                self.bytes_by_range.lock().unwrap().get(&range).cloned()
+            }
+
+            async fn put(&self, _: PathBuf, range: Range<usize>, bytes: OwnedBytes) {
+                assert_eq!(range.start % 2, 1);
+                assert_eq!(bytes.as_slice(), &[range.start as u8]);
+                self.bytes_by_range.lock().unwrap().insert(range, bytes);
+            }
+
+            async fn get_all(&self, _: &Path) -> Option<OwnedBytes> {
+                unreachable!()
+            }
+
+            async fn put_all(&self, _: PathBuf, _: OwnedBytes) {
+                unreachable!()
+            }
+        }
+
+        let mut backend = MockStorage::default();
+        backend.expect_get_slices().times(1).returning(|_, ranges| {
+            assert_eq!(ranges, vec![1..2, 3..4, 5..6, 7..8, 9..10]);
+            Ok(ranges
+                .into_iter()
+                .map(|range| OwnedBytes::new(vec![range.start as u8]))
+                .collect())
+        });
+        let storage = StorageWithCache {
+            storage: Arc::new(backend),
+            cache: Arc::new(DelayedCache {
+                bytes_by_range: Mutex::new(
+                    (0..10)
+                        .step_by(2)
+                        .map(|start| (start..start + 1, OwnedBytes::new(vec![start as u8])))
+                        .collect(),
+                ),
+            }),
+        };
+        let ranges: Vec<_> = (0..10).map(|index| index..index + 1).collect();
+        let start = tokio::time::Instant::now();
+        let buffers = storage
+            .get_slices(Path::new("file"), ranges.clone())
+            .await
+            .unwrap();
+        // Ten delayed lookups run in two waves of five, then all misses are forwarded together.
+        assert_eq!(start.elapsed(), Duration::from_millis(20));
+        assert_eq!(buffers.len(), 10);
+        for (index, buffer) in buffers.iter().enumerate() {
+            assert_eq!(buffer.as_slice(), &[index as u8]);
+        }
+        // Repeating the batch uses the inserted bytes without another storage read.
+        let repeated = storage.get_slices(Path::new("file"), ranges).await.unwrap();
+        assert_eq!(repeated, buffers);
+    }
 
     #[tokio::test]
     async fn put_in_cache_test() {

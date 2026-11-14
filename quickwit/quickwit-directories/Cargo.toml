@@ -24,5 +24,6 @@ quickwit-common = { workspace = true }
 quickwit-storage = { workspace = true }
 
 [dev-dependencies]
+quickwit-storage = { workspace = true, features = ["testsuite"] }
 rand = { workspace = true }
 tempfile = { workspace = true }

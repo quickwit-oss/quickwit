@@ -269,6 +269,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_debug_proxy_batch_uses_individual_reads() {
+        let path = Path::new(TEST_PATH);
+        let debug_proxy = DebugProxyDirectory::wrap(make_test_directory().unwrap());
+        let file = debug_proxy.open_read(path).unwrap();
+        assert!(
+            file.read_bytes_batch_async(Vec::new())
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(debug_proxy.drain_read_operations().count(), 0);
+        let ranges = vec![3..6, 1..3, 3..6];
+        let payloads = file.read_bytes_batch_async(ranges.clone()).await.unwrap();
+        let operations: Vec<_> = debug_proxy.drain_read_operations().collect();
+        assert_eq!(payloads.len(), ranges.len());
+        assert_eq!(operations.len(), ranges.len());
+        for ((range, payload), operation) in ranges.into_iter().zip(payloads).zip(operations) {
+            assert_eq!(payload.as_slice(), &TEST_PAYLOAD[range.clone()]);
+            assert_eq!(operation.path, path);
+            assert_eq!(operation.offset, range.start);
+            assert_eq!(operation.num_bytes, range.len());
+        }
+    }
+
+    #[tokio::test]
     async fn test_debug_proxy_open_read_read_async() {
         let test_path = Path::new(TEST_PATH);
         let debug_proxy = DebugProxyDirectory::wrap(make_test_directory().unwrap());

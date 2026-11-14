@@ -44,8 +44,9 @@ use quickwit_query::query_ast::{
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
-    BundleStorage, ByteRangeCache, CountingStorage, MemorySizedCache, OwnedBytes, SearchSplitCache,
-    Storage, StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
+    BundleStorage, ByteRangeCache, CoalescingStorage, CountingStorage, MemorySizedCache,
+    OwnedBytes, SearchSplitCache, Storage, StorageResolver, TimeoutAndRetryStorage,
+    wrap_storage_with_cache,
 };
 use tantivy::aggregation::AggContextParams;
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
@@ -244,10 +245,11 @@ pub(crate) async fn open_index_with_caches(
 ) -> anyhow::Result<(Index, HotDirectory)> {
     let index_storage_with_retry_on_timeout =
         configure_storage_retries(searcher_context, index_storage);
+    let coalescing_storage = Arc::new(CoalescingStorage::new(index_storage_with_retry_on_timeout));
 
     let (hotcache_bytes, bundle_storage) = open_split_bundle(
         searcher_context,
-        index_storage_with_retry_on_timeout,
+        coalescing_storage,
         split_and_footer_offsets,
     )
     .await?;

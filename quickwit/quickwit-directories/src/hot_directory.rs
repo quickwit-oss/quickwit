@@ -404,6 +404,18 @@ impl FileHandle for FileSliceWithCache {
         }
         self.underlying.read_bytes_slice_async(byte_range).await
     }
+
+    async fn read_bytes_batch_async(
+        &self,
+        byte_ranges: Vec<Range<usize>>,
+    ) -> io::Result<Vec<OwnedBytes>> {
+        quickwit_storage::read_batch_with_cache(
+            byte_ranges,
+            |range| self.static_cache.try_read_bytes(range),
+            |ranges| self.underlying.read_bytes_batch_async(ranges),
+        )
+        .await
+    }
 }
 
 impl fmt::Debug for FileSliceWithCache {
@@ -543,6 +555,9 @@ pub fn write_hotcache<D: Directory>(
     output.flush()?;
     Ok(())
 }
+
+#[cfg(test)]
+mod batch_tests;
 
 #[cfg(test)]
 mod tests {
