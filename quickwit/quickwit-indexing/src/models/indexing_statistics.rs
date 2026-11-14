@@ -24,10 +24,14 @@ use crate::actors::{DocProcessorCounters, IndexerCounters, PublisherCounters, Up
 /// A Struct that holds all statistical data about indexing
 #[derive(Clone, Debug, Default, Serialize, utoipa::ToSchema)]
 pub struct IndexingStatistics {
-    /// Number of document processed (valid or not)
+    /// Number of document processed (valid or not). Excludes documents intentionally
+    /// dropped via VRL `abort` (see [`Self::num_dropped_docs`]).
     pub num_docs: u64,
     /// Number of document parse error, or missing timestamps
     pub num_invalid_docs: u64,
+    /// Number of documents intentionally dropped via the VRL `abort` expression. Not
+    /// counted in `num_docs` or `num_invalid_docs`.
+    pub num_dropped_docs: u64,
     /// Number of created split
     pub num_local_splits: u64,
     /// Number of staged splits
@@ -38,7 +42,7 @@ pub struct IndexingStatistics {
     pub num_published_splits: u64,
     /// Number of empty batches
     pub num_empty_splits: u64,
-    /// Size in byte of document processed
+    /// Size in bytes of documents processed, including those dropped via VRL `abort`.
     pub total_bytes_processed: u64,
     /// Size in bytes of resulting split
     pub total_size_splits: u64,
@@ -64,6 +68,7 @@ impl IndexingStatistics {
     ) -> Self {
         self.num_docs += doc_processor_counters.num_processed_docs();
         self.num_invalid_docs += doc_processor_counters.num_invalid_docs();
+        self.num_dropped_docs += doc_processor_counters.num_dropped_docs();
         self.num_local_splits += indexer_counters.num_splits_emitted;
         self.total_bytes_processed += doc_processor_counters
             .num_bytes_total
