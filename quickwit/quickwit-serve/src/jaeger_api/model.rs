@@ -87,35 +87,59 @@ impl JaegerTrace {
     }
 
     /// Processes a collection of spans, updating the `process_id` field based on the unique
-    /// `service_name` values. The function uses an accumulator (`acc`) to keep track of
-    /// processed `JaegerProcess` objects and assigns a new key to each unique `service_name` value.
+    /// `(service_name, tags)` pairs. The function uses an accumulator (`acc`) to keep track of
+    /// processed `JaegerProcess` objects and assigns a new key to each unique pair.
     /// The logic has been replicated from
     /// <https://github.com/jaegertracing/jaeger/blob/995231c42cadd70bce2bbbf02579e33f6e6329c8/model/converter/json/process_hashtable.go#L37>
-    /// TODO: use also tags to identify processes.
     fn build_process_map(spans: &mut [JaegerSpan]) -> HashMap<String, JaegerProcess> {
-        let mut service_name_to_process_id: HashMap<String, String> = HashMap::new();
+        let mut process_identity_to_id: HashMap<String, String> = HashMap::new();
         let mut process_map: HashMap<String, JaegerProcess> = HashMap::new();
         let mut process_counter: i32 = 0;
         for span in spans.iter_mut() {
             let Some(current_process) = span.process.as_mut() else {
                 continue;
             };
-            if let Some(process_id) = service_name_to_process_id.get(&current_process.service_name)
-            {
+            let identity = process_identity(current_process);
+            if let Some(process_id) = process_identity_to_id.get(&identity) {
                 span.process_id = Some(process_id.clone());
             } else {
                 process_counter += 1;
                 current_process.key = format!("p{process_counter}");
                 span.process_id = Some(current_process.key.clone());
                 process_map.insert(current_process.key.clone(), current_process.clone());
-                service_name_to_process_id.insert(
-                    current_process.service_name.clone(),
-                    current_process.key.clone(),
-                );
+                process_identity_to_id.insert(identity, current_process.key.clone());
             }
         }
         process_map
     }
+}
+
+/// Builds a stable identity for a process from its service name and tags. Tag order is
+/// normalized so that two spans describing the same process share a process ID.
+fn process_identity(process: &JaegerProcess) -> String {
+    let mut tags: Vec<(&str, &str, String)> = process
+        .tags
+        .iter()
+        .map(|tag| {
+            (
+                tag.key.as_str(),
+                tag.value_type.as_str(),
+                tag.value.to_string(),
+            )
+        })
+        .collect();
+    tags.sort();
+
+    let mut identity = process.service_name.clone();
+    for (key, value_type, value) in tags {
+        identity.push('\u{1f}');
+        identity.push_str(key);
+        identity.push('\u{1e}');
+        identity.push_str(value_type);
+        identity.push('\u{1e}');
+        identity.push_str(&value);
+    }
+    identity
 }
 
 #[serde_as]
@@ -341,7 +365,66 @@ fn convert_duration_to_microsecs(duration: Duration) -> i64 {
 mod tests {
     use quickwit_proto::jaeger::api_v2::Log;
 
-    use crate::jaeger_api::model::{JaegerSpan, build_jaeger_traces};
+    use crate::jaeger_api::model::{
+        JaegerKeyValue, JaegerProcess, JaegerSpan, JaegerTrace, build_jaeger_traces,
+    };
+
+    fn test_span(span_id: u8, service_name: &str, tags: Vec<JaegerKeyValue>) -> JaegerSpan {
+        JaegerSpan {
+            trace_id: vec![1],
+            span_id: vec![span_id],
+            operation_name: "operation".to_string(),
+            references: Vec::new(),
+            flags: 0,
+            start_time: 0,
+            duration: 0,
+            tags: Vec::new(),
+            logs: Vec::new(),
+            process: Some(JaegerProcess {
+                service_name: service_name.to_string(),
+                key: String::new(),
+                tags,
+            }),
+            process_id: None,
+            warnings: Vec::new(),
+        }
+    }
+
+    fn test_tag(key: &str, value: &str) -> JaegerKeyValue {
+        JaegerKeyValue {
+            key: key.to_string(),
+            value_type: "string".to_string(),
+            value: serde_json::json!(value),
+        }
+    }
+
+    #[test]
+    fn test_build_process_map_uses_service_name_and_tags() {
+        let mut spans = vec![
+            test_span(1, "service-x", vec![test_tag("host", "a")]),
+            test_span(2, "service-x", vec![test_tag("host", "b")]),
+            test_span(
+                3,
+                "service-x",
+                vec![test_tag("host", "a"), test_tag("env", "prod")],
+            ),
+            test_span(
+                4,
+                "service-x",
+                vec![test_tag("env", "prod"), test_tag("host", "a")],
+            ),
+            test_span(5, "service-y", vec![test_tag("host", "a")]),
+        ];
+
+        let processes = JaegerTrace::build_process_map(&mut spans);
+
+        // service-x/host=a, service-x/host=b, service-x/host=a+env=prod, service-y/host=a
+        assert_eq!(processes.len(), 4);
+        assert_ne!(spans[0].process_id, spans[1].process_id);
+        assert_ne!(spans[0].process_id, spans[2].process_id);
+        assert_eq!(spans[2].process_id, spans[3].process_id);
+        assert_ne!(spans[0].process_id, spans[4].process_id);
+    }
 
     #[test]
     fn test_convert_grpc_jaeger_spans_into_jaeger_ui_model() {
