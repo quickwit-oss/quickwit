@@ -44,6 +44,7 @@ use quickwit_query::query_ast::{
 };
 use serde::{Deserialize, Serialize};
 use tantivy::TantivyError;
+use tantivy::aggregation::AggregationLimitsGuard;
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
@@ -52,7 +53,7 @@ use tracing::{Span, debug, error, info, info_span, instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::cluster_client::ClusterClient;
-use crate::collector::{QuickwitAggregations, make_merge_collector};
+use crate::collector::{IntermediatePruning, QuickwitAggregations, make_merge_collector};
 use crate::cost::{compute_query_complexity_factor, compute_split_query_cost};
 use crate::metrics_trackers::{RootSearchMetricsFuture, RootSearchMetricsStep};
 use crate::scroll_context::{ScrollContext, ScrollKeyAndStartOffset};
@@ -1047,8 +1048,11 @@ pub(crate) async fn search_partial_hits_phase(
 
     let root_resource_stats = progress.resource_stats();
 
-    let merge_collector =
-        make_merge_collector(search_request, searcher_context.get_aggregation_limits())?;
+    let merge_collector = make_merge_collector(
+        search_request,
+        searcher_context.get_aggregation_limits(),
+        root_intermediate_pruning(search_request),
+    )?;
 
     // Merging is a cpu-bound task. Prioritize it over queued split searches to avoid delaying the
     // final response once all leaf responses are available.
@@ -1303,7 +1307,8 @@ async fn root_search_aux(
         search_request,
         first_phase_result.intermediate_aggregation_result,
         searcher_context,
-    )?;
+    )
+    .await?;
     // In case there is no index, we don't want the response to contain any aggregation structure
     if indexes_metas_for_leaf_search.is_empty() {
         aggregation_result_postcard_opt = None;
@@ -1331,7 +1336,7 @@ async fn root_search_aux(
 fn finalize_aggregation(
     intermediate_aggregation_result_bytes_opt: Option<Vec<u8>>,
     aggregations: QuickwitAggregations,
-    searcher_context: &SearcherContext,
+    aggregation_limits: AggregationLimitsGuard,
 ) -> crate::Result<Option<Vec<u8>>> {
     let merge_aggregation_result = match aggregations {
         QuickwitAggregations::FindTraceIdsAggregation(_) => {
@@ -1351,7 +1356,7 @@ fn finalize_aggregation(
                     Default::default()
                 };
             let final_aggregation_results: AggregationResults = intermediate_aggregation_results
-                .into_final_result(aggregations, searcher_context.get_aggregation_limits())?;
+                .into_final_result(aggregations, aggregation_limits)?;
             let final_aggregation_proxy: quickwit_query::aggregations::AggregationResults =
                 final_aggregation_results.into();
             postcard::to_stdvec(&final_aggregation_proxy)?
@@ -1360,7 +1365,21 @@ fn finalize_aggregation(
     Ok(Some(merge_aggregation_result))
 }
 
-fn finalize_aggregation_if_any(
+/// Whether the root merge has to bound its own intermediate results.
+///
+/// [`finalize_aggregation_if_any`] hands the merged bytes back untouched when the caller
+/// asked to skip finalization, which makes the root merge the last place able to bound
+/// them. When finalization does run it prunes to the requested `size` on its own, and
+/// pruning beforehand would only widen `doc_count_error_upper_bound`.
+fn root_intermediate_pruning(search_request: &SearchRequest) -> IntermediatePruning {
+    if search_request.skip_aggregation_finalization {
+        IntermediatePruning::Apply
+    } else {
+        IntermediatePruning::Skip
+    }
+}
+
+async fn finalize_aggregation_if_any(
     search_request: &SearchRequest,
     intermediate_aggregation_result_bytes_opt: Option<Vec<u8>>,
     searcher_context: &SearcherContext,
@@ -1372,12 +1391,21 @@ fn finalize_aggregation_if_any(
         return Ok(intermediate_aggregation_result_bytes_opt);
     }
     let aggregations: QuickwitAggregations = serde_json::from_str(aggregations_json)?;
-    let aggregation_result_postcard = finalize_aggregation(
-        intermediate_aggregation_result_bytes_opt,
-        aggregations,
-        searcher_context,
-    )?;
-    Ok(aggregation_result_postcard)
+    let aggregation_limits = searcher_context.get_aggregation_limits();
+    // The root merge does not prune when finalization follows, so the finalizer deserializes
+    // and sorts the candidates of every leaf. That is cpu-bound, keep it off the runtime.
+    let span = info_span!("finalize_aggregation");
+    crate::search_thread_pool()
+        .run_cpu_intensive_with_priority(Priority::High, move || {
+            let _span_guard = span.enter();
+            finalize_aggregation(
+                intermediate_aggregation_result_bytes_opt,
+                aggregations,
+                aggregation_limits,
+            )
+        })
+        .await
+        .context("failed to finalize aggregation")?
 }
 
 /// Checks that all of the index researched as found.
@@ -1670,7 +1698,11 @@ pub async fn search_plan(
         true,
         None,
     )?;
-    let merge_collector = make_merge_collector(&search_request, Default::default())?;
+    let merge_collector = make_merge_collector(
+        &search_request,
+        Default::default(),
+        IntermediatePruning::Apply,
+    )?;
     warmup_info.merge(merge_collector.warmup_info());
     warmup_info.simplify();
 
@@ -6020,6 +6052,30 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_root_intermediate_pruning_follows_finalization() {
+        // Finalization prunes to the requested `size`, so the merge keeps every candidate.
+        let finalizing = SearchRequest {
+            skip_aggregation_finalization: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            root_intermediate_pruning(&finalizing),
+            IntermediatePruning::Skip
+        );
+
+        // Without finalization the merged bytes go back to the caller as they are, so this
+        // merge has to bound them itself.
+        let skipping = SearchRequest {
+            skip_aggregation_finalization: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            root_intermediate_pruning(&skipping),
+            IntermediatePruning::Apply
+        );
+    }
+
     #[tokio::test]
     async fn test_finalize_aggregation_if_any_no_aggregation_request() {
         let search_request = SearchRequest {
@@ -6030,6 +6086,7 @@ mod tests {
         let searcher_context = SearcherContext::for_test();
         let result =
             finalize_aggregation_if_any(&search_request, Some(vec![1, 2, 3]), &searcher_context)
+                .await
                 .unwrap();
         assert!(result.is_none());
     }
@@ -6049,6 +6106,7 @@ mod tests {
             Some(intermediate_bytes.clone()),
             &searcher_context,
         )
+        .await
         .unwrap();
         assert_eq!(result, Some(intermediate_bytes));
     }
@@ -6062,7 +6120,9 @@ mod tests {
             ..Default::default()
         };
         let searcher_context = SearcherContext::for_test();
-        let result = finalize_aggregation_if_any(&search_request, None, &searcher_context).unwrap();
+        let result = finalize_aggregation_if_any(&search_request, None, &searcher_context)
+            .await
+            .unwrap();
         assert!(result.is_none());
     }
 
@@ -6082,6 +6142,7 @@ mod tests {
             Some(intermediate_bytes.clone()),
             &searcher_context,
         )
+        .await
         .unwrap();
         // Result should be Some (finalized), but different from intermediate bytes
         assert!(result.is_some());
@@ -6104,6 +6165,7 @@ mod tests {
             Some(intermediate_bytes.clone()),
             &searcher_context,
         )
+        .await
         .unwrap();
         assert!(result.is_some());
         assert_ne!(result.unwrap(), intermediate_bytes);
