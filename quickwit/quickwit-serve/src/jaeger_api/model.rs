@@ -92,7 +92,7 @@ impl JaegerTrace {
     /// The logic has been replicated from
     /// <https://github.com/jaegertracing/jaeger/blob/995231c42cadd70bce2bbbf02579e33f6e6329c8/model/converter/json/process_hashtable.go#L37>
     fn build_process_map(spans: &mut [JaegerSpan]) -> HashMap<String, JaegerProcess> {
-        let mut process_identity_to_id: HashMap<String, String> = HashMap::new();
+        let mut process_identity_to_id: HashMap<ProcessIdentity, String> = HashMap::new();
         let mut process_map: HashMap<String, JaegerProcess> = HashMap::new();
         let mut process_counter: i32 = 0;
         for span in spans.iter_mut() {
@@ -114,32 +114,33 @@ impl JaegerTrace {
     }
 }
 
+#[derive(PartialEq, Eq, Hash)]
+struct ProcessIdentity {
+    service_name: String,
+    tags: Vec<(String, String, String)>,
+}
+
 /// Builds a stable identity for a process from its service name and tags. Tag order is
-/// normalized so that two spans describing the same process share a process ID.
-fn process_identity(process: &JaegerProcess) -> String {
-    let mut tags: Vec<(&str, &str, String)> = process
+/// normalized so that two spans describing the same process share a process ID. The identity is
+/// a structured key rather than a delimited string so that names containing delimiter
+/// characters cannot collide.
+fn process_identity(process: &JaegerProcess) -> ProcessIdentity {
+    let mut tags: Vec<(String, String, String)> = process
         .tags
         .iter()
         .map(|tag| {
             (
-                tag.key.as_str(),
-                tag.value_type.as_str(),
+                tag.key.clone(),
+                tag.value_type.clone(),
                 tag.value.to_string(),
             )
         })
         .collect();
     tags.sort();
-
-    let mut identity = process.service_name.clone();
-    for (key, value_type, value) in tags {
-        identity.push('\u{1f}');
-        identity.push_str(key);
-        identity.push('\u{1e}');
-        identity.push_str(value_type);
-        identity.push('\u{1e}');
-        identity.push_str(&value);
+    ProcessIdentity {
+        service_name: process.service_name.clone(),
+        tags,
     }
-    identity
 }
 
 #[serde_as]
@@ -424,6 +425,21 @@ mod tests {
         assert_ne!(spans[0].process_id, spans[2].process_id);
         assert_eq!(spans[2].process_id, spans[3].process_id);
         assert_ne!(spans[0].process_id, spans[4].process_id);
+    }
+
+    #[test]
+    fn test_build_process_map_does_not_collide_on_delimiter_characters() {
+        // With the old delimited encoding, this service name and this tag produced the same
+        // identity and the two processes were merged.
+        let mut spans = vec![
+            test_span(1, "svc", vec![test_tag("host", "a")]),
+            test_span(2, "svc\u{1f}host\u{1e}string\u{1e}\"a\"", Vec::new()),
+        ];
+
+        let processes = JaegerTrace::build_process_map(&mut spans);
+
+        assert_eq!(processes.len(), 2);
+        assert_ne!(spans[0].process_id, spans[1].process_id);
     }
 
     #[test]
