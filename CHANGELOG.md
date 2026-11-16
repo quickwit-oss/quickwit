@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Azure Blob Storage: support custom endpoints via `endpoint` and `endpoint_suffix` configuration options for sovereign clouds (#6624)
 - Restore anonymous usage telemetry, removed in 0.9.0. It is on by default: set `QW_DISABLE_TELEMETRY=1` to turn it off. `docs/telemetry.md` lists what is sent and where it goes (#6927)
+- `searcher.warmup_single_split_max_allocation`: maximum warmup memory a single split search can reserve, `max(warmup_single_split_initial_allocation, warmup_memory_budget / 4)` by default. A split search that would need more memory fails
 
 ### Fixed
 - (Jaeger) Query resource attributes when Jaeger request carries tags
@@ -24,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed `ingest_api.content_length_limit` to `ingest_api.max_body_size`; the former name is still accepted as a config alias.
 - **Breaking**: `ingest_api.max_decompressed_body_size` must be between `ingest_api.max_body_size` and 4 GiB; node configs outside this range now fail validation at startup. Configs that set `content_length_limit` (or `max_body_size`) above 256 MiB must also raise `max_decompressed_body_size`.
 - **Breaking**: the `metastore` section of the node config is now validated at startup. Node configs with `metastore.postgres.min_connections` greater than `max_connections`, which were previously accepted, now fail to load; set `min_connections` to at most `max_connections`. Invalid PostgreSQL metastore durations (`acquire_connection_timeout`, `idle_connection_timeout`, `max_connection_lifetime`) are now reported as config errors instead of crashing the metastore during initialization.
+- `searcher.warmup_memory_budget` is now a hard limit: split searches reserve memory before downloading their warmup data, and fail instead of going over the budget
+- `searcher.warmup_single_split_initial_allocation` above `searcher.warmup_memory_budget` is now rejected at startup, even without a split cache
+- Leaf searches no longer retry, on another searcher, the splits that failed because their warmup would have gone over `searcher.warmup_memory_budget`
 
 ### Deprecated
 
