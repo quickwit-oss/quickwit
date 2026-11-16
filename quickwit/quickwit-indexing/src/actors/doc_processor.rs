@@ -185,7 +185,8 @@ impl Iterator for JsonDocIterator {
 }
 
 impl<E> From<Result<JsonDoc, E>> for JsonDocIterator
-where E: Into<DocProcessorError>
+where
+    E: Into<DocProcessorError>,
 {
     fn from(result: Result<JsonDoc, E>) -> Self {
         match result {
@@ -214,7 +215,7 @@ impl From<Result<JsonSpanIterator, OtlpTracesError>> for JsonDocIterator {
 }
 
 /// Builds the VRL doc straight from the raw doc for the formats holding exactly one doc per raw
-/// doc, which spares the intermediate JSON object. Returns `None` for the other formats.
+/// doc, avoiding the intermediate JSON object. Returns `None` for the other formats.
 ///
 /// Unlike the JSON object route, this lets the transform see top-level JSON values that are not
 /// objects and plain text that is not valid UTF-8.
@@ -261,7 +262,9 @@ pub struct DocProcessorCounter {
 
 impl Serialize for DocProcessorCounter {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         serializer.serialize_u64(self.get_num_docs())
     }
 }
