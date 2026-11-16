@@ -1480,6 +1480,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_source_config_otlp_input_format_with_transform() {
+        let otlp_input_formats = [
+            ("otlp_logs_json", SourceInputFormat::OtlpLogsJson),
+            ("otlp_logs_protobuf", SourceInputFormat::OtlpLogsProtobuf),
+            ("otlp_traces_json", SourceInputFormat::OtlpTracesJson),
+            (
+                "otlp_traces_protobuf",
+                SourceInputFormat::OtlpTracesProtobuf,
+            ),
+        ];
+        for (input_format_str, expected_input_format) in otlp_input_formats {
+            let file_content = json!({
+                "version": "0.7",
+                "source_id": "otlp-file-source",
+                "source_type": "file",
+                "params": {
+                    "filepath": "s3://mybucket/otlp_requests"
+                },
+                "transform": {
+                    "script": ".service_name = \"transformed\""
+                },
+                "input_format": input_format_str
+            })
+            .to_string();
+            let source_config =
+                load_source_config_from_user_config(ConfigFormat::Json, file_content.as_bytes())
+                    .unwrap();
+            assert_eq!(source_config.input_format, expected_input_format);
+            assert_eq!(
+                source_config.transform_config,
+                Some(TransformConfig::new(
+                    ".service_name = \"transformed\"".to_string(),
+                    None
+                ))
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn test_update_kafka_source_config() {
         let source_config_filepath = get_source_config_filepath("kafka-source.json");
         let file_content = std::fs::read(&source_config_filepath).unwrap();
