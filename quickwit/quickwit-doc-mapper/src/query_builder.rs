@@ -263,15 +263,22 @@ impl<'a> ExtractPrefixTermRanges<'a> {
             .or_default() |= position_needed;
     }
 
-    fn add_automaton(&mut self, field: Field, automaton: Automaton, query_ast: Option<QueryAst>) {
-        let warmup = match query_ast {
-            Some(query_ast) if self.cache_predicates => {
-                let cache_key = serde_json::to_string(&query_ast)
-                    .expect("automaton predicates must serialize for predicate caching");
-                AutomatonWarmup::CacheHits(HashSet::from([cache_key]))
-            }
-            _ => AutomatonWarmup::PostingsOnly,
-        };
+    fn predicate_warmup(&self, query_ast: &QueryAst) -> AutomatonWarmup {
+        if !self.cache_predicates {
+            return AutomatonWarmup::PostingsOnly;
+        }
+
+        let cache_key = serde_json::to_string(query_ast)
+            .expect("automaton predicates must serialize for predicate caching");
+        AutomatonWarmup::CacheHits(HashSet::from([cache_key]))
+    }
+
+    fn add_automaton_warmup(
+        &mut self,
+        field: Field,
+        automaton: Automaton,
+        warmup: AutomatonWarmup,
+    ) {
         self.automatons_to_warm_up
             .entry(field)
             .or_default()
@@ -327,11 +334,8 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
                 Err(e) => return Err(e),
             };
 
-        self.add_automaton(
-            field,
-            Automaton::Regex(path, regex),
-            Some(QueryAst::Wildcard(wildcard_query.clone())),
-        );
+        let warmup = self.predicate_warmup(&QueryAst::Wildcard(wildcard_query.clone()));
+        self.add_automaton_warmup(field, Automaton::Regex(path, regex), warmup);
         Ok(())
     }
 
@@ -342,10 +346,11 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
             Err(InvalidQuery::FieldDoesNotExist { .. }) => return Ok(()),
             Err(e) => return Err(e),
         };
-        self.add_automaton(
+        let warmup = self.predicate_warmup(&QueryAst::Regex(regex_query.clone()));
+        self.add_automaton_warmup(
             resolved.field,
             Automaton::Regex(resolved.json_path, resolved.regex),
-            Some(QueryAst::Regex(regex_query.clone())),
+            warmup,
         );
         Ok(())
     }
@@ -355,10 +360,10 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
             return Ok(());
         };
         let resolved = regex_query.to_resolved(self.schema, Some(self.tokenizer_manager))?;
-        self.add_automaton(
+        self.add_automaton_warmup(
             resolved.field,
             Automaton::Regex(resolved.json_path, resolved.regex),
-            None,
+            AutomatonWarmup::PostingsOnly,
         );
         Ok(())
     }
