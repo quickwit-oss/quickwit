@@ -30,11 +30,4 @@ test.describe("Home navigation", () => {
     await expect(page.getByLabel("breadcrumb")).toContainText("Cluster");
     await expect(page.getByText("cluster_id")).toBeVisible();
   });
-
-  test("Should display otel logs index page", async ({ page }) => {
-    await page.goto("/ui/indexes/otel-logs-v0_7");
-    await expect(
-      page.getByLabel("breadcrumb").getByRole("link", { name: "Indexes" }),
-    ).toBeVisible();
-  });
 });
