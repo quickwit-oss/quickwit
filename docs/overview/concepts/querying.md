@@ -101,7 +101,7 @@ Predicate fill costs are stored with the cached hit sets. An in-memory cache kee
 On disk:
 
 - Configure `storage_cache` with a positive `disk_capacity` and a directory to enable its disk tier. Set `disk_capacity: 0` for memory-only operation without a directory. Predicate and partial-response caches can also use independent disk tiers. Each tier skips caching payloads larger than its configured capacity. These payloads are still returned to callers.
-- The split cache stores entire splits on disk. It can be enabled by setting the `split_cache` configuration fields. This cache can help reduce object store costs and load. Searchers populate this cache when splits are created or queried and evict them with a simple LRU strategy.
+- The split cache stores entire splits on disk. It can be enabled by setting the `split_cache` configuration fields. This cache can help reduce object store costs and load. Searchers populate this cache when splits are created or queried and evict them with a simple LRU strategy. Both footer and body reads consult `storage_cache` first, then the split cache, then object storage. Whole-split-cache reads can populate the memory tier of `storage_cache`. Keep `storage_cache` memory-only when using the split cache to avoid storing ranges in both disk caches.
 
 If a storage, partial-request, or predicate disk cache cannot be opened at startup,
 the searcher uses memory-only caching for that cache, keeping its configured memory

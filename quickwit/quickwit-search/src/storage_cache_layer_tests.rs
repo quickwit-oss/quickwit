@@ -190,7 +190,7 @@ mod disk_tests {
     }
 
     #[tokio::test]
-    async fn test_open_split_bundle_footer_skips_whole_split_cache() {
+    async fn test_open_split_bundle_uses_whole_split_cache_for_footer_and_body() {
         let split = build_split().await;
         let split_cache_dir = tempfile::tempdir().unwrap();
         std::fs::write(
@@ -221,15 +221,15 @@ mod disk_tests {
             .unwrap();
         assert_eq!(
             counters.snapshot().1,
-            1,
-            "footer bypasses split_cache and reads through storage_cache"
+            0,
+            "footer is served by the whole-split cache"
         );
 
         bundle.get_slice(Path::new(BODY_FILE), 0..4).await.unwrap();
         assert_eq!(
             counters.snapshot().1,
-            1,
-            "body must hit the on-disk whole-split cache"
+            0,
+            "body is served by the whole-split cache"
         );
     }
 
