@@ -17,6 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Bound;
 
 use assert_json_diff::{assert_json_eq, assert_json_include};
+use bytesize::ByteSize;
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
@@ -1240,6 +1241,68 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         .into_iter()
         .map(|partial_hit| partial_hit.doc_id)
         .collect::<Vec<u32>>()
+}
+
+#[tokio::test]
+async fn test_leaf_search_fails_when_warmup_exceeds_memory_limit() {
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+                record: position
+        "#;
+    let test_sandbox = TestSandbox::create(
+        "leaf_search_warmup_memory_limit",
+        doc_mapping_yaml,
+        "{}",
+        &["body"],
+    )
+    .await
+    .unwrap();
+    let docs: Vec<serde_json::Value> = (0..1_000)
+        .map(|doc_id| json!({"body": format!("hello happy tax payer {doc_id}")}))
+        .collect();
+    test_sandbox.add_documents(docs).await.unwrap();
+    let splits = test_sandbox
+        .metastore()
+        .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
+        .await
+        .unwrap()
+        .collect_splits()
+        .await
+        .unwrap();
+    let splits_offsets: Vec<_> = splits
+        .into_iter()
+        .map(|split| extract_split_and_footer_offsets(&split.split_metadata))
+        .collect();
+    let request = Arc::new(SearchRequest {
+        index_id_patterns: vec![test_sandbox.index_uid().index_id.to_string()],
+        query_ast: qast_json_helper("\"happy tax\"", &["body"]),
+        max_hits: 10,
+        ..Default::default()
+    });
+    // The permit fits (its size is clamped to the limit), but the warmup cannot download anything.
+    let mut searcher_config = SearcherConfig::default();
+    searcher_config.warmup_memory_budget = ByteSize(1);
+    let searcher_context = Arc::new(SearcherContext::new_without_invoker(searcher_config, None));
+
+    let leaf_search_response = single_doc_mapping_leaf_search(
+        searcher_context,
+        request,
+        test_sandbox.storage(),
+        splits_offsets,
+        test_sandbox.doc_mapper(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(leaf_search_response.failed_splits.len(), 1);
+    let split_error = &leaf_search_response.failed_splits[0].error;
+    assert!(
+        split_error.contains("out of warmup memory"),
+        "unexpected split error: {split_error}"
+    );
+    test_sandbox.assert_quit().await;
 }
 
 #[tokio::test]

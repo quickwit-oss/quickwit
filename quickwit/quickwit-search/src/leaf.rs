@@ -70,6 +70,7 @@ use crate::search_permit_provider::{
     SearchPermit, SearchPermitFuture, compute_initial_memory_allocation,
 };
 use crate::service::{SearcherContext, deserialize_doc_mapper};
+use crate::split_warmup_memory::SplitWarmupMemory;
 use crate::{QuickwitAggregations, SearchError};
 
 /// Distributes items across batches using a greedy LPT (Longest Processing Time)
@@ -235,12 +236,16 @@ fn configure_storage_retries(
 /// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
 /// - An ephemeral unbounded cache directory (whose lifetime is tied to the returned `Index` if no
 ///   `ByteRangeCache` is provided).
+///
+/// If `warmup_memory` is provided, every read that misses the hotcache and the ephemeral cache
+/// first reserves memory in it, and fails if the warmup memory limit would be exceeded.
 pub(crate) async fn open_index_with_caches(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
     tokenizer_manager: Option<&TokenizerManager>,
     ephemeral_unbounded_cache: Option<ByteRangeCache>,
+    warmup_memory: Option<Arc<SplitWarmupMemory>>,
 ) -> anyhow::Result<(Index, HotDirectory)> {
     let index_storage_with_retry_on_timeout =
         configure_storage_retries(searcher_context, index_storage);
@@ -260,7 +265,11 @@ pub(crate) async fn open_index_with_caches(
     let directory = StorageDirectory::new(bundle_storage_with_cache);
 
     let hot_directory = if let Some(cache) = ephemeral_unbounded_cache {
-        let caching_directory = CachingDirectory::new(Arc::new(directory), cache);
+        let mut caching_directory = CachingDirectory::new(Arc::new(directory), cache);
+        // Fast field cache hits are also kept in the ephemeral cache, so they count too.
+        if let Some(warmup_memory) = warmup_memory {
+            caching_directory = caching_directory.with_memory_reserver(warmup_memory);
+        }
         HotDirectory::open(caching_directory, hotcache_bytes)?
     } else {
         HotDirectory::open(directory, hotcache_bytes)?
@@ -716,6 +725,7 @@ async fn leaf_search_single_split(
         &split,
         Some(ctx.doc_mapper.tokenizer_manager()),
         Some(byte_range_cache.clone()),
+        Some(search_permit.warmup_memory()),
     )
     .await
     .inspect_err(|_| {
@@ -723,10 +733,9 @@ async fn leaf_search_single_split(
             .set_state(SplitSearchState::Error(SplitSearchErrorKind::CreateReader))
     })?;
 
+    // The warmup cannot download more than the index, so we do not need to reserve more.
     let index_size = ByteSize(hot_directory.num_bytes_without_doc_store());
-    if index_size < search_permit.memory_allocation() {
-        search_permit.update_memory_usage(index_size);
-    }
+    search_permit.shrink_memory_allocation(index_size);
 
     let searcher = index
         .reader_builder()
@@ -850,16 +859,10 @@ async fn leaf_search_single_split(
     let warmup_end = Instant::now();
     let warmup_duration: Duration = warmup_end.duration_since(warmup_start);
     let warmup_size = ByteSize(byte_range_cache.get_num_bytes());
-    if warmup_size > search_permit.memory_allocation() {
-        quickwit_common::rate_limited_warn!(
-            limit_per_min = 1,
-            memory_usage = ?warmup_size,
-            memory_allocation = ?search_permit.memory_allocation(),
-            "current leaf search is consuming more memory than the initial allocation"
-        );
-    }
     LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES.observe(warmup_size.as_u64() as f64);
-    search_permit.update_memory_usage(warmup_size);
+    // The memory for the warmup data was reserved while it was downloaded. We give back what the
+    // reservation holds in excess.
+    search_permit.release_unused_memory();
     search_permit.free_warmup_slot();
 
     if provably_empty {
@@ -2408,7 +2411,9 @@ async fn leaf_search_single_split_wrapper(
         .await;
 
     // Explicitly drop the permit for readability.
-    // This should always happen after the ephemeral search cache is dropped.
+    // This should always happen after the ephemeral search cache is dropped. The split's
+    // `CachingDirectory` holds the other reference to the warmup memory, together with the
+    // ephemeral search cache, so the warmup memory is freed here.
     std::mem::drop(search_permit);
 
     if leaf_search_single_split_opt_res.is_ok() {
