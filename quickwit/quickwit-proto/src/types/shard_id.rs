@@ -40,7 +40,7 @@ impl ShardId {
 
 impl fmt::Display for ShardId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", &self.0)
+        write!(f, "{}", self.0)
     }
 }
 

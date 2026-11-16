@@ -37,7 +37,7 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::{NodeId, SplitId};
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use quickwit_query::query_ast::QueryAst;
-use tantivy::directory::{Advice, DirectoryClone, MmapDirectory, RamDirectory};
+use tantivy::directory::{Advice, DirectoryClone, RamDirectory};
 use tantivy::index::SegmentId;
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, Directory, Index, IndexMeta, IndexWriter, SegmentReader};
@@ -49,6 +49,7 @@ use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::{MergeOperationType, MergeSource};
 use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, SplitAttrs};
+use crate::no_fsync_mmap_directory::open_split_scratch_directory;
 
 #[derive(Clone)]
 pub struct MergeExecutor {
@@ -518,10 +519,7 @@ impl MergeExecutor {
 
         // This directory is here to receive the merged split, as well as the final meta.json file.
         let output_directory = ControlledDirectory::new(
-            Box::new(MmapDirectory::open_with_madvice(
-                output_path,
-                Advice::Sequential,
-            )?),
+            open_split_scratch_directory(output_path, Advice::Sequential)?,
             self.io_controls
                 .clone()
                 .set_kill_switch(ctx.kill_switch().clone())

@@ -74,7 +74,7 @@ mod void_source;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::LazyLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -96,7 +96,9 @@ use quickwit_common::metrics::{
     IN_FLIGHT_KINESIS_SOURCE, IN_FLIGHT_OTHER_SOURCE, IN_FLIGHT_PUBSUB_SOURCE,
     IN_FLIGHT_PULSAR_SOURCE,
 };
+use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::EventBroker;
+use quickwit_common::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{
     FileSourceNotification, FileSourceParams, IndexingSettings, SourceConfig, SourceParams,
@@ -511,8 +513,23 @@ pub async fn check_source_connectivity(
     }
 }
 
+/// Suggest truncate messages processed later than this threshold trigger a warning.
+const SUGGEST_TRUNCATE_DELAY_WARN_THRESHOLD: Duration = Duration::from_millis(100);
+
 #[derive(Debug)]
-pub struct SuggestTruncate(pub SourceCheckpoint);
+pub struct SuggestTruncate {
+    pub checkpoint: SourceCheckpoint,
+    pub created_at: Instant,
+}
+
+impl SuggestTruncate {
+    pub fn new(checkpoint: SourceCheckpoint) -> Self {
+        Self {
+            checkpoint,
+            created_at: Instant::now(),
+        }
+    }
+}
 
 #[async_trait]
 impl Handler<SuggestTruncate> for SourceActor {
@@ -523,7 +540,21 @@ impl Handler<SuggestTruncate> for SourceActor {
         suggest_truncate: SuggestTruncate,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
-        let SuggestTruncate(checkpoint) = suggest_truncate;
+        let SuggestTruncate {
+            checkpoint,
+            created_at,
+        } = suggest_truncate;
+        let delay = created_at.elapsed();
+
+        if delay > SUGGEST_TRUNCATE_DELAY_WARN_THRESHOLD {
+            rate_limited_warn!(
+                limit_per_min = 6,
+                source = self.source.name(),
+                delay_ms = delay.as_millis() as u64,
+                "suggest truncate message processed with delay of {}",
+                delay.pretty_display()
+            );
+        }
 
         if let Err(error) = self.source.suggest_truncate(checkpoint, ctx).await {
             // Failing to process suggest truncate does not

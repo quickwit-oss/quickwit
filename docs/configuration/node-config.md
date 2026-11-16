@@ -214,7 +214,7 @@ File-backed metastore doesn't have any node level configuration. You can configu
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| `min_connections` | Minimum number of connections to maintain in the pool at all times. | `0` |
+| `min_connections` | Minimum number of connections to maintain in the pool at all times. Must be less than or equal to `max_connections`. | `0` |
 | `max_connections` | Maximum number of connections to maintain in the pool. | `10` |
 | `acquire_connection_timeout` | Maximum amount of time to spend waiting for an available connection before aborting a query. | `10s` |
 | `idle_connection_timeout` | Maximum idle duration before closing individual connections. | `10min` |
