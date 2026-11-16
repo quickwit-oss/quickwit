@@ -244,7 +244,7 @@ impl CompactionPlanner {
         let mut assignments = Vec::with_capacity(pending_merge_ops.len());
 
         for merge_op in pending_merge_ops {
-            let task_id = Ulid::new().to_string();
+            let task_id = Ulid::generate().to_string();
             let Some(index_entry) = self.index_config_metastore.get(&merge_op.index_uid) else {
                 error!(index_uid=%merge_op.index_uid, "index config not found for pending operation, skipping");
                 continue;

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -176,7 +176,7 @@ pub struct BulkDeleteError {
     /// List of files that were successfully deleted, including non-existing files.
     pub successes: Vec<PathBuf>,
     /// List of files that failed to be deleted along with the corresponding failure descriptions.
-    pub failures: HashMap<PathBuf, DeleteFailure>,
+    pub failures: BTreeMap<PathBuf, DeleteFailure>,
     /// List of remaining files to delete before the operation was aborted.
     pub unattempted: Vec<PathBuf>,
 }
