@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking**: the `metastore` section of the node config is now validated at startup. Node configs with `metastore.postgres.min_connections` greater than `max_connections`, which were previously accepted, now fail to load; set `min_connections` to at most `max_connections`. Invalid PostgreSQL metastore durations (`acquire_connection_timeout`, `idle_connection_timeout`, `max_connection_lifetime`) are now reported as config errors instead of crashing the metastore during initialization.
 - `searcher.warmup_memory_budget` is now a hard limit: split searches reserve memory before downloading their warmup data, and fail instead of going over the budget
 - `searcher.warmup_single_split_initial_allocation` above `searcher.warmup_memory_budget` is now rejected at startup, even without a split cache
+- Leaf searches no longer retry, on another searcher, the splits that failed because their warmup would have gone over `searcher.warmup_memory_budget`
 
 ### Deprecated
 

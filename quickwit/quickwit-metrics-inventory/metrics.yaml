@@ -589,7 +589,7 @@ quickwit_search_leaf_search_split_duration_secs:
 quickwit_search_leaf_search_split_warmup_out_of_memory_total:
   module: quickwit_search::metrics
   kind: counter
-  description: Number of split searches that failed because their warmup would have gone over the warmup memory limit.
+  description: 'Number of split searches that failed because their warmup would have gone over a warmup memory limit. The `budget` label tells which one: `split` for `searcher.warmup_single_split_max_allocation`, `global` for `searcher.warmup_memory_budget`.'
 quickwit_search_leaf_search_targeted_splits:
   module: quickwit_search::metrics
   kind: histogram
