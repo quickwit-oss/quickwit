@@ -42,6 +42,7 @@ pub(crate) mod top_k_collector;
 
 mod metrics;
 mod search_permit_provider;
+mod warmup_memory;
 
 #[cfg(test)]
 mod tests;
@@ -218,6 +219,7 @@ fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAn
             .as_ref()
             .map(|time_range| *time_range.end()),
         num_docs: split_metadata.num_docs as u64,
+        is_mature: split_metadata.is_mature(tantivy::time::OffsetDateTime::now_utc()),
     }
 }
 

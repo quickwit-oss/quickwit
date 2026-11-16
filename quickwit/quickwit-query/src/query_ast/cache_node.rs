@@ -15,7 +15,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use bitpacking::{BitPacker, BitPacker1x};
 use serde::{Deserialize, Serialize};
 
 use super::{BuildTantivyAst, BuildTantivyAstContext, TantivyQueryAst};
@@ -42,7 +41,7 @@ pub enum CacheState {
     // This is the state a CacheNode should be before
     #[default]
     Uninitialized,
-    CacheHit(CacheEntry),
+    CacheHit(Box<CacheEntry>),
     CacheMiss(CacheFiller),
 }
 
@@ -82,7 +81,7 @@ impl CacheNode {
             return;
         };
         if let Some((segment_id, hits)) = cache.get(split_id.to_string(), query.clone()) {
-            self.state = CacheState::CacheHit(CacheEntry { segment_id, hits });
+            self.state = CacheState::CacheHit(Box::new(CacheEntry { segment_id, hits }));
         } else {
             self.state = CacheState::CacheMiss(CacheFiller {
                 cache: cache.clone(),
@@ -101,7 +100,7 @@ impl BuildTantivyAst for CacheNode {
         match &self.state {
             CacheState::Uninitialized => self.inner.build_tantivy_ast_call(context),
             CacheState::CacheHit(cache_entry) => Ok(CacheHitQuery {
-                cache_entry: cache_entry.clone(),
+                cache_entry: cache_entry.as_ref().clone(),
             }
             .into()),
             CacheState::CacheMiss(cache_filler) => {
@@ -124,10 +123,13 @@ impl BuildTantivyAst for CacheNode {
     }
 }
 
-use tantivy::directory::OwnedBytes;
 use tantivy::index::SegmentId;
 use tantivy::query::{EnableScoring, Explanation, Query, Scorer, Weight};
 use tantivy::{DocId, DocSet, Score, SegmentReader, TantivyError, Term};
+
+mod hit_set;
+pub use hit_set::HitSet;
+use hit_set::HitSetBuilder;
 
 #[derive(Clone, Debug)]
 pub struct CacheHitQuery {
@@ -199,179 +201,6 @@ impl CacheEntry {
         } else {
             None
         }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct HitSet {
-    buffer: OwnedBytes,
-    buffer_pos: usize,
-    previous_last_val: Option<u32>,
-    current_block: [u32; BitPacker1x::BLOCK_LEN],
-    block_pos: usize,
-    boost: Score,
-}
-
-const INCOMPLETE_BLOCK_MARKER: u8 = 0x80;
-
-impl HitSet {
-    /// An empty hit set, matching no document.
-    pub fn empty() -> Self {
-        Self::from_buffer(OwnedBytes::new(vec![0, 0, 0, 0]))
-    }
-
-    /// Returns true if this hit set matches no document.
-    pub fn is_empty(&self) -> bool {
-        self.size_hint() == 0
-    }
-
-    /// Build a HitSet from its serialized form.
-    ///
-    /// The provided buffer must come from `HitSet::into_buffer`
-    pub fn from_buffer(buffer: OwnedBytes) -> Self {
-        let mut this = Self {
-            buffer,
-            // skip count
-            buffer_pos: 4,
-            previous_last_val: None,
-            current_block: [0; BitPacker1x::BLOCK_LEN],
-            // we set this to block_len minus 1 so we can call advance() once to initialize
-            // everything
-            block_pos: BitPacker1x::BLOCK_LEN - 1,
-            boost: 1.0,
-        };
-        this.advance();
-        this
-    }
-
-    /// Return a buffer representing the underlying data.
-    ///
-    /// This does not preserve where in the DocSet you are.
-    pub fn into_buffer(self) -> OwnedBytes {
-        self.buffer
-    }
-
-    fn load_new_block(&mut self) {
-        let Some(num_bits) = self.buffer.get(self.buffer_pos) else {
-            // we ended iteration: simply fill the current_block full of TERMINATED
-            self.current_block = [tantivy::TERMINATED; 32];
-            return;
-        };
-        self.buffer_pos += 1;
-        if *num_bits == INCOMPLETE_BLOCK_MARKER {
-            // final block, decode as many ids as possible
-            let mut i = 0;
-            for chunk in self.buffer[self.buffer_pos..].as_chunks().0 {
-                self.current_block[i] = u32::from_ne_bytes(*chunk);
-                i += 1;
-            }
-            // pad with TERMINATED
-            while i < BitPacker1x::BLOCK_LEN {
-                self.current_block[i] = tantivy::TERMINATED;
-                i += 1;
-            }
-            self.buffer_pos = self.buffer.len();
-        } else {
-            self.buffer_pos += BitPacker1x.decompress_strictly_sorted(
-                self.previous_last_val,
-                &self.buffer[self.buffer_pos..],
-                &mut self.current_block,
-                *num_bits,
-            );
-            self.previous_last_val = self.current_block.last().copied();
-        }
-    }
-}
-
-impl DocSet for HitSet {
-    fn advance(&mut self) -> DocId {
-        self.block_pos += 1;
-        if let Some(doc_id) = self.current_block.get(self.block_pos) {
-            return *doc_id;
-        }
-        self.load_new_block();
-        self.block_pos = 0;
-        self.current_block[0]
-    }
-
-    // fn seek(&mut self, target: DocId) -> DocId {
-    // }
-
-    #[inline(always)]
-    fn doc(&self) -> DocId {
-        self.current_block[self.block_pos]
-    }
-
-    fn size_hint(&self) -> u32 {
-        u32::from_ne_bytes(self.buffer[0..4].try_into().unwrap())
-    }
-}
-
-impl Scorer for HitSet {
-    fn score(&mut self) -> f32 {
-        self.boost
-    }
-}
-
-pub struct HitSetBuilder {
-    count: u32,
-    current_block: [u32; BitPacker1x::BLOCK_LEN],
-    previous_last_val: Option<u32>,
-    buffer: Vec<u8>,
-}
-
-impl HitSetBuilder {
-    pub fn new() -> Self {
-        HitSetBuilder {
-            count: 0,
-            current_block: [0; BitPacker1x::BLOCK_LEN],
-            previous_last_val: None,
-            buffer: vec![0; 4],
-        }
-    }
-
-    fn in_block_pos(&self) -> usize {
-        (self.count % BitPacker1x::BLOCK_LEN as u32) as usize
-    }
-
-    fn end_of_block(&self) -> bool {
-        self.in_block_pos() == (BitPacker1x::BLOCK_LEN - 1)
-    }
-
-    fn flush_block(&mut self) {
-        let num_bits =
-            BitPacker1x.num_bits_strictly_sorted(self.previous_last_val, &self.current_block);
-        self.buffer.push(num_bits);
-        let current_buffer_pos = self.buffer.len();
-        let new_end = current_buffer_pos + (BitPacker1x::BLOCK_LEN * num_bits as usize) / 8;
-        self.buffer.resize(new_end, 0);
-        BitPacker1x.compress_strictly_sorted(
-            self.previous_last_val,
-            &self.current_block,
-            &mut self.buffer[current_buffer_pos..],
-            num_bits,
-        );
-        self.previous_last_val = self.current_block.last().copied();
-    }
-
-    pub fn insert(&mut self, value: u32) {
-        self.current_block[self.in_block_pos()] = value;
-        if self.end_of_block() {
-            self.flush_block();
-        }
-        self.count += 1;
-    }
-
-    pub fn build(mut self) -> HitSet {
-        if self.in_block_pos() != 0 {
-            self.buffer.push(INCOMPLETE_BLOCK_MARKER);
-            for elem in &self.current_block[..self.in_block_pos()] {
-                self.buffer.extend_from_slice(&elem.to_ne_bytes());
-            }
-        }
-        // write back the count of items
-        self.buffer[0..4].copy_from_slice(&self.count.to_ne_bytes());
-        HitSet::from_buffer(OwnedBytes::new(self.buffer))
     }
 }
 
@@ -536,50 +365,6 @@ mod tests {
         }
     }
 
-    #[track_caller]
-    fn test_hit_set_roundtrip_helper<I: Iterator<Item = u32> + Clone>(iter: I) {
-        let mut hitset_builder = HitSetBuilder::new();
-        for i in iter.clone() {
-            hitset_builder.insert(i);
-        }
-        let mut hitset = hitset_builder.build();
-
-        for val in iter {
-            assert_eq!(hitset.doc(), val);
-            hitset.advance();
-        }
-        for _ in 0..96 {
-            assert_eq!(hitset.doc(), tantivy::TERMINATED);
-            hitset.advance();
-        }
-    }
-
-    #[test]
-    fn test_hit_set_roundtrip() {
-        // this generate a pseurorandom strictrly increasing sequence
-        let generator = std::iter::successors(Some(0u32), |x| Some(x + x.trailing_ones() + 1));
-
-        // empty
-        test_hit_set_roundtrip_helper(generator.clone().take(0));
-        // one item
-        test_hit_set_roundtrip_helper(generator.clone().take(1));
-        test_hit_set_roundtrip_helper(generator.clone().skip(10).take(1));
-        // partial block
-        test_hit_set_roundtrip_helper(generator.clone().take(24));
-        test_hit_set_roundtrip_helper(generator.clone().skip(10).take(24));
-
-        // one block
-        test_hit_set_roundtrip_helper(generator.clone().take(32));
-        test_hit_set_roundtrip_helper(generator.clone().skip(10).take(32));
-        // two blocks
-        test_hit_set_roundtrip_helper(generator.clone().take(64));
-        test_hit_set_roundtrip_helper(generator.clone().skip(10).take(64));
-
-        // many blocks, partial last block
-        test_hit_set_roundtrip_helper(generator.clone().take(1024 + 6));
-        test_hit_set_roundtrip_helper(generator.clone().skip(10).take(1024 + 6));
-    }
-
     #[test]
     fn test_built_tantivy_ast() {
         let mut schema_builder = Schema::builder();
@@ -618,7 +403,7 @@ mod tests {
             };
             let ast = CacheNode {
                 inner: Box::new(term_query.clone()),
-                state: CacheState::CacheHit(cache_entry),
+                state: CacheState::CacheHit(Box::new(cache_entry)),
             };
             let cache_hit_query: Box<dyn TantivyQuery> = ast
                 .build_tantivy_ast_impl(&BuildTantivyAstContext::for_test(&schema))
@@ -696,7 +481,7 @@ mod tests {
             };
             let ast = CacheNode {
                 inner: Box::new(term_query.clone()),
-                state: CacheState::CacheHit(cache_entry),
+                state: CacheState::CacheHit(Box::new(cache_entry)),
             }
             .into();
 
@@ -871,7 +656,7 @@ mod tests {
         };
         let ast = CacheNode {
             inner: Box::new(term_query.clone()),
-            state: CacheState::CacheHit(cache_entry),
+            state: CacheState::CacheHit(Box::new(cache_entry)),
         };
         let cache_hit_query: Box<dyn TantivyQuery> = ast
             .build_tantivy_ast_impl(&BuildTantivyAstContext::for_test(&schema))

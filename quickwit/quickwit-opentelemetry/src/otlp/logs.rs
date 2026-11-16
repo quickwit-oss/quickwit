@@ -259,7 +259,6 @@ impl OtlpGrpcLogsService {
     }
 
     #[instrument(skip_all, parent = parent_span, fields(num_log_records = Empty, num_bytes = Empty, num_parse_errors = Empty))]
-    #[allow(clippy::result_large_err)]
     fn parse_logs(
         request: ExportLogsServiceRequest,
         parent_span: RuntimeSpan,

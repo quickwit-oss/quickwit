@@ -102,11 +102,10 @@ impl SortByValue {
                     Some(SortValue::U64(number))
                 } else if let Some(number) = number.as_i64() {
                     Some(SortValue::I64(number))
-                } else if let Some(number) = number.as_f64() {
-                    Some(SortValue::F64(number))
                 } else {
-                    // this should never happen as we don't emit such number ourselves
-                    return None;
+                    // Never fails for numbers we emit ourselves.
+                    let number = number.as_f64()?;
+                    Some(SortValue::F64(number))
                 }
             }
             // Strings that can be converted to a number are accepted.
@@ -281,6 +280,28 @@ impl ListFieldsEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_search_request_query_source_json_compatibility() {
+        let request = SearchRequest {
+            query_source: "dashboard".to_string(),
+            ..Default::default()
+        };
+        let mut json = serde_json::to_value(&request).unwrap();
+        assert_eq!(
+            serde_json::from_value::<SearchRequest>(json.clone()).unwrap(),
+            request
+        );
+
+        // Older serialized requests, including scroll contexts, omit query_source.
+        json.as_object_mut().unwrap().remove("query_source");
+        assert!(
+            serde_json::from_value::<SearchRequest>(json)
+                .unwrap()
+                .query_source
+                .is_empty()
+        );
+    }
 
     fn entry(field_name: &str) -> ListFieldsEntry {
         ListFieldsEntry {

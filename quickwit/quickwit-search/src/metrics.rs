@@ -258,7 +258,8 @@ pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES: LazyHistogram = laz
 
 pub(crate) static LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES: LazyGauge = lazy_gauge!(
     name: "leaf_search_warmup_ongoing_num_bytes",
-    description: "Total bytes currently held in warmup caches across all in-flight split searches.",
+    description: "Warmup memory currently reserved by split searches, including the initial \
+                  allocation of granted permits.",
     subsystem: "search",
 );
 

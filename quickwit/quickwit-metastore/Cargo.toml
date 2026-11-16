@@ -23,7 +23,7 @@ rand = { workspace = true }
 regex = { workspace = true }
 regex-syntax = { workspace = true }
 sea-query = { workspace = true, optional = true }
-sea-query-binder = { workspace = true, optional = true }
+sea-query-sqlx = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
@@ -66,5 +66,5 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
 ci-test = []
-postgres = ["quickwit-proto/postgres", "sea-query", "sea-query-binder", "sqlx"]
+postgres = ["quickwit-proto/postgres", "sea-query", "sea-query-sqlx", "sqlx"]
 testsuite = ["mockall", "tempfile", "quickwit-config/testsuite"]

@@ -45,6 +45,7 @@ pub mod docs_clustering;
 pub mod merge_policy;
 mod metrics;
 pub mod models;
+mod no_fsync_mmap_directory;
 pub mod source;
 #[cfg(test)]
 mod split_recovery_tests;
