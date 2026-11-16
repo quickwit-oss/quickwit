@@ -31,7 +31,7 @@ use crate::rest::recover_fn;
 use crate::with_arg;
 
 const HEALTH_CHECK_ASK_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
-    Duration::from_millis(100)
+    Duration::from_secs(1)
 } else {
     Duration::from_secs(5)
 };

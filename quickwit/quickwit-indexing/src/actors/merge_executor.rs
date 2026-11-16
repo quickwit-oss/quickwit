@@ -37,7 +37,7 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::{NodeId, SplitId};
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use quickwit_query::query_ast::QueryAst;
-use tantivy::directory::{Advice, DirectoryClone, MmapDirectory, RamDirectory};
+use tantivy::directory::{Advice, DirectoryClone, RamDirectory};
 use tantivy::index::SegmentId;
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, Directory, Index, IndexMeta, IndexWriter, SegmentReader};
@@ -49,6 +49,7 @@ use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::{MergeOperationType, MergeSource};
 use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, SplitAttrs};
+use crate::no_fsync_mmap_directory::open_split_scratch_directory;
 
 #[derive(Clone)]
 pub struct MergeExecutor {
@@ -228,8 +229,9 @@ fn merge_time_range(splits: &[SplitMetadata]) -> Option<RangeInclusive<DateTime>
         .minmax()
         .into_option()
         .map(|(min_timestamp, max_timestamp)| {
-            DateTime::from_timestamp_secs(min_timestamp)
-                ..=DateTime::from_timestamp_secs(max_timestamp)
+            // Clamping rounded bounds still covers every representable document timestamp.
+            DateTime::from_timestamp_nanos(min_timestamp.saturating_mul(1_000_000_000))
+                ..=DateTime::from_timestamp_nanos(max_timestamp.saturating_mul(1_000_000_000))
         })
 }
 
@@ -517,10 +519,7 @@ impl MergeExecutor {
 
         // This directory is here to receive the merged split, as well as the final meta.json file.
         let output_directory = ControlledDirectory::new(
-            Box::new(MmapDirectory::open_with_madvice(
-                output_path,
-                Advice::Sequential,
-            )?),
+            open_split_scratch_directory(output_path, Advice::Sequential)?,
             self.io_controls
                 .clone()
                 .set_kill_switch(ctx.kill_switch().clone())
@@ -621,6 +620,15 @@ mod tests {
     use super::*;
     use crate::merge_policy::{MergeOperation, MergeSource, MergeTask};
     use crate::{TestSandbox, get_tantivy_directory_from_split_bundle};
+
+    #[test]
+    fn test_merge_time_range_clamps_rounded_bounds() {
+        let mut split = SplitMetadata::for_test("split".into());
+        split.time_range = Some(-9_223_372_037..=9_223_372_037);
+        let range = merge_time_range(&[split]).unwrap();
+        assert_eq!(range.start().into_timestamp_nanos(), i64::MIN);
+        assert_eq!(range.end().into_timestamp_nanos(), i64::MAX);
+    }
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {

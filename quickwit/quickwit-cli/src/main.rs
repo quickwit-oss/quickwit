@@ -14,6 +14,8 @@
 
 #![recursion_limit = "256"]
 
+use std::num::NonZeroUsize;
+
 use anyhow::Context;
 use colored::Colorize;
 use quickwit_cli::checklist::RED_COLOR;
@@ -23,8 +25,8 @@ use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::metrics::register_build_info_metric;
 #[cfg(target_os = "linux")]
 use quickwit_cli::proc_io::start_proc_io_metrics_loop;
-use quickwit_cli::{busy_detector, install_default_crypto_ring_provider};
-use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
+use quickwit_cli::{busy_detector, install_default_crypto_provider};
+use quickwit_common::runtimes::metrics::register_runtime;
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use tracing::error;
 
@@ -32,14 +34,12 @@ use tracing::error;
 const QW_ENABLE_TOKIO_CONSOLE_ENV_KEY: &str = "QW_ENABLE_TOKIO_CONSOLE";
 
 /// The main tokio runtime takes num_cores / 3 threads by default, and can be overridden by the
-/// QW_RUNTIME_NUM_THREADS environment variable.
+/// `QW_TOKIO_RUNTIME_NUM_THREADS` environment variable. The value must be strictly positive.
 fn get_main_runtime_num_threads() -> usize {
     let default_num_runtime_threads: usize = quickwit_common::num_cpus().div_ceil(3);
-    quickwit_common::get_from_env(
-        "QW_TOKIO_RUNTIME_NUM_THREADS",
-        default_num_runtime_threads,
-        false,
-    )
+    quickwit_common::get_from_env_opt::<NonZeroUsize>("QW_TOKIO_RUNTIME_NUM_THREADS", false)
+        .map(NonZeroUsize::get)
+        .unwrap_or(default_num_runtime_threads)
 }
 
 fn main() -> anyhow::Result<()> {
@@ -117,7 +117,7 @@ fn init_telemetry(
 async fn main_impl() -> anyhow::Result<()> {
     let (command, ansi_colors) = parse_cli_command();
 
-    install_default_crypto_ring_provider();
+    install_default_crypto_provider();
 
     let build_info = BuildInfo::get();
     let (telemetry_handle, env_filter_reload_fn) = init_telemetry(
@@ -128,7 +128,7 @@ async fn main_impl() -> anyhow::Result<()> {
     register_build_info_metric(build_info);
 
     let runtime_handle = tokio::runtime::Handle::current();
-    scrape_tokio_runtime_metrics(&runtime_handle, "main");
+    register_runtime(&runtime_handle, "main");
 
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();

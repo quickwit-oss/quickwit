@@ -30,8 +30,8 @@ fn test_split_table() {
         max_num_splits: NonZeroU32::new(1).unwrap(),
         num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
     });
-    let ulid1 = Ulid::new();
-    let ulid2 = Ulid::new();
+    let ulid1 = Ulid::generate();
+    let ulid2 = Ulid::generate();
     split_table.report(ulid1, Uri::for_test(TEST_STORAGE_URI));
     split_table.report(ulid2, Uri::for_test(TEST_STORAGE_URI));
     let candidate = split_table.best_candidate().unwrap();
@@ -45,8 +45,8 @@ fn test_split_table_prefer_last_touched() {
         max_num_splits: NonZeroU32::new(1).unwrap(),
         num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
     });
-    let ulid1 = Ulid::new();
-    let ulid2 = Ulid::new();
+    let ulid1 = Ulid::generate();
+    let ulid2 = Ulid::generate();
     split_table.report(ulid1, Uri::for_test(TEST_STORAGE_URI));
     split_table.report(ulid2, Uri::for_test(TEST_STORAGE_URI));
     let split_guard_opt = split_table.get_split_guard(ulid1, &Uri::for_test("s3://test1/"));
@@ -62,7 +62,7 @@ fn test_split_table_prefer_start_download_prevent_new_report() {
         max_num_splits: NonZeroU32::new(1).unwrap(),
         num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
     });
-    let ulid1 = Ulid::new();
+    let ulid1 = Ulid::generate();
     split_table.report(ulid1, Uri::for_test(TEST_STORAGE_URI));
     assert_eq!(split_table.num_bytes(), 0);
     let download = split_table.start_download(ulid1);
@@ -71,7 +71,7 @@ fn test_split_table_prefer_start_download_prevent_new_report() {
     split_table.register_as_downloaded(ulid1, 10_000_000);
     assert_eq!(split_table.num_bytes(), 10_000_000);
     split_table.get_split_guard(ulid1, &Uri::for_test(TEST_STORAGE_URI));
-    let ulid2 = Ulid::new();
+    let ulid2 = Ulid::generate();
     split_table.report(ulid2, Uri::for_test("s3://test`/"));
     let download = split_table.start_download(ulid2);
     assert!(download.is_some());
@@ -88,7 +88,7 @@ fn test_eviction_due_to_size() {
         max_num_splits: NonZeroU32::new(30).unwrap(),
         num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
     });
-    let mut split_ulids: Vec<Ulid> = std::iter::repeat_with(Ulid::new).take(6).collect();
+    let mut split_ulids: Vec<Ulid> = std::iter::repeat_with(Ulid::generate).take(6).collect();
     split_ulids.sort();
     let splits = [
         (split_ulids[0], 10_000),
@@ -102,7 +102,7 @@ fn test_eviction_due_to_size() {
         split_table.report(split_ulid, Uri::for_test(TEST_STORAGE_URI));
         split_table.register_as_downloaded(split_ulid, num_bytes);
     }
-    let new_ulid = Ulid::new();
+    let new_ulid = Ulid::generate();
     split_table.report(new_ulid, Uri::for_test(TEST_STORAGE_URI));
     let DownloadOpportunity {
         splits_to_delete,
@@ -122,7 +122,7 @@ fn test_eviction_due_to_num_splits() {
         max_num_splits: NonZeroU32::new(5).unwrap(),
         num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
     });
-    let mut split_ulids: Vec<Ulid> = std::iter::repeat_with(Ulid::new).take(6).collect();
+    let mut split_ulids: Vec<Ulid> = std::iter::repeat_with(Ulid::generate).take(6).collect();
     split_ulids.sort();
     let splits = [
         (split_ulids[0], 10_000),
@@ -136,7 +136,7 @@ fn test_eviction_due_to_num_splits() {
         split_table.report(split_ulid, Uri::for_test(TEST_STORAGE_URI));
         split_table.register_as_downloaded(split_ulid, num_bytes);
     }
-    let new_ulid = Ulid::new();
+    let new_ulid = Ulid::generate();
     split_table.report(new_ulid, Uri::for_test(TEST_STORAGE_URI));
     let DownloadOpportunity {
         splits_to_delete,
@@ -153,7 +153,7 @@ fn test_failed_download_can_be_re_reported() {
         max_num_splits: NonZeroU32::new(5).unwrap(),
         num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
     });
-    let split_ulid = Ulid::new();
+    let split_ulid = Ulid::generate();
     split_table.report(split_ulid, Uri::for_test(TEST_STORAGE_URI));
     let candidate = split_table.start_download(split_ulid).unwrap();
     // This report should be cancelled as we have a download currently running.

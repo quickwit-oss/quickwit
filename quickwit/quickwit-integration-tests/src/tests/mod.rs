@@ -14,6 +14,7 @@
 
 mod basic_tests;
 mod compactor_tests;
+mod in_memory_indexing_tests;
 mod ingest_v1_tests;
 mod ingest_v2_tests;
 mod no_cp_tests;

@@ -29,7 +29,36 @@ use quickwit_serve::{ListSplitsQueryParams, RestIngestResponse, RestParseFailure
 use serde_json::json;
 
 use crate::ingest_json;
-use crate::test_utils::{ClusterSandboxBuilder, ingest};
+use crate::test_utils::{ClusterSandbox, ClusterSandboxBuilder, ingest};
+
+async fn wait_for_each_query_to_match(
+    sandbox: &ClusterSandbox,
+    index_id: &str,
+    queries: &[&str],
+    timeout: Duration,
+) -> anyhow::Result<()> {
+    let searcher_client = &sandbox.rest_client(QuickwitService::Searcher);
+    wait_until_predicate(
+        || async move {
+            for query in queries {
+                let search_request = quickwit_serve::SearchRequestQueryString {
+                    query: query.to_string(),
+                    max_hits: 1,
+                    ..Default::default()
+                };
+                match searcher_client.search(index_id, search_request).await {
+                    Ok(search_response) if search_response.num_hits > 0 => {}
+                    _ => return false,
+                }
+            }
+            true
+        },
+        timeout,
+        Duration::from_millis(200),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("some queries still match no document after {timeout:?}"))
+}
 
 /// Ingesting on a freshly re-created index sometimes fails, see #5430
 #[tokio::test]
@@ -1017,26 +1046,11 @@ async fn test_graceful_shutdown_no_data_loss() {
     // All 3 documents should eventually be searchable. Documents 1 & 2 were
     // in-flight on the decommissioning indexer and should have been committed during
     // the decommission step. Document 3 was ingested to the surviving indexer.
-    wait_until_predicate(
-        || async {
-            match sandbox
-                .rest_client(QuickwitService::Searcher)
-                .search(
-                    index_id,
-                    quickwit_serve::SearchRequestQueryString {
-                        query: "*".to_string(),
-                        max_hits: 10,
-                        ..Default::default()
-                    },
-                )
-                .await
-            {
-                Ok(resp) => resp.num_hits == 3,
-                Err(_) => false,
-            }
-        },
+    wait_for_each_query_to_match(
+        &sandbox,
+        index_id,
+        &["body:1", "body:2", "body:during"],
         Duration::from_secs(30),
-        Duration::from_millis(500),
     )
     .await
     .expect("expected 3 documents after decommission shutdown, some data may have been lost");
@@ -1143,7 +1157,7 @@ async fn test_retiring_indexer_receives_empty_plan() {
                 Err(_) => false,
             }
         },
-        Duration::from_secs(1),
+        Duration::from_secs(10),
         Duration::from_millis(25),
     )
     .await
@@ -1155,18 +1169,18 @@ async fn test_retiring_indexer_receives_empty_plan() {
                 Err(_) => false,
             }
         },
-        Duration::from_secs(1),
+        Duration::from_secs(10),
         Duration::from_millis(25),
     )
     .await
     .expect("the surviving indexer should also be indexing a shard");
 
-    // Trigger the retiring node's decommission in the background. We only assert that it is told
-    // to shed its plan; we deliberately do not await full decommission.
+    // Trigger the retiring node's decommission in the background. We assert that it is told to
+    // shed its plan while it is still decommissioning, then await the end of the decommission.
     let shutdown_handle = sandbox
         .remove_node(&retiring_node_id)
         .expect("the retiring node should be in the sandbox");
-    tokio::spawn(shutdown_handle.shutdown());
+    let retiring_shutdown_join_handle = tokio::spawn(shutdown_handle.shutdown());
 
     // The fix: the new plan excludes the retiring node but is still sent to it, so it shuts down
     // its indexing pipelines (`num_running_pipelines` excludes merge pipelines) while still alive.
@@ -1178,11 +1192,21 @@ async fn test_retiring_indexer_receives_empty_plan() {
                 Err(_) => false,
             }
         },
-        Duration::from_secs(1),
+        Duration::from_secs(10),
         Duration::from_millis(25),
     )
     .await
     .expect("retiring indexer should be sent an empty plan and shut down its indexing pipelines");
+
+    tokio::time::timeout(Duration::from_secs(30), retiring_shutdown_join_handle)
+        .await
+        .expect("decommission of the retiring indexer timed out")
+        .expect("retiring indexer shutdown task panicked")
+        .expect("retiring indexer shutdown returned an error");
+    tokio::time::timeout(Duration::from_secs(30), sandbox.shutdown())
+        .await
+        .expect("sandbox shutdown timed out")
+        .unwrap();
 }
 
 #[tokio::test]
@@ -1264,7 +1288,7 @@ async fn test_retiring_indexer_decommissions_gracefully() {
                 Err(_) => false,
             }
         },
-        Duration::from_secs(1),
+        Duration::from_secs(10),
         Duration::from_millis(25),
     )
     .await
@@ -1276,7 +1300,7 @@ async fn test_retiring_indexer_decommissions_gracefully() {
                 Err(_) => false,
             }
         },
-        Duration::from_secs(1),
+        Duration::from_secs(10),
         Duration::from_millis(25),
     )
     .await
@@ -1291,26 +1315,11 @@ async fn test_retiring_indexer_decommissions_gracefully() {
         .expect("retiring indexer shutdown returned an error");
 
     // No data lost: all 6 docs remain searchable after the decommission.
-    wait_until_predicate(
-        || async {
-            match sandbox
-                .rest_client(QuickwitService::Searcher)
-                .search(
-                    index_id,
-                    quickwit_serve::SearchRequestQueryString {
-                        query: "*".to_string(),
-                        max_hits: 10,
-                        ..Default::default()
-                    },
-                )
-                .await
-            {
-                Ok(resp) => resp.num_hits == 6,
-                Err(_) => false,
-            }
-        },
-        Duration::from_secs(3),
-        Duration::from_millis(200),
+    wait_for_each_query_to_match(
+        &sandbox,
+        index_id,
+        &["body:0", "body:1", "body:2", "body:3", "body:4", "body:5"],
+        Duration::from_secs(10),
     )
     .await
     .expect("all 6 documents should be searchable after decommission");

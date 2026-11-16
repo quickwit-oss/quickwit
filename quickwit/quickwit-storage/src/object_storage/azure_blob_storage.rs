@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -421,7 +421,7 @@ impl Storage for AzureBlobStorage {
              which might be slow and issue many requests."
         );
         let mut successes = Vec::with_capacity(paths.len());
-        let mut failures = HashMap::new();
+        let mut failures = BTreeMap::new();
 
         let futures = paths
             .iter()

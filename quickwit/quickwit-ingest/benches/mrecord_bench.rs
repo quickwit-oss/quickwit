@@ -28,7 +28,8 @@ use std::time::{Duration, Instant};
 use bytes::{BufMut, Bytes};
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use mrecordlog::MultiRecordLog;
-use quickwit_ingest::MRecord;
+use quickwit_ingest::{DEFAULT_WAL_PERSIST_POLICY, DocBatchV2Builder, MRecord};
+use quickwit_proto::types::DocUidGenerator;
 
 /// Representative document sizes (bytes): a small log line up to a large structured event.
 const DOC_SIZES: [usize; 4] = [128, 1_024, 8_192, 65_536];
@@ -122,12 +123,13 @@ fn make_batch() -> (Vec<Bytes>, u64) {
     (docs, total_bytes)
 }
 
-/// Opens a fresh WAL backed by a temporary directory, using the same persist policy as production
-/// (`PersistPolicy::Always(PersistAction::Flush)`, the default of `MultiRecordLog::open`). The
-/// returned `TempDir` must be kept alive for the lifetime of the WAL.
+/// Opens a fresh WAL backed by a temporary directory, using the production persist policy
+/// (`DEFAULT_WAL_PERSIST_POLICY`). The returned `TempDir` must be kept alive for the lifetime of
+/// the WAL.
 fn open_bench_wal() -> (tempfile::TempDir, MultiRecordLog) {
     let tempdir = tempfile::tempdir().expect("failed to create temp dir");
-    let mut wal = MultiRecordLog::open(tempdir.path()).expect("failed to open WAL");
+    let mut wal = MultiRecordLog::open_with_prefs(tempdir.path(), DEFAULT_WAL_PERSIST_POLICY)
+        .expect("failed to open WAL");
     wal.create_queue(BENCH_QUEUE)
         .expect("failed to create queue");
     (tempdir, wal)
@@ -180,5 +182,44 @@ fn bench_append_batch(criterion: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_encode, bench_decode, bench_append_batch);
+fn bench_doc_batch_builder(criterion: &mut Criterion) {
+    let mut group = criterion.benchmark_group("doc_batch_v2_builder");
+    let docs: Vec<Bytes> = (0..10_000)
+        .map(|index| make_doc(BATCH_DOC_SIZES[index % BATCH_DOC_SIZES.len()]))
+        .collect();
+    let total_bytes: usize = docs.iter().map(Bytes::len).sum();
+    group.throughput(Throughput::Bytes(total_bytes as u64));
+
+    group.bench_function("default", |bencher| {
+        bencher.iter(|| {
+            let mut builder = DocBatchV2Builder::default();
+            let mut doc_uid_generator = DocUidGenerator::default();
+            for doc in &docs {
+                builder.add_doc(doc_uid_generator.next_doc_uid(), doc);
+            }
+            black_box(builder.build())
+        });
+    });
+
+    group.bench_function("preallocated", |bencher| {
+        bencher.iter(|| {
+            let mut builder = DocBatchV2Builder::with_capacity(total_bytes);
+            let mut doc_uid_generator = DocUidGenerator::default();
+            for doc in &docs {
+                builder.add_doc(doc_uid_generator.next_doc_uid(), doc);
+            }
+            black_box(builder.build())
+        });
+    });
+
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_encode,
+    bench_decode,
+    bench_append_batch,
+    bench_doc_batch_builder
+);
 criterion_main!(benches);

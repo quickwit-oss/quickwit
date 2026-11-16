@@ -580,7 +580,7 @@ impl fmt::Debug for BundleStorage {
         write!(
             f,
             "BundleStorage({:?}, files={:?})",
-            &self.bundle_filepath, self.file_ranges
+            self.bundle_filepath, self.file_ranges
         )
     }
 }

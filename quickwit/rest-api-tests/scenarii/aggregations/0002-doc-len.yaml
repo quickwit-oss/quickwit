@@ -12,7 +12,8 @@ json:
 expected:
   aggregations:
     doc_len:
-      value: 952.0
+      # Native ingest retains the NDJSON separators: 952 JSON bytes + 10 newlines.
+      value: 962.0
 ---
 # Test doc len isn't shown when querying documents
 method: [GET]

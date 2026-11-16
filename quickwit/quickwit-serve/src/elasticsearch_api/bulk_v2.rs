@@ -17,7 +17,7 @@ use std::time::Instant;
 
 use quickwit_common::rate_limited_error;
 use quickwit_config::{INGEST_V2_SOURCE_ID, validate_identifier};
-use quickwit_ingest::IngestRequestV2Builder;
+use quickwit_ingest::{IngestRequestV2Builder, split_ndjson_lines};
 use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestResponseV2, IngestRouterService, IngestRouterServiceClient,
@@ -29,7 +29,6 @@ use warp::hyper::StatusCode;
 use super::model::ElasticException;
 use crate::Body;
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
-use crate::ingest_api::lines;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub(crate) struct ElasticBulkResponse {
@@ -88,7 +87,7 @@ pub(crate) async fn elastic_bulk_ingest_v2(
 ) -> Result<ElasticBulkResponse, ElasticsearchError> {
     let now = Instant::now();
     let mut ingest_request_builder = IngestRequestV2Builder::default();
-    let mut lines = lines(&body.content).enumerate();
+    let mut lines = split_ndjson_lines(&body.content).enumerate();
     let mut per_subrequest_doc_handles: HashMap<u32, Vec<DocHandle>> = HashMap::new();
     let mut action_count = 0;
     let mut invalid_index_id_items = Vec::new();
@@ -166,7 +165,6 @@ pub(crate) async fn elastic_bulk_ingest_v2(
     )
 }
 
-#[allow(clippy::result_large_err)]
 fn make_elastic_bulk_response_v2(
     ingest_response_v2: IngestResponseV2,
     mut per_subrequest_doc_handles: HashMap<u32, Vec<DocHandle>>,
@@ -349,7 +347,6 @@ fn make_elastic_bulk_response_v2(
     Ok(bulk_response)
 }
 
-#[allow(clippy::result_large_err)]
 fn remove_doc_handles(
     per_subrequest_doc_handles: &mut HashMap<u32, Vec<DocHandle>>,
     subrequest_id: u32,
@@ -430,9 +427,9 @@ mod tests {
 
     fn es_compat_bulk_handler_v2(
         ingest_router: IngestRouterServiceClient,
-        content_length_limit: ByteSize,
+        max_body_size: ByteSize,
     ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-        elastic_bulk_filter(content_length_limit)
+        elastic_bulk_filter(max_body_size, ByteSize::mib(256))
             .and(with_arg(ingest_router))
             .then(|body, bulk_options, ingest_router| {
                 elastic_bulk_ingest_v2(None, body, bulk_options, ingest_router)
@@ -628,7 +625,7 @@ mod tests {
         let es_error: ElasticsearchError = serde_json::from_slice(response.body()).unwrap();
         assert_eq!(es_error.status, StatusCode::BAD_REQUEST);
 
-        let reason = es_error.error.reason.unwrap();
+        let reason = es_error.error.reason;
         assert_eq!(
             reason,
             "Malformed action/metadata line [1]: expected value at line 1 column 60"
@@ -648,7 +645,7 @@ mod tests {
         let es_error: ElasticsearchError = serde_json::from_slice(response.body()).unwrap();
         assert_eq!(es_error.status, StatusCode::BAD_REQUEST);
 
-        let reason = es_error.error.reason.unwrap();
+        let reason = es_error.error.reason;
         assert_eq!(reason, "Validation Failed: 1: no requests added;");
 
         let payload = r#"
@@ -666,7 +663,7 @@ mod tests {
         let es_error: ElasticsearchError = serde_json::from_slice(response.body()).unwrap();
         assert_eq!(es_error.status, StatusCode::BAD_REQUEST);
 
-        let reason = es_error.error.reason.unwrap();
+        let reason = es_error.error.reason;
         assert_eq!(reason, "Validation Failed: 1: index is missing;");
     }
 

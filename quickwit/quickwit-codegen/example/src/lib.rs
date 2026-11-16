@@ -34,6 +34,7 @@ pub use crate::hello::*;
 pub type HelloResult<T> = Result<T, HelloError>;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct Counter<S> {
     counter: Arc<AtomicUsize>,
     inner: S,

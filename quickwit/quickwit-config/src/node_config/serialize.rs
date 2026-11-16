@@ -358,6 +358,7 @@ impl NodeConfigBuilder {
             .resolve_optional(env_vars)?
             .unwrap_or_else(|| default_index_root_uri(&data_dir_uri));
 
+        self.metastore_configs.validate()?;
         self.storage_configs.validate()?;
         self.storage_configs.apply_flavors();
         self.ingest_api_config.validate()?;
@@ -1329,6 +1330,55 @@ mod tests {
         load_node_config_with_env(ConfigFormat::Toml, file_content.as_bytes(), &env_vars, None)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_node_config_rejects_min_connections_greater_than_max_connections() {
+        let config_yaml = r#"
+            version: 0.8
+            metastore:
+              postgres:
+                min_connections: 11
+                max_connections: 10
+        "#;
+        let error = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            &Default::default(),
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("`min_connections` must be less than or equal to `max_connections`"),
+            "unexpected error: {error:#}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_node_config_rejects_invalid_acquire_connection_timeout() {
+        let config_yaml = r#"
+            version: 0.8
+            metastore:
+              postgres:
+                acquire_connection_timeout: invalid
+        "#;
+        let error = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            &Default::default(),
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("failed to parse `acquire_connection_timeout` value `invalid`"),
+            "unexpected error: {error:#}"
+        );
     }
 
     #[tokio::test]

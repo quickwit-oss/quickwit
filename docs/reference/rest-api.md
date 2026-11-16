@@ -3,6 +3,12 @@ title: REST API
 sidebar_position: 10
 ---
 
+## Security
+
+:::warning
+Quickwit does not authenticate clients unless [mutual TLS](../configuration/node-config.md#tls-configuration) is enabled. Anyone who can reach the REST or gRPC API has full access to the cluster. Keep Quickwit on a trusted network or behind an authenticated proxy, and do not expose it directly to the public internet.
+:::
+
 ## API version
 
 All the API endpoints start with the `api/v1/` prefix. `v1` indicates that we are currently using version 1 of the API.

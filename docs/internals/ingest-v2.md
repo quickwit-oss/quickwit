@@ -6,6 +6,8 @@ Ingest V2 is the latest ingestion API that is designed to be more efficient and 
 
 Just like ingest V1, the new ingest uses [`mrecordlog`](https://github.com/quickwit-oss/mrecordlog) to persist ingested documents that are waiting to be indexed. But unlike V1, which always persists the documents locally on the node that receives them, ingest V2 can dynamically distribute them into WAL units called _shards_. The assigned shard can be local or on another indexer. The control plane is in charge of distributing the shards to balance the indexing work as well as possible across all indexer nodes. The progress within each shard is not tracked as an index metadata checkpoint anymore but in a dedicated metastore `shards` table.
 
+Ingest V2 flushes every WAL write from the process to the operating system before acknowledging it, so acknowledged documents survive a process crash as long as the OS and the WAL storage stay up. It does not fsync: a host failure or power loss can still lose acknowledged documents.
+
 In the future, the shard based ingest will also be capable of writing a replica for each shard, thus ensuring a high durability of the documents that are waiting to be indexed (durability of the indexed documents is guarantied by the object store).
 
 ## Toggling between ingest V1 and V2

@@ -723,7 +723,6 @@ pub(crate) fn build_aggregations_query(num_traces: usize) -> String {
     query
 }
 
-#[allow(clippy::result_large_err)]
 fn qw_span_to_jaeger_span(qw_span_json: &str) -> Result<JaegerSpan, Status> {
     let mut qw_span: QwSpan = json_deserialize(qw_span_json, "span")?;
 
@@ -995,7 +994,6 @@ fn otlp_attributes_to_jaeger_tags_inner(
 
 /// Converts OpenTelemetry links to Jaeger span references.
 /// <https://opentelemetry.io/docs/specs/otel/trace/sdk_exporters/jaeger/#links>
-#[allow(clippy::result_large_err)]
 fn otlp_links_to_jaeger_references(
     trace_id: &TraceId,
     parent_span_id_opt: Option<SpanId>,
@@ -1027,7 +1025,6 @@ fn otlp_links_to_jaeger_references(
     Ok(references)
 }
 
-#[allow(clippy::result_large_err)]
 fn qw_event_to_jaeger_log(event: QwEvent) -> Result<JaegerLog, Status> {
     let timestamp = to_well_known_timestamp(event.event_timestamp_nanos);
     // "OpenTelemetry Event’s name field should be added to Jaeger Log’s fields map as follows: name
@@ -1057,7 +1054,6 @@ fn qw_event_to_jaeger_log(event: QwEvent) -> Result<JaegerLog, Status> {
     Ok(log)
 }
 
-#[allow(clippy::result_large_err)]
 fn collect_trace_ids(
     trace_ids_postcard: &[u8],
 ) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
@@ -1078,7 +1074,6 @@ fn collect_trace_ids(
     Ok((trace_ids, start..=end))
 }
 
-#[allow(clippy::result_large_err)]
 fn json_deserialize<'a, T>(json: &'a str, label: &'static str) -> Result<T, Status>
 where T: Deserialize<'a> {
     match serde_json::from_str(json) {
@@ -1092,7 +1087,6 @@ where T: Deserialize<'a> {
     }
 }
 
-#[allow(clippy::result_large_err)]
 fn postcard_deserialize<'a, T>(json: &'a [u8], label: &'static str) -> Result<T, Status>
 where T: Deserialize<'a> {
     match postcard::from_bytes(json) {
