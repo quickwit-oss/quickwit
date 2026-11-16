@@ -641,13 +641,14 @@ impl DocMapper {
         with_validation: bool,
     ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
         let (query, warmup, _) =
-            self.query_with_ast(split_schema, query_ast, with_validation, cache_context)?;
+            self.query_and_ast(split_schema, query_ast, with_validation, cache_context)?;
         Ok((query, warmup))
     }
 
-    /// Like [`Self::query`], also retains the cache-resolved AST so warmup results can
-    /// replace its predicates before rebuilding the executable query.
-    pub fn query_with_ast(
+    /// Like [`Self::query`], also returns the QueryAst. With predicate caching enabled,
+    /// it wraps regex and wildcard predicates in cache nodes and installs cached HitSets.
+    /// Cache misses are filled with HitSets after warmup.
+    pub fn query_and_ast(
         &self,
         split_schema: Schema,
         query_ast: QueryAst,

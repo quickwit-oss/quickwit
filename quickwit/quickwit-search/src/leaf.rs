@@ -824,7 +824,7 @@ async fn leaf_search_single_split(
     let schema = index.schema();
     let (mut query, mut warmup_info, resolved_query_ast) = crate::search_thread_pool()
         .run_cpu_intensive_with_priority(priority, move || {
-            doc_mapper.query_with_ast(schema, query_ast_for_build, false)
+            doc_mapper.query_and_ast(schema, query_ast_for_build, false)
         })
         .await
         .map_err(|_| SearchError::Internal("query compilation task panicked".to_string()))??;
@@ -3196,7 +3196,7 @@ mod tests {
                 }))
                 .unwrap();
                 let (_, warmup_info, ast) = doc_mapper
-                    .query_with_ast(
+                    .query_and_ast(
                         searcher.schema().clone(),
                         ast,
                         false,
