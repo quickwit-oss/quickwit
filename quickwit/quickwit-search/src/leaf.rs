@@ -26,8 +26,8 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use bytesize::ByteSize;
 use futures::StreamExt;
-use futures::future::{join_all, ready, try_join_all};
-use futures::stream::FuturesUnordered;
+use futures::future::{ready, try_join_all};
+use futures::stream::{self, FuturesUnordered};
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::thread_pool::with_priority::Priority;
 use quickwit_common::uri::Uri;
@@ -2269,15 +2269,15 @@ async fn process_partial_result_cache(
 ) -> Result<Vec<(SplitIdAndFooterOffsets, SearchRequest)>, SearchError> {
     let mut uncached_splits: Vec<(SplitIdAndFooterOffsets, SearchRequest)> =
         Vec::with_capacity(split_with_req.len());
-    let cached_responses = join_all(
-        split_with_req
-            .iter()
-            .map(|(split, request)| leaf_search_cache.get_async(split.clone(), request.clone())),
-    )
-    .await;
-    for ((split, search_request), cached_response) in
-        split_with_req.into_iter().zip(cached_responses)
-    {
+    let mut cached_responses = stream::iter(split_with_req)
+        .map(|(split, search_request)| async move {
+            let cached_response = leaf_search_cache
+                .get_async(split.clone(), search_request.clone())
+                .await;
+            ((split, search_request), cached_response)
+        })
+        .buffer_unordered(128);
+    while let Some(((split, search_request), cached_response)) = cached_responses.next().await {
         if let Some(cached_response) = cached_response {
             let mut split_search_guard = SplitSearchStateGuard::new(split_outcome_counters.clone());
             split_search_guard.set_state(SplitSearchState::CacheHit);
