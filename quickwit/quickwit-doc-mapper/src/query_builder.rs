@@ -231,7 +231,7 @@ fn prefix_term_to_range(prefix: Term) -> (Bound<Term>, Bound<Term>) {
 
 type PositionNeeded = bool;
 
-struct ExtractPrefixTermRanges<'a> {
+struct ExtractPrefixTermRangesAndAutomatons<'a> {
     schema: &'a Schema,
     tokenizer_manager: &'a TokenizerManager,
     cache_predicates: bool,
@@ -239,13 +239,13 @@ struct ExtractPrefixTermRanges<'a> {
     automatons_to_warm_up: AutomatonWarmupInfo,
 }
 
-impl<'a> ExtractPrefixTermRanges<'a> {
+impl<'a> ExtractPrefixTermRangesAndAutomatons<'a> {
     fn with_schema(
         schema: &'a Schema,
         tokenizer_manager: &'a TokenizerManager,
         cache_predicates: bool,
     ) -> Self {
-        ExtractPrefixTermRanges {
+        ExtractPrefixTermRangesAndAutomatons {
             schema,
             tokenizer_manager,
             cache_predicates,
@@ -300,7 +300,7 @@ impl<'a> ExtractPrefixTermRanges<'a> {
     }
 }
 
-impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
+impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRangesAndAutomatons<'b> {
     type Err = InvalidQuery;
 
     fn visit_full_text(&mut self, full_text_query: &'a FullTextQuery) -> Result<(), Self::Err> {
@@ -390,8 +390,11 @@ fn extract_prefix_term_ranges_and_automaton(
     tokenizer_manager: &TokenizerManager,
     cache_predicates: bool,
 ) -> anyhow::Result<(TermRangeWarmupInfo, AutomatonWarmupInfo)> {
-    let mut visitor =
-        ExtractPrefixTermRanges::with_schema(schema, tokenizer_manager, cache_predicates);
+    let mut visitor = ExtractPrefixTermRangesAndAutomatons::with_schema(
+        schema,
+        tokenizer_manager,
+        cache_predicates,
+    );
     visitor.visit(query_ast)?;
     Ok((
         visitor.term_ranges_to_warm_up,
@@ -420,7 +423,7 @@ mod test {
     };
 
     use super::{
-        AutomatonWarmupInfo, ExtractPrefixTermRanges, build_query,
+        AutomatonWarmupInfo, ExtractPrefixTermRangesAndAutomatons, build_query,
         extract_prefix_term_ranges_and_automaton,
     };
     use crate::{
@@ -1285,12 +1288,12 @@ mod test {
             lenient: false,
         };
         let mut extractor1 =
-            ExtractPrefixTermRanges::with_schema(&schema, &tokenizer_manager, false);
+            ExtractPrefixTermRangesAndAutomatons::with_schema(&schema, &tokenizer_manager, false);
         extractor1.visit_phrase_prefix(&short).unwrap();
         extractor1.visit_phrase_prefix(&long).unwrap();
 
         let mut extractor2 =
-            ExtractPrefixTermRanges::with_schema(&schema, &tokenizer_manager, false);
+            ExtractPrefixTermRangesAndAutomatons::with_schema(&schema, &tokenizer_manager, false);
         extractor2.visit_phrase_prefix(&long).unwrap();
         extractor2.visit_phrase_prefix(&short).unwrap();
 
