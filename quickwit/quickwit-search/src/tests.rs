@@ -1299,7 +1299,9 @@ async fn test_leaf_search_fails_when_warmup_exceeds_split_max_allocation() {
     // The searcher has plenty of warmup memory (100GB by default), but a single split search can
     // only reserve 1 byte.
     let mut searcher_config = SearcherConfig::default();
-    searcher_config.warmup_single_split_max_allocation = Some(ByteSize(1));
+    searcher_config.warmup_single_split_initial_allocation = ByteSize(10);
+    searcher_config.warmup_single_split_max_allocation = Some(ByteSize(10));
+    searcher_config.validate().unwrap();
     let leaf_search_response = phrase_query_leaf_search_with_config(
         "leaf_search_warmup_split_max_allocation",
         searcher_config,

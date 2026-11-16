@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Azure Blob Storage: support custom endpoints via `endpoint` and `endpoint_suffix` configuration options for sovereign clouds (#6624)
-- `searcher.warmup_single_split_max_allocation`: maximum warmup memory a single split search can reserve, `max(warmup_single_split_initial_allocation, warmup_memory_budget / 4)` by default. A split search that would need more fails
+- `searcher.warmup_single_split_max_allocation`: maximum warmup memory a single split search can reserve, `max(warmup_single_split_initial_allocation, warmup_memory_budget / 4)` by default. A split search that would need more memory fails
 
 ### Fixed
 - (Jaeger) Query resource attributes when Jaeger request carries tags

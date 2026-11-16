@@ -3186,7 +3186,9 @@ mod tests {
     #[tokio::test]
     async fn test_schedule_search_tasks_clamps_to_split_max_allocation() {
         let mut config = SearcherConfig::default();
+        config.warmup_single_split_initial_allocation = ByteSize::mb(50);
         config.warmup_single_split_max_allocation = Some(ByteSize::mb(50));
+        config.validate().unwrap();
         let searcher_context = SearcherContext::new(config, None, None::<DummyInvoker>);
         // A large split with a leading wildcard asks for 10 x 300MB: it gets the per-split limit.
         let split = SplitIdAndFooterOffsets {

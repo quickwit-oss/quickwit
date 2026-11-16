@@ -58,6 +58,7 @@ impl SplitWarmupMemory {
     /// `max_num_bytes` is the per-split limit: the reservation never grows above it, even if the
     /// global warmup memory has room left.
     pub fn new(reservation: WarmupMemoryGuard, max_num_bytes: u64) -> Self {
+        debug_assert!(reservation.num_bytes() <= max_num_bytes);
         let state = SplitWarmupMemoryState {
             in_use: 0,
             reservation,
@@ -277,7 +278,7 @@ mod tests {
         let global = GlobalWarmupMemory::with_limit_and_free_callback(ByteSize::mb(100), || {});
         let reservation = global.try_allocate(10 * MB).unwrap();
         let split_memory = SplitWarmupMemory::new(reservation, 20 * MB);
-        split_memory.try_reserve_memory(20 * MB).unwrap();
+        let _ = split_memory.try_reserve_memory(20 * MB).unwrap();
         assert_eq!(split_memory.reserved_num_bytes(), 20 * MB);
         assert!(!split_memory.has_run_out_of_memory());
     }
@@ -288,7 +289,7 @@ mod tests {
         let reservation = global.try_allocate(10 * MB).unwrap();
         let split_memory = SplitWarmupMemory::new(reservation, 15 * MB);
         // 11MB does not fit in 10MB. 1.7 x 10MB = 17MB is clamped to the 15MB per-split limit.
-        split_memory.try_reserve_memory(11 * MB).unwrap();
+        let _ = split_memory.try_reserve_memory(11 * MB).unwrap();
         assert_eq!(split_memory.reserved_num_bytes(), 15 * MB);
         assert_eq!(global.allocated(), 15 * MB);
     }

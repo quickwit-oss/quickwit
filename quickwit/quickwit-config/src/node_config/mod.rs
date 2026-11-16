@@ -696,7 +696,7 @@ impl SearcherConfig {
                 .max(ByteSize(self.warmup_memory_budget.as_u64() / 4))
         }
     }
-    fn validate(&self) -> anyhow::Result<()> {
+    pub fn validate(&self) -> anyhow::Result<()> {
         anyhow::ensure!(
             self.warmup_single_split_initial_allocation <= self.warmup_memory_budget,
             "warmup_single_split_initial_allocation ({}) must be lower or equal to \
