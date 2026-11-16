@@ -434,6 +434,13 @@ pub struct SearcherConfig {
     pub use_metastore_read_replica: bool,
     pub warmup_memory_budget: ByteSize,
     pub warmup_single_split_initial_allocation: ByteSize,
+    /// Maximum warmup memory a single split search can reserve. A split search that would need
+    /// more fails, even if the searcher has warmup memory left.
+    ///
+    /// Defaults to `max(warmup_single_split_initial_allocation, warmup_memory_budget / 4)`: use
+    /// [`SearcherConfig::effective_warmup_single_split_max_allocation`] to read it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warmup_single_split_max_allocation: Option<ByteSize>,
     /// Lambda configuration for serverless leaf search execution.
     /// If set, enables Lambda execution for leaf search.
     ///
@@ -658,6 +665,7 @@ impl Default for SearcherConfig {
             use_metastore_read_replica: false,
             warmup_memory_budget: ByteSize::gb(100),
             warmup_single_split_initial_allocation: ByteSize::mb(300),
+            warmup_single_split_max_allocation: None,
             lambda: None,
         }
     }
@@ -675,26 +683,53 @@ impl SearcherConfig {
     fn default_request_timeout_secs() -> NonZeroU64 {
         NonZeroU64::new(30).unwrap()
     }
-    fn validate(&self) -> anyhow::Result<()> {
+    /// Maximum warmup memory a single split search can reserve:
+    /// `warmup_single_split_max_allocation` if set, otherwise
+    /// `max(warmup_single_split_initial_allocation, warmup_memory_budget / 4)`.
+    ///
+    /// Never above `warmup_memory_budget` for a config that was validated.
+    pub fn effective_warmup_single_split_max_allocation(&self) -> ByteSize {
+        if let Some(warmup_single_split_max_allocation) = self.warmup_single_split_max_allocation {
+            warmup_single_split_max_allocation
+        } else {
+            self.warmup_single_split_initial_allocation
+                .max(ByteSize(self.warmup_memory_budget.as_u64() / 4))
+        }
+    }
+    pub fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.warmup_single_split_initial_allocation <= self.warmup_memory_budget,
+            "warmup_single_split_initial_allocation ({}) must be lower or equal to \
+             warmup_memory_budget ({})",
+            self.warmup_single_split_initial_allocation,
+            self.warmup_memory_budget
+        );
+        if let Some(warmup_single_split_max_allocation) = self.warmup_single_split_max_allocation {
+            anyhow::ensure!(
+                warmup_single_split_max_allocation <= self.warmup_memory_budget,
+                "warmup_single_split_max_allocation ({}) must be lower or equal to \
+                 warmup_memory_budget ({})",
+                warmup_single_split_max_allocation,
+                self.warmup_memory_budget
+            );
+            // Otherwise, the initial allocation would be silently capped to the max.
+            anyhow::ensure!(
+                self.warmup_single_split_initial_allocation <= warmup_single_split_max_allocation,
+                "warmup_single_split_initial_allocation ({}) must be lower or equal to \
+                 warmup_single_split_max_allocation ({})",
+                self.warmup_single_split_initial_allocation,
+                warmup_single_split_max_allocation
+            );
+        }
         if let Some(split_cache_limits) = self.split_cache {
-            if self.max_num_concurrent_split_searches
-                > split_cache_limits.max_file_descriptors.get() as usize
-            {
-                anyhow::bail!(
-                    "max_num_concurrent_split_searches ({}) must be lower or equal to \
-                     split_cache.max_file_descriptors ({})",
-                    self.max_num_concurrent_split_searches,
-                    split_cache_limits.max_file_descriptors
-                );
-            }
-            if self.warmup_single_split_initial_allocation > self.warmup_memory_budget {
-                anyhow::bail!(
-                    "warmup_single_split_initial_allocation ({}) must be lower or equal to \
-                     warmup_memory_budget ({})",
-                    self.warmup_single_split_initial_allocation,
-                    self.warmup_memory_budget
-                );
-            }
+            anyhow::ensure!(
+                self.max_num_concurrent_split_searches
+                    <= split_cache_limits.max_file_descriptors.get() as usize,
+                "max_num_concurrent_split_searches ({}) must be lower or equal to \
+                 split_cache.max_file_descriptors ({})",
+                self.max_num_concurrent_split_searches,
+                split_cache_limits.max_file_descriptors
+            );
         }
         Ok(())
     }
@@ -717,7 +752,11 @@ pub struct IngestApiConfig {
     /// Deprecated: ingest replication is no longer supported.
     #[serde(default, rename = "replication_factor", skip_serializing)]
     _replication_factor: Option<serde::de::IgnoredAny>,
-    pub content_length_limit: ByteSize,
+    /// Maximum size of a request body on the wire, i.e. before decompression.
+    #[serde(alias = "content_length_limit")]
+    pub max_body_size: ByteSize,
+    /// Maximum size of a request body after decompression.
+    pub max_decompressed_body_size: ByteSize,
     /// (hidden) Targeted throughput for each shard
     pub shard_throughput_limit: ByteSize,
     /// (hidden) Maximum accumulated throughput capacity for underutilized
@@ -742,7 +781,8 @@ impl Default for IngestApiConfig {
             max_queue_memory_usage: ByteSize::gib(2),
             max_queue_disk_usage: ByteSize::gib(4),
             _replication_factor: None,
-            content_length_limit: ByteSize::mib(10),
+            max_body_size: ByteSize::mib(10),
+            max_decompressed_body_size: ByteSize::mib(256),
             shard_throughput_limit: DEFAULT_SHARD_THROUGHPUT_LIMIT,
             shard_burst_limit: DEFAULT_SHARD_BURST_LIMIT,
             shard_scale_up_factor: DEFAULT_SHARD_SCALE_UP_FACTOR,
@@ -809,12 +849,23 @@ impl IngestApiConfig {
             "shard_throughput_limit ({}) must be within 1mb and 20mb",
             self.shard_throughput_limit.display().si()
         );
+        ensure!(
+            self.max_decompressed_body_size <= ByteSize::gib(4),
+            "max_decompressed_body_size ({}) must be at most 4GiB",
+            self.max_decompressed_body_size.display().iec()
+        );
+        ensure!(
+            self.max_decompressed_body_size >= self.max_body_size,
+            "max_decompressed_body_size ({}) must be at least max_body_size ({})",
+            self.max_decompressed_body_size.display().iec(),
+            self.max_body_size.display().iec()
+        );
         // The newline delimited format is persisted as something a bit larger
         // (lines prefixed with their length)
-        let estimated_persist_size = ByteSize::b(3 * self.content_length_limit.as_u64() / 2);
+        let estimated_persist_size = ByteSize::b(3 * self.max_body_size.as_u64() / 2);
         ensure!(
             self.shard_burst_limit >= estimated_persist_size,
-            "shard_burst_limit ({}) must be at least 1.5*content_length_limit ({})",
+            "shard_burst_limit ({}) must be at least 1.5*max_body_size ({})",
             self.shard_burst_limit,
             estimated_persist_size,
         );
@@ -1097,6 +1148,108 @@ mod tests {
     }
 
     #[test]
+    fn test_searcher_config_warmup_single_split_max_allocation_default() {
+        let searcher_config = SearcherConfig {
+            warmup_memory_budget: ByteSize::gb(8),
+            ..Default::default()
+        };
+        assert_eq!(searcher_config.warmup_single_split_max_allocation, None);
+        assert_eq!(
+            searcher_config.effective_warmup_single_split_max_allocation(),
+            ByteSize::gb(2)
+        );
+        searcher_config.validate().unwrap();
+    }
+
+    #[test]
+    fn test_searcher_config_warmup_single_split_max_allocation_default_small_budget() {
+        // A quarter of the budget (250MB) is below the initial allocation (300MB): the default
+        // max is the initial allocation, so the initial allocation is never capped.
+        let searcher_config = SearcherConfig {
+            warmup_memory_budget: ByteSize::gb(1),
+            ..Default::default()
+        };
+        assert_eq!(
+            searcher_config.warmup_single_split_initial_allocation,
+            ByteSize::mb(300)
+        );
+        assert_eq!(
+            searcher_config.effective_warmup_single_split_max_allocation(),
+            ByteSize::mb(300)
+        );
+        searcher_config.validate().unwrap();
+    }
+
+    #[test]
+    fn test_searcher_config_warmup_single_split_max_allocation_explicit() {
+        let searcher_config: SearcherConfig = serde_json::from_str(
+            r#"{"warmup_memory_budget": "8GB", "warmup_single_split_max_allocation": "1GB"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            searcher_config.warmup_single_split_max_allocation,
+            Some(ByteSize::gb(1))
+        );
+        assert_eq!(
+            searcher_config.effective_warmup_single_split_max_allocation(),
+            ByteSize::gb(1)
+        );
+        searcher_config.validate().unwrap();
+    }
+
+    #[test]
+    fn test_searcher_config_warmup_single_split_max_allocation_validation() {
+        let above_budget_config = SearcherConfig {
+            warmup_memory_budget: ByteSize::gb(8),
+            warmup_single_split_max_allocation: Some(ByteSize::gb(9)),
+            ..Default::default()
+        };
+        assert_eq!(
+            above_budget_config.validate().unwrap_err().to_string(),
+            format!(
+                "warmup_single_split_max_allocation ({}) must be lower or equal to \
+                 warmup_memory_budget ({})",
+                ByteSize::gb(9),
+                ByteSize::gb(8)
+            )
+        );
+
+        // Checked even without a split cache.
+        let initial_above_budget_config = SearcherConfig {
+            warmup_memory_budget: ByteSize::mb(100),
+            ..Default::default()
+        };
+        assert!(initial_above_budget_config.split_cache.is_none());
+        assert_eq!(
+            initial_above_budget_config
+                .validate()
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "warmup_single_split_initial_allocation ({}) must be lower or equal to \
+                 warmup_memory_budget ({})",
+                ByteSize::mb(300),
+                ByteSize::mb(100)
+            )
+        );
+
+        let max_below_initial_config = SearcherConfig {
+            warmup_memory_budget: ByteSize::gb(8),
+            warmup_single_split_max_allocation: Some(ByteSize::mb(200)),
+            ..Default::default()
+        };
+        assert_eq!(
+            max_below_initial_config.validate().unwrap_err().to_string(),
+            format!(
+                "warmup_single_split_initial_allocation ({}) must be lower or equal to \
+                 warmup_single_split_max_allocation ({})",
+                ByteSize::mb(300),
+                ByteSize::mb(200)
+            )
+        );
+    }
+
+    #[test]
     fn test_validate_ingest_api_default() {
         let ingest_api_config: IngestApiConfig = serde_yaml::from_str("").unwrap();
         assert!(ingest_api_config.validate().is_ok());
@@ -1148,6 +1301,62 @@ mod tests {
                 "shard_throughput_limit (21.0 MB) must be within 1mb and 20mb"
             );
         }
+    }
+
+    #[test]
+    fn test_ingest_api_max_body_size_default_and_alias() {
+        let default_config = IngestApiConfig::default();
+        assert_eq!(default_config.max_body_size, ByteSize::mib(10));
+
+        // Former name, kept as an alias.
+        let ingest_api_config: IngestApiConfig = serde_yaml::from_str(
+            r#"
+                content_length_limit: 20M
+            "#,
+        )
+        .unwrap();
+        assert_eq!(ingest_api_config.max_body_size, ByteSize::mb(20));
+        assert!(ingest_api_config.validate().is_ok());
+
+        let ingest_api_config: IngestApiConfig = serde_yaml::from_str(
+            r#"
+                max_body_size: 20M
+            "#,
+        )
+        .unwrap();
+        assert_eq!(ingest_api_config.max_body_size, ByteSize::mb(20));
+    }
+
+    #[test]
+    fn test_ingest_api_max_decompressed_body_size() {
+        let default_config = IngestApiConfig::default();
+        assert_eq!(
+            default_config.max_decompressed_body_size,
+            ByteSize::mib(256)
+        );
+
+        let ingest_api_config: IngestApiConfig = serde_yaml::from_str(
+            r#"
+                max_body_size: 10MiB
+                max_decompressed_body_size: 1MiB
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            ingest_api_config.validate().unwrap_err().to_string(),
+            "max_decompressed_body_size (1.0 MiB) must be at least max_body_size (10.0 MiB)"
+        );
+
+        let ingest_api_config: IngestApiConfig = serde_yaml::from_str(
+            r#"
+                max_decompressed_body_size: 5GiB
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            ingest_api_config.validate().unwrap_err().to_string(),
+            "max_decompressed_body_size (5.0 GiB) must be at most 4GiB"
+        );
     }
 
     #[test]

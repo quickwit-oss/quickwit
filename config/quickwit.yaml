@@ -182,7 +182,8 @@ indexer:
 # ingest_api:
 #   max_queue_memory_usage: 2GiB
 #   max_queue_disk_usage: 4GiB
-#   content_length_limit: 10MiB
+#   max_body_size: 10MiB
+#   max_decompressed_body_size: 256MiB
 #   decommission_timeout: 300s
 #
 # -------------------------------- Compactor settings --------------------------------

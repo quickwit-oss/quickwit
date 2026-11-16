@@ -125,7 +125,7 @@ impl RunCliCommand {
             get_resolvers(&node_config.storage_configs, &node_config.metastore_configs);
         crate::busy_detector::set_enabled(true);
         // TODO move in serve quickwit?
-        let runtimes_config = RuntimesConfig::default();
+        let runtimes_config = RuntimesConfig::get();
         start_actor_runtimes(runtimes_config, &node_config.enabled_services)?;
         let shutdown_signal = Box::pin(async {
             select(pin!(listen_interrupt()), pin!(listen_sigterm())).await;

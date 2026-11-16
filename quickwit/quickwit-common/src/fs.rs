@@ -41,10 +41,11 @@ pub fn get_cache_directory_path(data_dir_path: &Path) -> PathBuf {
 pub fn get_disk_size(dir_path: &Path) -> Option<ByteSize> {
     let disks = sysinfo::Disks::new_with_refreshed_list_specifics(
         DiskRefreshKind::nothing().with_storage(),
-    );
+    )
+    .ok()?;
     let mut best_match: Option<(&Disk, PathBuf)> = None;
     let dir_path = dir_path.canonicalize().ok()?;
-    for disk in disks.list() {
+    for disk in &disks {
         let canonical_mount_path = disk.mount_point().canonicalize().ok()?;
         if dir_path.starts_with(&canonical_mount_path) {
             match best_match {

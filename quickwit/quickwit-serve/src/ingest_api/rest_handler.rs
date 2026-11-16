@@ -94,10 +94,11 @@ fn ingest_filter(
 ) -> impl Filter<Extract = (String, Body, IngestOptions), Error = Rejection> + Clone {
     warp::path!(String / "ingest")
         .and(warp::post())
-        .and(warp::body::content_length_limit(
-            config.content_length_limit.as_u64(),
+        .and(get_body_bytes(
+            config.max_body_size,
+            config.max_decompressed_body_size,
+            "ingest",
         ))
-        .and(get_body_bytes())
         .and(warp::query::<IngestOptions>())
 }
 
@@ -278,6 +279,7 @@ pub(crate) mod tests {
         IngestServiceClient, QUEUES_DIR_NAME, SuggestTruncateRequest, init_ingest_api,
     };
     use quickwit_proto::ingest::router::IngestRouterServiceClient;
+    use warp::Filter;
 
     use super::{RestIngestResponse, ingest_api_handlers};
 
@@ -406,13 +408,13 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_return_413_if_above_content_limit() {
-        let config: IngestApiConfig =
-            serde_json::from_str(r#"{ "content_length_limit": "1" }"#).unwrap();
+        let config: IngestApiConfig = serde_json::from_str(r#"{ "max_body_size": "1" }"#).unwrap();
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_v1_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let ingest_api_handlers =
-            ingest_api_handlers(ingest_router, ingest_service, config.clone(), true, false);
+            ingest_api_handlers(ingest_router, ingest_service, config.clone(), true, false)
+                .recover(crate::rest::recover_fn);
         let resp = warp::test::request()
             .path("/my-index/ingest")
             .method("POST")

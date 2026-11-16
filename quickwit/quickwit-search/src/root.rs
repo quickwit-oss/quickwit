@@ -40,7 +40,7 @@ use quickwit_proto::search::{
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_query::query_ast::{
-    BoolQuery, QueryAst, QueryAstVisitor, RangeQuery, TermQuery, TermSetQuery,
+    BoolQuery, QueryAst, QueryAstVisitor, QueryFeatureCounts, RangeQuery, TermQuery, TermSetQuery,
 };
 use serde::{Deserialize, Serialize};
 use tantivy::TantivyError;
@@ -378,6 +378,7 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<
         ignore_missing_indexes: req.ignore_missing_indexes,
         skip_aggregation_finalization: false,
         priority: req.priority,
+        query_source: req.query_source.clone(),
     })
 }
 
@@ -779,13 +780,28 @@ fn log_root_resource_stats(resource_log: &RootSearchResourceLog) {
     let leaf_worst_split_sum = leaf_worst.and_then(|lw| lw.split_resources_sum.as_ref());
     let leaf_sum_split_worst = leaf_sum.and_then(|ls| ls.split_resources_worst.as_ref());
     let leaf_sum_split_sum = leaf_sum.and_then(|ls| ls.split_resources_sum.as_ref());
+    let features = &resource_log.query_features;
     info!(
+        query_features.bool_count = features.bool_count,
+        query_features.term_count = features.term_count,
+        query_features.term_set_count = features.term_set_count,
+        query_features.field_presence_count = features.field_presence_count,
+        query_features.full_text_count = features.full_text_count,
+        query_features.phrase_prefix_count = features.phrase_prefix_count,
+        query_features.range_count = features.range_count,
+        query_features.wildcard_count = features.wildcard_count,
+        query_features.regex_count = features.regex_count,
+        query_features.match_all_count = features.match_all_count,
+        query_features.match_none_count = features.match_none_count,
+        query_features.boost_count = features.boost_count,
+        query_features.calc_field_count = features.calc_field_count,
         query_ast = search_request.query_ast.as_str(),
         agg = search_request.aggregation_request(),
         start_ts = ?(search_request.start_timestamp()..search_request.end_timestamp()),
         count_required = search_request.count_hits().as_str_name(),
         max_hits = search_request.max_hits,
         priority = search_request.priority,
+        query_source = %search_request.query_source,
         num_docs = resource_log.num_docs,
         elapsed_time_micros = resource_log.start.elapsed().as_micros() as u64,
         success = resource_log.success,
@@ -1448,6 +1464,7 @@ async fn refine_and_list_matches(
 async fn plan_splits_for_root_search(
     search_request: &mut SearchRequest,
     metastore: &MetastoreServiceClient,
+    query_features: &mut QueryFeatureCounts,
 ) -> crate::Result<(Vec<SplitMetadata>, IndexesMetasForLeafSearch)> {
     let list_indexes_metadatas_request = ListIndexesMetadataRequest {
         index_id_patterns: search_request.index_id_patterns.clone(),
@@ -1467,6 +1484,8 @@ async fn plan_splits_for_root_search(
     }
 
     let request_metadata = validate_request_and_build_metadata(&indexes_metadata, search_request)?;
+    *query_features = QueryFeatureCounts::from_query_ast(&request_metadata.query_ast_resolved);
+
     let split_metadatas = refine_and_list_matches(
         metastore,
         search_request,
@@ -1489,6 +1508,7 @@ struct RootSearchResourceLog {
     start: Instant,
     // Available only after planning completes.
     num_docs: Option<usize>,
+    query_features: QueryFeatureCounts,
     progress: RootSearchProgress,
     success: bool,
 }
@@ -1516,14 +1536,16 @@ pub async fn root_search(
         request: search_request,
         start: start_instant,
         num_docs: None,
+        query_features: QueryFeatureCounts::default(),
         progress: RootSearchProgress::default(),
         success: false,
     };
     let search_request = &mut resource_log.request;
+    let query_features = &mut resource_log.query_features;
 
     let (split_metadatas, indexes_meta_for_leaf_search) = RootSearchMetricsFuture {
         start: start_instant,
-        tracked: plan_splits_for_root_search(search_request, metastore),
+        tracked: plan_splits_for_root_search(search_request, metastore, query_features),
         is_success: None,
         step: RootSearchMetricsStep::Plan,
     }
@@ -1543,6 +1565,7 @@ pub async fn root_search(
         num_docs = num_docs,
         num_splits = num_splits,
         priority = search_request.priority,
+        query_source = %search_request.query_source,
         "root_search"
     );
 
@@ -2207,6 +2230,16 @@ mod tests {
             field_is_not_text_err.to_string(),
             "the snippet field `ip` must be of type `Str`, got `IpAddr`"
         );
+    }
+
+    #[test]
+    fn test_scroll_request_preserves_query_source() {
+        let request = SearchRequest {
+            query_source: "dashboard".to_string(),
+            ..Default::default()
+        };
+        let scroll_request = simplify_search_request_for_scroll_api(&request).unwrap();
+        assert_eq!(scroll_request.query_source, request.query_source);
     }
 
     #[test]
