@@ -246,7 +246,7 @@ pub(crate) async fn open_index_with_caches(
     tokenizer_manager: Option<&TokenizerManager>,
     ephemeral_unbounded_cache: Option<ByteRangeCache>,
     warmup_memory: Option<Arc<SplitWarmupMemory>>,
-) -> anyhow::Result<(Index, HotDirectory)> {
+) -> crate::Result<(Index, HotDirectory)> {
     let index_storage_with_retry_on_timeout =
         configure_storage_retries(searcher_context, index_storage);
 
