@@ -104,7 +104,7 @@ impl RuntimeInfo {
     pub fn get() -> &'static Self {
         static INSTANCE: LazyLock<RuntimeInfo> = LazyLock::new(|| {
             let num_cpus = quickwit_common::num_cpus();
-            let runtimes_config = RuntimesConfig::with_num_cpus(num_cpus);
+            let runtimes_config = RuntimesConfig::get();
             RuntimeInfo {
                 num_cpus,
                 num_threads_blocking: runtimes_config.num_threads_blocking,

@@ -42,7 +42,7 @@ impl fmt::Display for IndexUid {
 impl IndexUid {
     /// Creates a new index UID from an index ID using a random ULID as incarnation ID.
     pub fn new_with_random_ulid(index_id: &str) -> Self {
-        Self::new(index_id, Ulid::new())
+        Self::new(index_id, Ulid::generate())
     }
 
     fn new(index_id: &str, incarnation_id: impl Into<Ulid>) -> Self {

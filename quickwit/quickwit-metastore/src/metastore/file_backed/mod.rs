@@ -354,37 +354,29 @@ impl FileBackedMetastore {
 
     async fn index_metadata_inner(
         &self,
-        index_id_opt: Option<IndexId>,
-        index_uid_opt: Option<IndexUid>,
-    ) -> Result<IndexMetadata, (MetastoreError, Option<IndexId>, Option<IndexUid>)> {
-        let index_id = if let Some(index_id) = &index_id_opt {
+        index_id_opt: Option<&IndexId>,
+        index_uid_opt: Option<&IndexUid>,
+    ) -> MetastoreResult<IndexMetadata> {
+        let index_id = if let Some(index_id) = index_id_opt {
             index_id
-        } else if let Some(index_uid) = &index_uid_opt {
+        } else if let Some(index_uid) = index_uid_opt {
             &index_uid.index_id
         } else {
             let message = "invalid request: neither `index_id` nor `index_uid` is set".to_string();
-            let metastore_error = MetastoreError::Internal {
+            return Err(MetastoreError::Internal {
                 message,
                 cause: "".to_string(),
-            };
-            return Err((metastore_error, index_id_opt, index_uid_opt));
+            });
         };
-        let index_metadata = match self
+        let index_metadata = self
             .read_any(index_id, None, |index| Ok(index.metadata().clone()))
-            .await
-        {
-            Ok(index_metadata) => index_metadata,
-            Err(metastore_error) => {
-                return Err((metastore_error, index_id_opt, index_uid_opt));
-            }
-        };
-        if let Some(index_uid) = &index_uid_opt
+            .await?;
+        if let Some(index_uid) = index_uid_opt
             && index_metadata.index_uid != *index_uid
         {
-            let metastore_error = MetastoreError::NotFound(EntityKind::Index {
+            return Err(MetastoreError::NotFound(EntityKind::Index {
                 index_id: index_id.to_string(),
-            });
-            return Err((metastore_error, index_id_opt, index_uid_opt));
+            }));
         }
         Ok(index_metadata)
     }
@@ -891,10 +883,11 @@ impl MetastoreService for FileBackedMetastore {
         &self,
         request: IndexMetadataRequest,
     ) -> MetastoreResult<IndexMetadataResponse> {
+        let index_id_opt = request.index_id.as_ref();
+        let index_uid_opt = request.index_uid.as_ref();
         let index_metadata = self
-            .index_metadata_inner(request.index_id, request.index_uid)
-            .await
-            .map_err(|(metastore_error, _index_id_opt, _index_uid_opt)| metastore_error)?;
+            .index_metadata_inner(index_id_opt, index_uid_opt)
+            .await?;
         let response = IndexMetadataResponse::try_from_index_metadata(&index_metadata)?;
         Ok(response)
     }
@@ -913,33 +906,31 @@ impl MetastoreService for FileBackedMetastore {
         for subrequest in request.subrequests {
             let metastore = self.clone();
             let index_metadata_future = async move {
-                metastore
-                    .index_metadata_inner(subrequest.index_id, subrequest.index_uid)
-                    .await
+                let index_id_opt = subrequest.index_id.as_ref();
+                let index_uid_opt = subrequest.index_uid.as_ref();
+                let index_metadata_result = metastore
+                    .index_metadata_inner(index_id_opt, index_uid_opt)
+                    .await;
+                (index_metadata_result, subrequest)
             };
             index_metadata_futures.push(index_metadata_future);
         }
-        while let Some(index_metadata_result) = index_metadata_futures.next().await {
-            match index_metadata_result {
-                Ok(index_metadata) => indexes_metadata.push(index_metadata),
-                Err((MetastoreError::NotFound(_), index_id, index_uid)) => {
-                    let failure = IndexMetadataFailure {
-                        index_id,
-                        index_uid,
-                        reason: IndexMetadataFailureReason::NotFound as i32,
-                    };
-                    failures.push(failure)
+        while let Some((index_metadata_result, subrequest)) = index_metadata_futures.next().await {
+            let reason = match index_metadata_result {
+                Ok(index_metadata) => {
+                    indexes_metadata.push(index_metadata);
+                    continue;
                 }
+                Err(MetastoreError::NotFound(_)) => IndexMetadataFailureReason::NotFound,
                 // All other errors are considered internal errors.
-                Err((_metastore_error, index_id, index_uid)) => {
-                    let failure = IndexMetadataFailure {
-                        index_id,
-                        index_uid,
-                        reason: IndexMetadataFailureReason::Internal as i32,
-                    };
-                    failures.push(failure)
-                }
-            }
+                Err(_) => IndexMetadataFailureReason::Internal,
+            };
+            let failure = IndexMetadataFailure {
+                index_id: subrequest.index_id,
+                index_uid: subrequest.index_uid,
+                reason: reason as i32,
+            };
+            failures.push(failure);
         }
         let response =
             IndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata, failures).await?;

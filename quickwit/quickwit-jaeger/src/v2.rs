@@ -615,7 +615,6 @@ fn json_value_to_otel_kv(key: String, value: JsonValue) -> OtelKeyValue {
     }
 }
 
-#[allow(clippy::result_large_err)]
 fn qw_span_from_json(qw_span_json: &str) -> Result<QwSpan, Status> {
     json_deserialize(qw_span_json, "span")
 }
