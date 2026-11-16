@@ -275,14 +275,13 @@ impl<'a> ExtractPrefixTermRangesAndAutomatons<'a> {
             .or_default() |= position_needed;
     }
 
-    fn predicate_warmup(&self, query_ast: &QueryAst) -> AutomatonWarmup {
+    fn predicate_warmup(&self, query_ast: &QueryAst) -> Result<AutomatonWarmup, InvalidQuery> {
         if !self.cache_predicates {
-            return AutomatonWarmup::PostingsOnly;
+            return Ok(AutomatonWarmup::PostingsOnly);
         }
 
-        let cache_key = serde_json::to_string(query_ast)
-            .expect("automaton predicates must serialize for predicate caching");
-        AutomatonWarmup::CacheHits(HashSet::from([cache_key]))
+        let cache_key = serde_json::to_string(query_ast)?;
+        Ok(AutomatonWarmup::CacheHits(HashSet::from([cache_key])))
     }
 
     fn add_automaton_warmup(
@@ -346,7 +345,7 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRangesAndAutomatons<'b
                 Err(e) => return Err(e),
             };
 
-        let warmup = self.predicate_warmup(&QueryAst::Wildcard(wildcard_query.clone()));
+        let warmup = self.predicate_warmup(&QueryAst::Wildcard(wildcard_query.clone()))?;
         self.add_automaton_warmup(field, Automaton::Regex(path, regex), warmup);
         Ok(())
     }
@@ -358,7 +357,7 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRangesAndAutomatons<'b
             Err(InvalidQuery::FieldDoesNotExist { .. }) => return Ok(()),
             Err(e) => return Err(e),
         };
-        let warmup = self.predicate_warmup(&QueryAst::Regex(regex_query.clone()));
+        let warmup = self.predicate_warmup(&QueryAst::Regex(regex_query.clone()))?;
         self.add_automaton_warmup(
             resolved.field,
             Automaton::Regex(resolved.json_path, resolved.regex),
