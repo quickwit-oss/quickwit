@@ -298,6 +298,17 @@ async fn run_cancellable(
     }
 }
 
+/// Whether a split can skip search or is ready to execute its query.
+pub(crate) enum WarmupOutcome {
+    /// A required term is absent from the split, so the query has no matches.
+    /// Remaining warmup work may have been cancelled. Search can be skipped.
+    NoMatches,
+    /// Warmup completed and the query must be executed to determine its matches.
+    /// Carries prepared predicate hitsets to install in the query, independently of
+    /// shared-cache admission. The map is empty when no hitsets were prepared.
+    Ready(WarmedHits),
+}
+
 /// Tantivy search does not make it possible to fetch data asynchronously during
 /// search.
 ///
@@ -330,8 +341,8 @@ async fn run_cancellable(
 /// in `predicate_cache` under `split_id`, so execution can avoid another term enumeration.
 /// Queries without predicate caching request postings-only warmup.
 ///
-/// Returns whether the query is provably empty in this split (i.e. `on_absent` fired and
-/// warmup was short-circuited), and prepared hitsets to retain in the executable query.
+/// Returns [`WarmupOutcome::NoMatches`] when a required term proves the split empty,
+/// or [`WarmupOutcome::Ready`] with any prepared hitsets to retain in the executable query.
 pub(crate) async fn warmup(
     searcher: &Searcher,
     warmup_info: &WarmupInfo,
@@ -339,7 +350,7 @@ pub(crate) async fn warmup(
     on_absent: &(dyn Fn(&Term, SegmentId) + Sync),
     predicate_cache: Arc<dyn PredicateCache>,
     split_id: &str,
-) -> anyhow::Result<(bool, WarmedHits)> {
+) -> anyhow::Result<WarmupOutcome> {
     debug!(warmup_info=?warmup_info);
 
     // Early-abort optimization: the split's downloads can be cancelled as soon as
@@ -407,11 +418,13 @@ pub(crate) async fn warmup(
         warm_up_automatons_future,
     )?;
 
-    let provably_empty = match &abort_token {
-        Some(abort_token) => abort_token.is_cancelled(),
-        None => false,
-    };
-    Ok((provably_empty, warmed_hits))
+    if abort_token
+        .as_ref()
+        .is_some_and(CancellationToken::is_cancelled)
+    {
+        return Ok(WarmupOutcome::NoMatches);
+    }
+    Ok(WarmupOutcome::Ready(warmed_hits))
 }
 
 /// Warm up the full term dictionary for each supplied field in every segment.
@@ -885,8 +898,8 @@ async fn leaf_search_single_split(
             None => false,
         }
     });
-    let (provably_empty, warmed_hits) = if cached_known_empty {
-        (true, WarmedHits::default())
+    let warmup_outcome = if cached_known_empty {
+        WarmupOutcome::NoMatches
     } else {
         // Record every required term proven absent during warmup, so any future query
         // carrying one of them prunes before warmup. Absence is per `(split, term)`,
@@ -910,7 +923,7 @@ async fn leaf_search_single_split(
             downloaded_mb = tracing::field::Empty,
             total_mb = tracing::field::Empty
         );
-        let provably_empty = warmup(
+        let warmup_outcome = warmup(
             &searcher,
             &warmup_info,
             priority,
@@ -938,9 +951,12 @@ async fn leaf_search_single_split(
                 .saturating_sub(cache_bytes_before_warmup) as f64
                 / BYTES_PER_MB,
         );
-        provably_empty
+        warmup_outcome
     };
-    if !provably_empty && !warmed_hits.is_empty() {
+    let skip_search = matches!(warmup_outcome, WarmupOutcome::NoMatches);
+    if let WarmupOutcome::Ready(warmed_hits) = warmup_outcome
+        && !warmed_hits.is_empty()
+    {
         let doc_mapper = ctx.doc_mapper.clone();
         let schema = index.schema();
         query = crate::search_thread_pool()
@@ -971,7 +987,7 @@ async fn leaf_search_single_split(
     search_permit.update_memory_usage(warmup_size);
     search_permit.free_warmup_slot();
 
-    if provably_empty {
+    if skip_search {
         // The absences discovered this run were already recorded per-term above (or the
         // short-circuit came from a prior run's per-term entry), so there is nothing to
         // write here.
@@ -3104,11 +3120,10 @@ mod tests {
         let present = Term::from_field_text(body, "hello");
         let missing = Term::from_field_text(body, "missing");
 
-        // Runs warmup, returning whether the split is provably empty and the terms that
-        // `on_absent` was invoked with.
-        async fn run(searcher: &Searcher, warmup_info: &WarmupInfo) -> (bool, Vec<Term>) {
+        // Runs warmup, returning its outcome and the terms that `on_absent` was invoked with.
+        async fn run(searcher: &Searcher, warmup_info: &WarmupInfo) -> (WarmupOutcome, Vec<Term>) {
             let reported = std::sync::Mutex::new(Vec::new());
-            let (provably_empty, _) = warmup(
+            let outcome = warmup(
                 searcher,
                 warmup_info,
                 Priority::default(),
@@ -3120,27 +3135,27 @@ mod tests {
             )
             .await
             .unwrap();
-            (provably_empty, reported.into_inner().unwrap())
+            (outcome, reported.into_inner().unwrap())
         }
 
         // An absent required term is reported (so the caller can cache it) and proves the
         // split empty; the present required term is not reported.
         let warmup_info = warmup_info_with_required(&[&present, &missing], &[&present, &missing]);
-        let (provably_empty, reported) = run(&searcher, &warmup_info).await;
-        assert!(provably_empty);
+        let (outcome, reported) = run(&searcher, &warmup_info).await;
+        assert!(matches!(outcome, WarmupOutcome::NoMatches));
         assert_eq!(reported, vec![missing.clone()]);
 
         // All required terms present: nothing reported, so the split must be searched.
         let warmup_info = warmup_info_with_required(&[&present], &[&present]);
-        let (provably_empty, reported) = run(&searcher, &warmup_info).await;
-        assert!(!provably_empty);
+        let (outcome, reported) = run(&searcher, &warmup_info).await;
+        assert!(matches!(outcome, WarmupOutcome::Ready(hits) if hits.is_empty()));
         assert!(reported.is_empty());
 
         // A missing term that is not required is never reported (recording would be unsound
         // without a required-term proof), so the split must be searched.
         let warmup_info = warmup_info_with_required(&[&present, &missing], &[]);
-        let (provably_empty, reported) = run(&searcher, &warmup_info).await;
-        assert!(!provably_empty);
+        let (outcome, reported) = run(&searcher, &warmup_info).await;
+        assert!(matches!(outcome, WarmupOutcome::Ready(hits) if hits.is_empty()));
         assert!(reported.is_empty());
     }
 
@@ -3198,7 +3213,7 @@ mod tests {
                         Some((cache.clone(), "split".into())),
                     )
                     .unwrap();
-                let (empty, hits) = warmup(
+                let WarmupOutcome::Ready(hits) = warmup(
                     &searcher,
                     &warmup_info,
                     Priority::default(),
@@ -3207,8 +3222,9 @@ mod tests {
                     "split",
                 )
                 .await
-                .unwrap();
-                assert!(!empty);
+                .unwrap() else {
+                    panic!("automaton warmup should prepare hits for search");
+                };
                 assert_eq!(hits.len(), 2);
                 for (key, (segment, hits)) in &hits {
                     assert_eq!(*segment, searcher.segment_reader(0).segment_id());
