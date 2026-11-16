@@ -121,7 +121,23 @@ pub fn compute_initial_memory_allocation(
 }
 
 impl SearchPermitProvider {
+    /// Creates a provider without a per-split limit other than `memory_budget`.
+    #[cfg(test)]
     pub fn new(num_download_slots: usize, memory_budget: ByteSize) -> Self {
+        Self::with_split_max_allocation(num_download_slots, memory_budget, memory_budget)
+    }
+
+    /// Creates a provider.
+    ///
+    /// - `memory_budget`: total warmup memory of the split searches of this node.
+    /// - `split_max_allocation`: warmup memory a single split search can reserve at most. It is
+    ///   expected to be lower or equal to `memory_budget`. Callers are expected to clamp the permit
+    ///   sizes they request to it.
+    pub fn with_split_max_allocation(
+        num_download_slots: usize,
+        memory_budget: ByteSize,
+        split_max_allocation: ByteSize,
+    ) -> Self {
         let (message_sender, message_receiver) = mpsc::unbounded_channel();
         let total_job_cost = Arc::new(AtomicUsize::new(0));
         let weak_message_sender = message_sender.downgrade();
@@ -134,6 +150,7 @@ impl SearchPermitProvider {
             msg_sender: message_sender.downgrade(),
             num_warmup_slots_available: num_download_slots,
             warmup_memory,
+            split_max_allocation: split_max_allocation.as_u64(),
             permits_requests: BinaryHeap::new(),
             total_job_cost: total_job_cost.clone(),
         };
@@ -222,6 +239,9 @@ struct SearchPermitActor {
     /// the `GlobalWarmupMemory` callback sends a `MemoryFreed` message, so that the actor tries
     /// again.
     warmup_memory: GlobalWarmupMemory,
+    /// Warmup memory a single split search can reserve at most. Given to each permit's
+    /// [`SplitWarmupMemory`].
+    split_max_allocation: u64,
     /// Sum of [`SplitSearchTaskMetadata::job_cost`] for all queued and active tasks.
     ///
     /// Incremented when a task enters [`Self::permits_requests`], decremented when
@@ -436,7 +456,10 @@ impl SearchPermitActor {
                 .send(SearchPermit {
                     _ongoing_gauge_guard: ongoing_gauge_guard,
                     msg_sender: self.msg_sender.clone(),
-                    warmup_memory: Arc::new(SplitWarmupMemory::new(memory_guard)),
+                    warmup_memory: Arc::new(SplitWarmupMemory::new(
+                        memory_guard,
+                        self.split_max_allocation,
+                    )),
                     warmup_slot_freed: false,
                     job_cost: permit_request.job_cost,
                     total_job_cost: self.total_job_cost.clone(),
