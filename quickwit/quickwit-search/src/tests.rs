@@ -1221,6 +1221,7 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         ..Default::default()
     });
     let searcher_context: Arc<SearcherContext> = Arc::new(SearcherContext::new_without_invoker(
+        "test-node",
         SearcherConfig::default(),
         None,
     ));
@@ -1861,6 +1862,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         .map(|split| extract_split_and_footer_offsets(&split.split_metadata))
         .collect();
     let searcher_context = Arc::new(SearcherContext::new_without_invoker(
+        "test-node",
         SearcherConfig::default(),
         None,
     ));

@@ -1624,6 +1624,75 @@ impl CanSplitDoBetter {
     }
 }
 
+/// Keeps observed split measurements alive through later errors or cancellation.
+#[derive(Default)]
+struct LeafSearchProgress {
+    resources: Option<LeafResourceStats>,
+    num_successful_splits: u64,
+    num_failed_splits: u64,
+}
+
+impl LeafSearchProgress {
+    fn record_response(&mut self, response: &LeafSearchResponse) {
+        self.num_successful_splits += response.num_successful_splits;
+        self.num_failed_splits += response.failed_splits.len() as u64;
+        if let Some(stats) = &response.resource_stats {
+            crate::add_leaf_stats(self.resources.get_or_insert_default(), stats);
+        }
+    }
+}
+
+/// Emits exactly one event on success, error, or cancellation, using all
+/// single_doc_mapping_leaf_search responses observed so far.
+struct LeafSearchResourceLog {
+    progress: LeafSearchProgress,
+    node_id: String,
+    start: Instant,
+    targeted_splits: u64,
+    success: bool,
+}
+
+impl LeafSearchResourceLog {
+    fn new(node_id: &str, targeted_splits: u64) -> Self {
+        Self {
+            progress: LeafSearchProgress::default(),
+            node_id: node_id.to_owned(),
+            start: Instant::now(),
+            targeted_splits,
+            success: false,
+        }
+    }
+}
+
+impl Drop for LeafSearchResourceLog {
+    fn drop(&mut self) {
+        log_leaf_resource_stats(self);
+    }
+}
+
+fn log_leaf_resource_stats(log: &LeafSearchResourceLog) {
+    let stats = log.progress.resources;
+    let resources = stats.and_then(|stats| stats.split_resources_sum);
+    info!(
+        node_id = %log.node_id,
+        success = log.success,
+        wall_time_microsecs = log.start.elapsed().as_micros() as u64,
+        num_targeted_splits = log.targeted_splits,
+        num_successful_splits = log.progress.num_successful_splits,
+        num_failed_splits = log.progress.num_failed_splits,
+        num_cached_splits = stats.map(|stats| stats.partial_result_cache_num_splits),
+        num_localexec_splits = stats.map(|stats| stats.localexec_num_splits),
+        num_offloaded_splits = stats.map(|stats| stats.lambda_num_splits),
+        download_num_requests = resources.map(|stats| stats.download_num_requests),
+        download_num_bytes = resources.map(|stats| stats.download_num_bytes),
+        wait_for_search_permit_microsecs = resources.map(|stats| stats.wait_for_search_permit_microsecs),
+        wait_for_cpu_pool_microsecs = resources.map(|stats| stats.wait_for_cpu_pool_microsecs),
+        warmup_microsecs = resources.map(|stats| stats.warmup_microsecs),
+        cpu_search_microsecs = resources.map(|stats| stats.cpu_search_microsecs),
+        "leaf_resource_stats"
+    );
+}
+
 /// Searches multiple splits, potentially in multiple indexes, sitting on different storages and
 /// having different doc mappings.
 #[instrument(skip_all, fields(index = ?leaf_search_request.search_request.as_ref().unwrap().index_id_patterns))]
@@ -1632,6 +1701,22 @@ pub async fn multi_index_leaf_search(
     leaf_search_request: LeafSearchRequest,
     storage_resolver: StorageResolver,
 ) -> Result<LeafSearchResponse, SearchError> {
+    let splits = leaf_search_request
+        .leaf_requests
+        .iter()
+        .flat_map(|req| &req.split_offsets);
+    let (num_splits, num_docs) = splits.fold((0, 0), |(count, docs), split| {
+        (count + 1, docs + split.num_docs)
+    });
+    let mut resource_log = LeafSearchResourceLog::new(&searcher_context.node_id, num_splits);
+    info!(
+        node_id = %searcher_context.node_id,
+        num_targeted_splits = num_splits,
+        num_targeted_docs = num_docs,
+        priority = leaf_search_request.search_request.as_ref().map(|request| request.priority),
+        "leaf_search"
+    );
+    let progress = &mut resource_log.progress;
     let leaf_start = Instant::now();
     let search_request: Arc<SearchRequest> = leaf_search_request
         .search_request
@@ -1704,6 +1789,7 @@ pub async fn multi_index_leaf_search(
         let leaf_response_result = leaf_response_join_result?;
         match leaf_response_result {
             Ok(leaf_response) => {
+                progress.record_response(&leaf_response);
                 incremental_merge_collector.add_result(leaf_response)?;
             }
             Err(err) => {
@@ -1732,6 +1818,7 @@ pub async fn multi_index_leaf_search(
         .get_or_insert_with(LeafResourceStats::default);
     resource_stats.wall_time_microsecs = wall_time_microsecs;
     resource_stats.search_pool_cpu_threads = search_pool_cpu_threads;
+    resource_log.success = true;
     Ok(leaf_search_response)
 }
 
@@ -2456,6 +2543,50 @@ mod tests {
     use super::*;
     use crate::LambdaLeafSearchInvoker;
 
+    #[tokio::test]
+    async fn test_leaf_progress_retains_completed_responses_on_error_or_cancellation() {
+        for fail in [false, true] {
+            let mut progress = LeafSearchProgress::default();
+            let stats = LeafResourceStats {
+                localexec_num_splits: 3,
+                localexec_num_docs: 17,
+                split_resources_sum: Some(SplitResourceStats {
+                    download_num_requests: 2,
+                    download_num_bytes: 42,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            let response = LeafSearchResponse {
+                num_successful_splits: 3,
+                failed_splits: vec![SplitSearchError {
+                    split_id: "failed-split".to_string(),
+                    error: "search failed".to_string(),
+                    retryable_error: false,
+                }],
+                resource_stats: Some(stats),
+                ..Default::default()
+            };
+            let mut search = Box::pin(async {
+                progress.record_response(&response);
+                if fail {
+                    Err::<(), _>(crate::SearchError::Internal("merge failed".to_string()))
+                } else {
+                    futures::future::pending().await
+                }
+            });
+            if fail {
+                assert!(search.await.is_err());
+            } else {
+                assert!(futures::poll!(search.as_mut()).is_pending());
+                drop(search);
+            }
+            assert_eq!(progress.num_successful_splits, 3);
+            assert_eq!(progress.num_failed_splits, 1);
+            assert_eq!(progress.resources, Some(stats));
+        }
+    }
+
     #[test]
     fn test_split_search_state_guard_records_errors_by_kind() {
         let counters = Arc::new(SplitSearchOutcomeCounters::default());
@@ -3126,7 +3257,8 @@ mod tests {
     async fn test_schedule_search_tasks_warmup_memory_factor() {
         let mut config = SearcherConfig::default();
         config.warmup_memory_budget = ByteSize::mb(500);
-        let searcher_context = SearcherContext::new(config, None, None::<DummyInvoker>);
+        let searcher_context =
+            SearcherContext::new("test-node", config, None, None::<DummyInvoker>);
         for (value, factor) in [("error*", 1), ("*error", 10)] {
             for num_docs in [100, 1_000_000, 10_000_000] {
                 let split = SplitIdAndFooterOffsets {
@@ -3191,7 +3323,8 @@ mod tests {
             offload_threshold: 3,
             ..LambdaConfig::for_test()
         });
-        let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
+        let searcher_context =
+            SearcherContext::new("test-node", config, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(7);
         let result = super::schedule_search_tasks(splits, &searcher_context, 1.0, 1).await;
         assert_eq!(result.local_search_tasks.len(), 3);
@@ -3211,7 +3344,8 @@ mod tests {
             offload_threshold: 0,
             ..LambdaConfig::for_test()
         });
-        let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
+        let searcher_context =
+            SearcherContext::new("test-node", config, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(5);
         let result = super::schedule_search_tasks(splits, &searcher_context, 1.0, 1).await;
         assert!(result.local_search_tasks.is_empty());
@@ -3225,7 +3359,8 @@ mod tests {
             offload_threshold: 100,
             ..LambdaConfig::for_test()
         });
-        let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
+        let searcher_context =
+            SearcherContext::new("test-node", config, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(5);
         let result = super::schedule_search_tasks(splits, &searcher_context, 1.0, 1).await;
         assert_eq!(result.local_search_tasks.len(), 5);

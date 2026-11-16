@@ -404,6 +404,8 @@ pub(crate) async fn scroll(
 /// shared by a searcher instance (which instantiates a
 /// [`SearchServiceImpl`]).
 pub struct SearcherContext {
+    /// Identity of the executor.
+    pub node_id: String,
     /// Searcher config.
     pub searcher_config: SearcherConfig,
     /// Fast fields cache.
@@ -440,15 +442,17 @@ impl SearcherContext {
     #[cfg(test)]
     pub fn for_test() -> SearcherContext {
         let searcher_config = SearcherConfig::default();
-        SearcherContext::new_without_invoker(searcher_config, None)
+        SearcherContext::new_without_invoker("test-node", searcher_config, None)
     }
 
     /// Creates a new searcher context without a lambda invoker.
     pub fn new_without_invoker(
+        node_id: impl Into<String>,
         searcher_config: SearcherConfig,
         split_cache_opt: Option<Arc<SearchSplitCache>>,
     ) -> Self {
         Self::new(
+            node_id,
             searcher_config,
             split_cache_opt,
             None::<Box<dyn LambdaLeafSearchInvoker>>,
@@ -457,6 +461,7 @@ impl SearcherContext {
 
     /// Creates a new searcher context, given a searcher config, and an optional `SplitCache`.
     pub fn new(
+        node_id: impl Into<String>,
         searcher_config: SearcherConfig,
         split_cache_opt: Option<Arc<SearchSplitCache>>,
         lambda_invoker: Option<impl LambdaLeafSearchInvoker + 'static>,
@@ -483,6 +488,7 @@ impl SearcherContext {
             lambda_invoker.map(|invoker| Arc::new(invoker) as Arc<dyn LambdaLeafSearchInvoker>);
 
         Self {
+            node_id: node_id.into(),
             searcher_config,
             fast_fields_cache: storage_long_term_cache,
             predicate_cache: predicate_cache.into(),

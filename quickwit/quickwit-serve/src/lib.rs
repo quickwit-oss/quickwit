@@ -751,6 +751,7 @@ pub async fn serve_quickwit(
                 let invoker =
                     quickwit_lambda_client::try_get_or_deploy_invoker(lambda_config).await?;
                 Arc::new(SearcherContext::new(
+                    node_config.node_id.to_string(),
                     node_config.searcher_config.clone(),
                     search_split_cache_opt,
                     Some(invoker),
@@ -763,12 +764,14 @@ pub async fn serve_quickwit(
             }
         } else {
             Arc::new(SearcherContext::new_without_invoker(
+                node_config.node_id.to_string(),
                 node_config.searcher_config.clone(),
                 search_split_cache_opt,
             ))
         }
     } else {
         Arc::new(SearcherContext::new_without_invoker(
+            node_config.node_id.to_string(),
             node_config.searcher_config.clone(),
             search_split_cache_opt,
         ))
@@ -1906,6 +1909,7 @@ mod tests {
     async fn test_setup_searcher() {
         let node_config = NodeConfig::for_test();
         let searcher_context = Arc::new(SearcherContext::new_without_invoker(
+            "test-node",
             SearcherConfig::default(),
             None,
         ));
