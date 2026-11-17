@@ -336,6 +336,12 @@ This section contains the configuration options for the on-disk searcher split c
 
 ### Searcher cache configuration
 
+:::warning Cache configuration compatibility
+
+The `policy` and `virtual_caches` options in fast-field, split-footer, partial-request, and predicate cache settings, including their `_capacity` aliases, are accepted for compatibility and ignored. Eviction is managed by the cache implementation, and virtual-cache simulations are no longer performed. See the [cache migration guide](../get-started/upgrade.md#searcher-cache-configuration) for a before-and-after example.
+
+:::
+
 The following fields configure `storage_cache` and the optional disk tiers of the partial-request and predicate caches. Each cache has its own memory and disk capacities.
 
 | Property | Description |
@@ -369,6 +375,17 @@ searcher:
     memory_capacity: 256MiB
     disk_capacity: 100GiB
 ```
+
+#### Deprecated cache budgets
+
+These settings remain accepted for compatibility. Prefer `storage_cache` for new configurations.
+
+| Property | Description | Default value |
+| --- | --- | --- |
+| `fast_field_cache` | Legacy memory budget, added to the footer budget when `storage_cache` is omitted or `null`. Also accepts `fast_field_cache_capacity`. | `1G` |
+| `split_footer_cache` | Legacy memory budget, added to the fast-field budget when `storage_cache` is omitted or `null`. Also accepts `split_footer_cache_capacity`. | `500M` |
+
+Each accepts a scalar capacity or a mapping with `memory_capacity` (alias `capacity`). The combined budget is shared by all storage-cache entries. An explicit `storage_cache` overrides both budgets. Legacy settings still undergo validation and reject `disk_capacity`. Their `policy` and `virtual_caches` options are ignored. To disable the storage cache through legacy settings, set both budgets to `0`.
 
 ## Jaeger configuration
 

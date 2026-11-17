@@ -583,6 +583,7 @@ pub struct CacheConfig {
         serialize_with = "crate::serde_utils::bytesize_serde::serialize_optional"
     )]
     memory_capacity: Option<ByteSize>,
+    /// Accepted for compatibility. Searcher caches manage their own eviction policy.
     #[serde(default)]
     policy: Option<CachePolicy>,
     #[serde(
@@ -592,7 +593,7 @@ pub struct CacheConfig {
     )]
     disk_capacity: Option<ByteSize>,
 
-    // Cache configs inside the virtual cache aren't allowed to contain virtual cache
+    // Accepted for compatibility. Searcher caches ignore virtual-cache simulations.
     #[serde(default)]
     pub virtual_caches: Vec<CacheConfig>,
 }
@@ -622,7 +623,6 @@ impl CacheConfig {
         &self,
         directory: Option<&Path>,
     ) -> anyhow::Result<Option<StorageCacheConfig>> {
-        self.validate_feuer()?;
         let Some(disk_capacity) = self.disk_capacity else {
             return Ok(None);
         };
@@ -633,18 +633,6 @@ impl CacheConfig {
         };
         config.validate()?;
         Ok((disk_capacity.as_u64() > 0 || config.memory_capacity.as_u64() > 0).then_some(config))
-    }
-
-    fn validate_feuer(&self) -> anyhow::Result<()> {
-        ensure!(
-            self.policy.is_none(),
-            "policy is not supported by Feuer; Feuer owns eviction"
-        );
-        ensure!(
-            self.virtual_caches.is_empty(),
-            "virtual_caches are not supported by Feuer"
-        );
-        Ok(())
     }
 
     pub fn memory_capacity(&self) -> ByteSize {
@@ -696,7 +684,6 @@ where D: Deserializer<'de> {
             "disk_capacity is not supported by legacy cache settings",
         ));
     }
-    config.validate_feuer().map_err(serde::de::Error::custom)?;
     Ok(Some(config))
 }
 
@@ -1507,14 +1494,6 @@ mod tests {
                 "storage_cache_directory must be set when disk_capacity is greater than zero",
             ),
             (
-                "partial_request_cache: {capacity: 0, policy: lru}",
-                "policy is not supported",
-            ),
-            (
-                "predicate_cache: {capacity: 0, virtual_caches: [{}]}",
-                "virtual_caches are not supported",
-            ),
-            (
                 "fast_field_cache: 18446744073709551615\nsplit_footer_cache: 1",
                 "capacities overflow",
             ),
@@ -1522,6 +1501,71 @@ mod tests {
             let config: SearcherConfig = serde_yaml::from_str(yaml).unwrap();
             let error = format!("{:#}", config.validate().unwrap_err());
             assert!(error.contains(message), "{yaml}: {error}");
+        }
+    }
+
+    #[test]
+    fn test_searcher_caches_ignore_policy_and_virtual_caches() {
+        for name in [
+            "fast_field_cache",
+            "split_footer_cache",
+            "fast_field_cache_capacity",
+            "split_footer_cache_capacity",
+            "partial_request_cache",
+            "partial_request_cache_capacity",
+            "predicate_cache",
+            "predicate_cache_capacity",
+        ] {
+            for policy in ["lru", "s3-fifo", "tiny-lfu"] {
+                for capacity in ["0", "32M"] {
+                    for extra in [
+                        "",
+                        "storage_cache: {disk_capacity: 0, memory_capacity: 128M}",
+                        "storage_cache_directory: /tmp/cache",
+                    ] {
+                        let disk = if extra.starts_with("storage_cache_directory")
+                            && (name.starts_with("partial_request")
+                                || name.starts_with("predicate"))
+                            && capacity != "0"
+                        {
+                            ", disk_capacity: 1G"
+                        } else {
+                            ""
+                        };
+                        let baseline: SearcherConfig = serde_yaml::from_str(&format!(
+                            "{name}: {{capacity: {capacity}{disk}}}\n{extra}"
+                        ))
+                        .unwrap();
+                        let config: SearcherConfig = serde_yaml::from_str(&format!(
+                            "{name}: {{capacity: {capacity}{disk}, policy: {policy}, \
+                             virtual_caches: [{{capacity: 2G, policy: tiny-lfu}}]}}\n{extra}"
+                        ))
+                        .unwrap();
+                        config.validate().unwrap();
+                        assert_eq!(
+                            config.resolved_storage_cache().unwrap(),
+                            baseline.resolved_storage_cache().unwrap()
+                        );
+                        for (cache, expected) in [
+                            (
+                                &config.partial_request_cache,
+                                &baseline.partial_request_cache,
+                            ),
+                            (&config.predicate_cache, &baseline.predicate_cache),
+                        ] {
+                            assert_eq!(cache.memory_capacity(), expected.memory_capacity());
+                            assert_eq!(
+                                cache
+                                    .storage_cache(config.storage_cache_directory.as_deref())
+                                    .unwrap(),
+                                expected
+                                    .storage_cache(baseline.storage_cache_directory.as_deref())
+                                    .unwrap()
+                            );
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1534,9 +1578,8 @@ mod tests {
             "split_footer_cache_capacity",
         ] {
             for (settings, message) in [
-                ("policy: lru", "policy is not supported"),
-                ("virtual_caches: [{}]", "virtual_caches are not supported"),
                 ("disk_capacity: 0", "disk_capacity is not supported"),
+                ("disk_capacity: 1G", "disk_capacity is not supported"),
             ] {
                 for explicit in [
                     "",
