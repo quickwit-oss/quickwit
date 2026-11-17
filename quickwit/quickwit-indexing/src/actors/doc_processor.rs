@@ -23,7 +23,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::rate_limited_tracing::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceInputFormat, TransformConfig};
-use quickwit_doc_mapper::{DocMapper, DocParsingError, JsonObject};
+use quickwit_doc_mapper::{BorrowedJsonDoc, DocMapper, DocParsingError, JsonObject};
 use quickwit_metrics::{Counter, counter, labels};
 use quickwit_opentelemetry::otlp::{
     JsonLogIterator, JsonSpanIterator, OtlpLogsError, OtlpTracesError, parse_otlp_logs_json,
@@ -467,6 +467,12 @@ impl DocProcessor {
     fn process_raw_doc(&mut self, raw_doc: Bytes, processed_docs: &mut Vec<ProcessedDoc>) {
         let num_bytes = raw_doc.len();
 
+        if self.can_process_borrowed_json() {
+            let processed_doc_result = self.process_borrowed_json_doc(&raw_doc);
+            self.record_processed_doc(processed_doc_result, num_bytes, processed_docs);
+            return;
+        }
+
         #[cfg(feature = "vrl")]
         let transform_opt = self.transform_opt.as_mut();
         #[cfg(not(feature = "vrl"))]
@@ -475,23 +481,66 @@ impl DocProcessor {
         for json_doc_result in parse_raw_doc(self.input_format, raw_doc, num_bytes, transform_opt) {
             let processed_doc_result =
                 json_doc_result.and_then(|json_doc| self.process_json_doc(json_doc));
+            self.record_processed_doc(processed_doc_result, num_bytes, processed_docs);
+        }
+    }
 
-            match processed_doc_result {
-                Ok(processed_doc) => {
-                    self.counters.record_valid(processed_doc.num_bytes as u64);
-                    processed_docs.push(processed_doc);
-                }
-                Err(error) => {
-                    rate_limited_warn!(
-                        limit_per_min = 10,
-                        index_id = self.counters.index_id,
-                        source_id = self.counters.source_id,
-                        "{error}",
-                    );
-                    self.counters.record_error(error, num_bytes as u64);
-                }
+    fn record_processed_doc(
+        &self,
+        processed_doc_result: Result<ProcessedDoc, DocProcessorError>,
+        num_bytes: usize,
+        processed_docs: &mut Vec<ProcessedDoc>,
+    ) {
+        match processed_doc_result {
+            Ok(processed_doc) => {
+                self.counters.record_valid(processed_doc.num_bytes as u64);
+                processed_docs.push(processed_doc);
+            }
+            Err(error) => {
+                rate_limited_warn!(
+                    limit_per_min = 10,
+                    index_id = self.counters.index_id,
+                    source_id = self.counters.source_id,
+                    "{error}",
+                );
+                self.counters.record_error(error, num_bytes as u64);
             }
         }
+    }
+
+    /// Returns true if raw documents can be converted with
+    /// [`DocMapper::doc_from_borrowed_json`], which avoids building an owned JSON object.
+    ///
+    /// This requires JSON input and no VRL transform (it operates on owned values).
+    fn can_process_borrowed_json(&self) -> bool {
+        #[cfg(feature = "vrl")]
+        let has_transform = self.transform_opt.is_some();
+        #[cfg(not(feature = "vrl"))]
+        let has_transform = false;
+
+        self.input_format == SourceInputFormat::Json && !has_transform
+    }
+
+    /// Same as `try_into_json_docs` followed by [`Self::process_json_doc`] for JSON input, without
+    /// a transform.
+    fn process_borrowed_json_doc(&self, raw_doc: &[u8]) -> Result<ProcessedDoc, DocProcessorError> {
+        let num_bytes = raw_doc.len();
+        let json_doc = BorrowedJsonDoc::parse(raw_doc)?;
+        let (partition, doc) = self
+            .doc_mapper
+            .doc_from_borrowed_json(&json_doc, num_bytes as u64)?;
+        let timestamp_opt = self.extract_timestamp(&doc)?;
+        let fingerprint_opt = self
+            .fingerprinter_opt
+            .as_ref()
+            .map(|fingerprinter| fingerprinter.fingerprint_borrowed(&json_doc));
+        Ok(ProcessedDoc {
+            doc,
+            fingerprint_opt,
+            timestamp_opt,
+            partition,
+            num_bytes,
+        })
     }
 
     fn process_json_doc(&self, json_doc: JsonDoc) -> Result<ProcessedDoc, DocProcessorError> {
@@ -762,11 +811,10 @@ mod tests {
         .unwrap();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
+        // The duplicate key makes sure the fingerprint is computed on the deduplicated document.
+        let raw_doc = br#"{"body":"sad 1","timestamp":1628837062,"body":"happy 2"}"#;
         doc_processor_mailbox
-            .send_message(RawDocBatch::for_test(
-                &[br#"{"body":"happy","timestamp":1628837062}"#],
-                0..1,
-            ))
+            .send_message(RawDocBatch::for_test(&[raw_doc], 0..1))
             .await
             .unwrap();
         doc_processor_handle.process_pending_and_observe().await;
@@ -774,6 +822,9 @@ mod tests {
         let output_messages: Vec<ProcessedDocBatch> = indexer_inbox.drain_for_test_typed();
         assert_eq!(output_messages.len(), 1);
         let fingerprint = output_messages[0].docs[0].fingerprint_opt.as_ref().unwrap();
+        let json_value: JsonValue = serde_json::from_slice(raw_doc).unwrap();
+        let expected_fingerprint = raw_body_fingerprinter_for_test().fingerprint(&json_value);
+        assert_eq!(fingerprint, &expected_fingerprint);
         assert_eq!(fingerprint.len(), 3);
         universe.assert_quit().await;
     }

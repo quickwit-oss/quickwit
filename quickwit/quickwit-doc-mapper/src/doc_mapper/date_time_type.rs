@@ -19,6 +19,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
 use tantivy::schema::{DateTimePrecision, OwnedValue as TantivyValue};
 
+use super::borrowed_json::BorrowedValue;
+
 /// A struct holding DateTime field options.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -123,6 +125,35 @@ impl QuickwitDateTimeOptions {
             }
         };
         Ok(TantivyValue::Date(date_time))
+    }
+
+    /// Same as [`Self::parse_json`] for a borrowed JSON value.
+    pub(crate) fn parse_borrowed_json(
+        &self,
+        json_value: &BorrowedValue,
+    ) -> Result<TantivyDateTime, String> {
+        match json_value {
+            BorrowedValue::Number(timestamp) => {
+                // `.as_f64()` actually converts floats to integers, so we must check for integers
+                // first.
+                if let Some(timestamp_i64) = timestamp.as_i64() {
+                    quickwit_datetime::parse_timestamp_int(timestamp_i64, &self.input_formats.0)
+                } else if let Some(timestamp_f64) = timestamp.as_f64() {
+                    quickwit_datetime::parse_timestamp_float(timestamp_f64, &self.input_formats.0)
+                } else {
+                    Err(format!(
+                        "failed to parse datetime `{timestamp:?}`: value is larger than i64::MAX",
+                    ))
+                }
+            }
+            BorrowedValue::Str(date_time_str) => {
+                quickwit_datetime::parse_date_time_str(date_time_str, &self.input_formats.0)
+            }
+            _ => Err(format!(
+                "failed to parse datetime: expected a float, integer, or string, got \
+                 `{json_value}`"
+            )),
+        }
     }
 
     pub(crate) fn reparse_tantivy_value(
