@@ -20,7 +20,7 @@ use assert_json_diff::{assert_json_eq, assert_json_include};
 use bytesize::ByteSize;
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DocMapper;
-use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
+use quickwit_doc_mapper::tag_pruning::{MaybeAst, extract_tags_from_query};
 use quickwit_indexing::TestSandbox;
 use quickwit_proto::search::{
     CountHits, LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, SearchRequest,
@@ -41,6 +41,16 @@ use crate::find_trace_ids_collector::Span;
 use crate::list_terms::leaf_list_terms;
 use crate::service::SearcherContext;
 use crate::single_node_search;
+
+fn extract_tags_filter_opt(
+    query_ast: QueryAst,
+) -> Option<quickwit_doc_mapper::tag_pruning::TagFilterAst> {
+    match extract_tags_from_query(query_ast) {
+        MaybeAst::Ast(ast) => Some(ast),
+        MaybeAst::MaybeMatch => None,
+        MaybeAst::NoMatch => panic!("test query unexpectedly matches no document"),
+    }
+}
 
 #[tokio::test]
 async fn test_single_node_simple() -> anyhow::Result<()> {
@@ -1158,7 +1168,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
         vec![index_uid.clone()],
         None,
         None,
-        extract_tags_from_query(query_ast),
+        extract_tags_filter_opt(query_ast),
         &test_sandbox.metastore(),
     )
     .await?;
@@ -1170,7 +1180,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
         vec![index_uid.clone()],
         None,
         None,
-        extract_tags_from_query(query_ast),
+        extract_tags_filter_opt(query_ast),
         &test_sandbox.metastore(),
     )
     .await?;
@@ -1182,7 +1192,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
         vec![index_uid.clone()],
         None,
         None,
-        extract_tags_from_query(query_ast),
+        extract_tags_filter_opt(query_ast),
         &test_sandbox.metastore(),
     )
     .await?;
