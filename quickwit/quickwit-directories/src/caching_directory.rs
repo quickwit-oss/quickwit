@@ -55,13 +55,13 @@ impl From<OutOfMemoryError> for io::Error {
 
 /// Memory reserved for a read in progress.
 ///
-/// Released on drop, unless `keep` is called once the bytes are in the cache.
+/// Released on drop, except the bytes passed to `keep` once the read bytes are in the cache.
 /// So the memory is also released if the read fails, panics, or if its future is dropped.
 #[must_use = "dropping a memory reservation releases its memory right away"]
 pub struct MemoryReservation<'a> {
     memory_reserver: &'a dyn MemoryReserver,
+    /// Bytes released on drop.
     num_bytes: u64,
-    kept: bool,
 }
 
 impl<'a> MemoryReservation<'a> {
@@ -74,19 +74,23 @@ impl<'a> MemoryReservation<'a> {
         MemoryReservation {
             memory_reserver,
             num_bytes,
-            kept: false,
         }
     }
 
-    /// The bytes are in the cache: the memory stays reserved.
-    fn keep(mut self) {
-        self.kept = true;
+    /// Keeps `num_added_bytes` reserved, the bytes the read added to the cache, and releases the
+    /// rest.
+    fn keep(mut self, num_added_bytes: u64) {
+        debug_assert!(
+            num_added_bytes <= self.num_bytes,
+            "cannot keep more bytes than reserved"
+        );
+        self.num_bytes = self.num_bytes.saturating_sub(num_added_bytes);
     }
 }
 
 impl Drop for MemoryReservation<'_> {
     fn drop(&mut self) {
-        if !self.kept {
+        if self.num_bytes > 0 {
             self.memory_reserver.release_memory(self.num_bytes);
         }
     }
@@ -97,15 +101,15 @@ pub trait MemoryReserver: Send + Sync + 'static {
     /// Called on each cache miss, before reading `num_bytes` from the underlying directory.
     ///
     /// On success, returns a [`MemoryReservation`], which gives the memory back through
-    /// `release_memory` when dropped, unless the bytes were cached.
+    /// `release_memory` when dropped, except for the bytes the read added to the cache.
     ///
     /// On error, the read fails with an `io::Error` of kind `OutOfMemory`: the underlying directory
     /// is not called and nothing is cached.
     fn try_reserve_memory(&self, num_bytes: u64)
     -> Result<MemoryReservation<'_>, OutOfMemoryError>;
 
-    /// Gives back `num_bytes` reserved by `try_reserve_memory` for a read whose bytes were not
-    /// cached: it failed, panicked, or its future was dropped.
+    /// Gives back `num_bytes` reserved by `try_reserve_memory` that a read did not add to the
+    /// cache: the read failed, panicked, its future was dropped, or the bytes were already cached.
     ///
     /// Contract: `num_bytes` were reserved by an earlier `try_reserve_memory` call, and are not
     /// released twice. Called from `Drop`, possibly while a panic unwinds, so it must not panic.
@@ -203,8 +207,8 @@ impl FileHandle for CachingFileHandle {
             .memory_reserver
             .try_reserve_memory(byte_range.len() as u64)?;
         let owned_bytes = self.underlying_filehandle.read_bytes(byte_range.clone())?;
-        self.cache.put_slice(byte_range, owned_bytes.clone());
-        read_reservation.keep();
+        let num_added_bytes = self.cache.put_slice(byte_range, owned_bytes.clone());
+        read_reservation.keep(num_added_bytes);
         Ok(owned_bytes)
     }
 
@@ -219,8 +223,8 @@ impl FileHandle for CachingFileHandle {
             .underlying_filehandle
             .read_bytes_async(byte_range.clone())
             .await?;
-        self.cache.put_slice(byte_range, read_bytes.clone());
-        read_reservation.keep();
+        let num_added_bytes = self.cache.put_slice(byte_range, read_bytes.clone());
+        read_reservation.keep(num_added_bytes);
         Ok(read_bytes)
     }
 }
@@ -443,6 +447,25 @@ mod tests {
         file_handle.read_bytes(0..5).unwrap();
         assert_eq!(memory_reserver.reserved(), 5);
         assert_eq!(debug_proxy_directory.drain_read_operations().count(), 1);
+    }
+
+    #[test]
+    fn test_caching_directory_reserves_overlapping_bytes_once() {
+        let test_path = Path::new("test");
+        let debug_proxy_directory = debug_proxy_directory_with_file(test_path, b"hello world");
+        let memory_reserver = LimitedMemoryReserver::new(100);
+        let byte_range_cache = ByteRangeCache::with_infinite_capacity();
+        let caching_directory =
+            CachingDirectory::new(debug_proxy_directory.clone(), byte_range_cache.clone())
+                .with_memory_reserver(memory_reserver.clone());
+        let file_handle = caching_directory.get_file_handle(test_path).unwrap();
+
+        file_handle.read_bytes(0..5).unwrap();
+        // A cache miss: 3..5 is cached, but not 5..8. Only 5..8 stays reserved.
+        file_handle.read_bytes(3..8).unwrap();
+        assert_eq!(debug_proxy_directory.drain_read_operations().count(), 2);
+        assert_eq!(byte_range_cache.get_num_bytes(), 8);
+        assert_eq!(memory_reserver.reserved(), 8);
     }
 
     #[tokio::test]
