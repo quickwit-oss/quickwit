@@ -220,14 +220,15 @@ async fn read_collected_ranges(
     })
     .await
     .map_err(io::Error::other)?;
+    // Sorted, disjoint downloads consume consecutive groups of requests.
+    let mut remaining_requests = requests.as_slice();
     let mut downloads = stream::iter(download_ranges)
         .map(|download_range| {
-            let first = requests.partition_point(|(_, requested_range)| {
-                requested_range.start < download_range.start
-            });
-            let end = requests
+            let end = remaining_requests
                 .partition_point(|(_, requested_range)| requested_range.start < download_range.end);
-            read_download_range(storage, path, download_range, &requests[first..end])
+            let (requests, remaining) = remaining_requests.split_at(end);
+            remaining_requests = remaining;
+            fetch_requested_slices(storage, path, download_range, requests)
         })
         .buffer_unordered(5);
     while let Some(downloaded) = downloads.try_next().await? {
@@ -257,7 +258,7 @@ fn coalesce_ranges(requested_ranges: impl Iterator<Item = Range<usize>>) -> Vec<
 }
 
 // Requests are sorted, nonempty, and contained in the coalesced download range.
-async fn read_download_range(
+async fn fetch_requested_slices(
     storage: &dyn Storage,
     path: &Path,
     download_range: Range<usize>,
