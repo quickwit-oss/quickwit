@@ -1131,11 +1131,8 @@ impl Storage for S3CompatibleObjectStorage {
         if buffer.is_empty() {
             return Ok(());
         }
-        let _in_flight_guards = object_storage_get_slice_in_flight_guards(buffer.len());
-        default_get_slice_into(self, path, range, buffer).await?;
-        // The streaming path bypasses download_all, which accounts for collected bodies.
-        crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(buffer.len() as u64);
-        Ok(())
+        // The stream owns the in-flight guards and accounts for downloaded bytes.
+        default_get_slice_into(self, path, range, buffer).await
     }
 
     #[instrument(name = "storage.s3.get_slice_stream", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
@@ -1835,7 +1832,8 @@ mod tests {
             OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_NUM_BYTES,
         };
 
-        // Only complete, exact-length downloads count. Empty reads must not issue a request.
+        // Streaming accounts for bytes actually read, including failed length checks.
+        // Empty reads must not issue a request.
         for (status, payload, succeeds) in [
             (206, "world", true),
             (206, "abcd", false),
@@ -1875,7 +1873,7 @@ mod tests {
             }
             assert_eq!(
                 OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.get() - bytes_before,
-                if succeeds { 5 } else { 0 },
+                payload.len() as u64,
             );
             assert_eq!(OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT.get(), count_before);
             assert_eq!(

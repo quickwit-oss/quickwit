@@ -19,7 +19,7 @@ use futures::{StreamExt, stream};
 
 use crate::OwnedBytes;
 
-pub(super) const MAX_CACHE_RANGES: usize = 100;
+pub(crate) const MAX_CACHE_RANGES: usize = 100;
 
 /// Checks a synchronous cache, then reads all misses as one batch.
 /// Preserves input order and duplicates. Empty ranges bypass cache and storage.

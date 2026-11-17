@@ -117,6 +117,46 @@ async fn test_legacy_budgets_cache_footer_and_body_without_disk() {
     }
 }
 
+#[tokio::test]
+async fn test_batches_reach_coalescer_through_storage_cache() {
+    let split = build_split().await;
+    for enabled in [false, true] {
+        for num_ranges in [100, 101] {
+            let config = serde_json::from_value(serde_json::json!({
+                "fast_field_cache": if enabled { 3_000_000 } else { 0 },
+                "split_footer_cache_capacity": 0,
+            }))
+            .unwrap();
+            let context = SearcherContext::new_without_invoker(config, None);
+            assert_eq!(context.storage_cache_opt.is_some(), enabled);
+            let (storage, counters) = counted_split_storage(&split.split_bytes);
+            let storage = Arc::new(quickwit_storage::CoalescingStorage::new(storage));
+            let (_, bundle) = open_split_bundle(&context, storage, &split.footer_offsets)
+                .await
+                .unwrap();
+            let ranges: Vec<_> = (0..num_ranges)
+                .map(|index| if index % 2 == 0 { 0..2 } else { 6..8 })
+                .collect();
+            for repeated in [false, true] {
+                let (bytes_before, reads_before) = counters.snapshot();
+                let buffers = bundle
+                    .get_slices(Path::new(BODY_FILE), ranges.clone())
+                    .await
+                    .unwrap();
+                assert_eq!(buffers.len(), ranges.len());
+                for (range, buffer) in ranges.iter().zip(buffers) {
+                    assert_eq!(buffer.as_slice(), &BODY_BYTES[range.clone()]);
+                }
+                let downloads = u64::from(!repeated || !enabled || num_ranges > 100);
+                assert_eq!(
+                    counters.snapshot(),
+                    (bytes_before + 8 * downloads, reads_before + downloads)
+                );
+            }
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
 mod disk_tests {
     use std::num::NonZeroU32;

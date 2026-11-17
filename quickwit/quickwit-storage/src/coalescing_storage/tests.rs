@@ -57,13 +57,16 @@ async fn test_collects_by_object_and_collector() {
         (1, "file", 0..4),
         (1, "file", 60..64),
     ];
-    let (buffers, batch) = tokio::try_join!(
+    let mut into_buffer = [0; 4];
+    let (buffers, batch, ()) = tokio::try_join!(
         futures::future::try_join_all(requests.iter().map(|(collector, path, range)| {
             collectors[*collector].get_slice(Path::new(path), range.clone())
         })),
         collectors[0].get_slices(Path::new("file"), vec![8..10, 4..4, 0..4, 8..10]),
+        collectors[0].get_slice_into(Path::new("file"), 0..4, &mut into_buffer),
     )
     .unwrap();
+    assert_eq!(into_buffer, [0, 1, 2, 3]);
     assert_eq!(
         batch.iter().map(OwnedBytes::as_slice).collect::<Vec<_>>(),
         vec![&[8, 9][..], &[], &[0, 1, 2, 3], &[8, 9]]
@@ -104,6 +107,10 @@ async fn test_singleton_waits_and_validates_response() {
             assert_eq!(buffers.len(), expected_len);
             assert!(buffers.iter().all(|bytes| bytes.is_empty()));
         }
+        storage
+            .get_slice_into(Path::new("file"), 2..2, &mut [])
+            .await
+            .unwrap();
         assert_eq!(read_start.elapsed(), Duration::ZERO);
         assert!(storage.batches_by_object.lock().unwrap().is_empty());
         let result = storage.get_slice(Path::new("file"), 5..9).await;

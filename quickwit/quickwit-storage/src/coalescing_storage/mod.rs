@@ -69,10 +69,10 @@ impl CollectedBatch {
     }
 }
 
-/// Collects concurrent `get_slice` and `get_slices` calls for the same immutable object for 1 ms,
-/// including singletons. Batches submit all descriptors together, with one shared read future
-/// per caller. Merges overlaps and gaps up to 4 MiB and runs at most five downloads per collected
-/// group. Streams merged downloads, retaining requested slices and discarding gaps.
+/// Collects concurrent `get_slice`, `get_slice_into`, and `get_slices` calls for the same immutable
+/// object for 1 ms, including singletons. Batches submit all descriptors together, with one shared
+/// read future per caller. Merges overlaps and gaps up to 4 MiB and runs at most five downloads per
+/// collected group. Streams merged downloads, retaining requested slices and discarding gaps.
 /// Callers must supply ranges with `start <= end`; ranges may be in any order.
 ///
 /// Place this below exact-range caches and above timeout/retry storage. Caches then see original
@@ -135,6 +135,19 @@ impl Storage for CoalescingStorage {
             .await?
             .pop()
             .expect("one buffer per requested range"))
+    }
+
+    async fn get_slice_into(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        buffer: &mut [u8],
+    ) -> StorageResult<()> {
+        // Collect this read too. This uses a temporary buffer before copying into the caller's
+        // allocation, because collected reads return shared buffers to their callers.
+        let bytes = self.get_slice(path, range).await?;
+        buffer.copy_from_slice(&bytes);
+        Ok(())
     }
 
     async fn get_slices(

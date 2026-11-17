@@ -236,12 +236,27 @@ impl FileHandle for CachingFileHandle {
             requested_ranges,
             |requested_range| self.cache.get_slice(requested_range),
             |missing_ranges| async move {
+                // Reserve every miss before starting I/O. Dropping these guards releases all
+                // reservations if any reservation or the download fails, or the future is dropped.
+                let mut read_reservations = Vec::with_capacity(missing_ranges.len());
+                for missing_range in &missing_ranges {
+                    read_reservations.push(
+                        self.memory_reserver
+                            .try_reserve_memory(missing_range.len() as u64)?,
+                    );
+                }
                 let downloaded = self
                     .underlying_filehandle
                     .read_bytes_batch_async(missing_ranges.clone())
                     .await?;
-                for (missing_range, bytes) in missing_ranges.into_iter().zip(&downloaded) {
-                    self.cache.put_slice(missing_range, bytes.clone());
+                assert_eq!(downloaded.len(), missing_ranges.len());
+                for ((missing_range, bytes), read_reservation) in missing_ranges
+                    .into_iter()
+                    .zip(&downloaded)
+                    .zip(read_reservations)
+                {
+                    let num_added_bytes = self.cache.put_slice(missing_range, bytes.clone());
+                    read_reservation.keep(num_added_bytes);
                 }
                 Ok(downloaded)
             },
@@ -503,6 +518,118 @@ mod tests {
         file_handle.read_bytes_async(0..5).await.unwrap();
         assert_eq!(memory_reserver.reserved(), 5);
         assert_eq!(debug_proxy_directory.drain_read_operations().count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_caching_directory_batch_memory_reservation_failure_before_io() {
+        let test_path = Path::new("test");
+        let debug_proxy_directory = debug_proxy_directory_with_file(test_path, b"hello world");
+        let memory_reserver = LimitedMemoryReserver::new(8);
+        let cache = ByteRangeCache::with_infinite_capacity();
+        let caching_directory = CachingDirectory::new(debug_proxy_directory.clone(), cache.clone())
+            .with_memory_reserver(memory_reserver.clone());
+        let file_handle = caching_directory.get_file_handle(test_path).unwrap();
+        file_handle.read_bytes(0..2).unwrap();
+        assert_eq!(debug_proxy_directory.drain_read_operations().count(), 1);
+
+        // The first miss fits, but the second exceeds the budget. Neither is downloaded.
+        let error = file_handle
+            .read_bytes_batch_async(vec![0..2, 2..6, 6..10])
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::OutOfMemory);
+        assert_eq!(debug_proxy_directory.drain_read_operations().count(), 0);
+        assert_eq!(memory_reserver.reserved(), 2);
+        assert_eq!(cache.get_num_bytes(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_caching_directory_batch_counts_overlaps_and_duplicates_once() {
+        let test_path = Path::new("test");
+        let content = b"hello world";
+        let debug_proxy_directory = debug_proxy_directory_with_file(test_path, content);
+        let memory_reserver = LimitedMemoryReserver::new(17);
+        let cache = ByteRangeCache::with_infinite_capacity();
+        let caching_directory = CachingDirectory::new(debug_proxy_directory.clone(), cache.clone())
+            .with_memory_reserver(memory_reserver.clone());
+        let file_handle = caching_directory.get_file_handle(test_path).unwrap();
+        file_handle.read_bytes(0..2).unwrap();
+        assert_eq!(debug_proxy_directory.drain_read_operations().count(), 1);
+
+        let ranges = vec![5..10, 0..2, 2..7, 5..10, 4..4];
+        let bytes = file_handle
+            .read_bytes_batch_async(ranges.clone())
+            .await
+            .unwrap();
+        for (bytes, range) in bytes.iter().zip(&ranges) {
+            assert_eq!(bytes.as_slice(), &content[range.clone()]);
+        }
+        assert_eq!(debug_proxy_directory.drain_read_operations().count(), 3);
+        assert_eq!(memory_reserver.reserved(), 10);
+        assert_eq!(cache.get_num_bytes(), 10);
+
+        // Hits and empty ranges need no reservation, even with only seven bytes left.
+        file_handle.read_bytes_batch_async(ranges).await.unwrap();
+        assert_eq!(debug_proxy_directory.drain_read_operations().count(), 0);
+        assert_eq!(memory_reserver.reserved(), 10);
+    }
+
+    #[tokio::test]
+    async fn test_caching_file_handle_batch_releases_memory_on_read_error() {
+        let memory_reserver = LimitedMemoryReserver::new(100);
+        let file_handle = failing_caching_file_handle(ReadFailure::Error, memory_reserver.clone());
+        assert!(
+            file_handle
+                .read_bytes_batch_async(vec![0..5, 5..10])
+                .await
+                .is_err()
+        );
+        assert_eq!(memory_reserver.reserved(), 0);
+        assert!(file_handle.cache.get_slice(0..5).is_none());
+        assert!(file_handle.cache.get_slice(5..10).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_caching_file_handle_batch_releases_memory_when_future_is_dropped() {
+        let memory_reserver = LimitedMemoryReserver::new(100);
+        let file_handle =
+            failing_caching_file_handle(ReadFailure::Pending, memory_reserver.clone());
+        let mut read_future = file_handle.read_bytes_batch_async(vec![0..5, 5..10]);
+        let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+        assert!(read_future.as_mut().poll(&mut context).is_pending());
+        assert_eq!(memory_reserver.reserved(), 10);
+        drop(read_future);
+        assert_eq!(memory_reserver.reserved(), 0);
+        assert!(file_handle.cache.get_slice(0..5).is_none());
+        assert!(file_handle.cache.get_slice(5..10).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_caching_directory_large_batch_retains_cache_and_memory_accounting() {
+        let test_path = Path::new("test");
+        let debug_proxy_directory = debug_proxy_directory_with_file(test_path, b"hello world");
+        let memory_reserver = LimitedMemoryReserver::new(510);
+        let cache = ByteRangeCache::with_infinite_capacity();
+        let caching_directory = CachingDirectory::new(debug_proxy_directory.clone(), cache.clone())
+            .with_memory_reserver(memory_reserver.clone());
+        let file_handle = caching_directory.get_file_handle(test_path).unwrap();
+        file_handle.read_bytes(0..2).unwrap();
+        assert_eq!(debug_proxy_directory.drain_read_operations().count(), 1);
+
+        // Large batches bypass lookups, including when every range is already cached.
+        for _ in 0..2 {
+            let bytes = file_handle
+                .read_bytes_batch_async(vec![0..5; 101])
+                .await
+                .unwrap();
+            assert_eq!(bytes.len(), 101);
+            assert!(bytes.iter().all(|bytes| bytes.as_slice() == b"hello"));
+            assert_eq!(debug_proxy_directory.drain_read_operations().count(), 101);
+            assert_eq!(cache.get_num_bytes(), 5);
+            assert_eq!(memory_reserver.reserved(), 5);
+        }
+        assert_eq!(file_handle.read_bytes(0..5).unwrap().as_slice(), b"hello");
+        assert_eq!(debug_proxy_directory.drain_read_operations().count(), 0);
     }
 
     #[tokio::test]
