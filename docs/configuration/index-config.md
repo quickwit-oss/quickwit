@@ -148,6 +148,8 @@ fast:
 | `whitespace`  | Chops the text on according to whitespace only. Doesn't remove long tokens or converts to lowercase. |
 | `chinese_compatible` |  Chop between each CJK character in addition to what `default` does. Should be used with `record: position` to be able to properly search |
 | `lowercase`   | Applies a lowercase transformation on the text. It does not tokenize the text. |
+| `datadog`, `unicode_segmenter` | Splits at Unicode word boundaries, lowercases tokens, and applies the 255-byte token-length limit. |
+| `datadog_v2` | Like `datadog`, plus dot-separated parts: `Foo.Bar` → `foo.bar`, `foo`, `bar`. Numeric dotted tokens such as `192.168.1.1` and `32.3` stay whole. |
 
 ##### Description of available normalizers
 
