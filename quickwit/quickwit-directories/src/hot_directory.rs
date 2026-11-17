@@ -412,7 +412,7 @@ impl FileHandle for FileSliceWithCache {
         quickwit_storage::read_batch_with_cache(
             requested_ranges,
             |requested_range| self.static_cache.try_read_bytes(requested_range),
-            |missing_ranges| self.underlying.read_bytes_batch_async(missing_ranges),
+            |ranges_to_fetch| self.underlying.read_bytes_batch_async(ranges_to_fetch),
         )
         .await
     }

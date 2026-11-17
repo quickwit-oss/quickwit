@@ -70,7 +70,7 @@ impl CollectedBatch {
 }
 
 /// Collects concurrent `get_slice`, `get_slice_into`, and `get_slices` calls for the same immutable
-/// object for 1 ms, including singletons. Batches submit all descriptors together, with one shared
+/// object for 1 ms, including singletons. Batch reads submit all ranges together, with one shared
 /// read future per caller. Merges overlaps and gaps up to 4 MiB and runs at most five downloads per
 /// collected group. Streams merged downloads, retaining requested slices and discarding gaps.
 /// Callers must supply ranges with `start <= end`; ranges may be in any order.
@@ -128,7 +128,7 @@ impl Storage for CoalescingStorage {
         self.underlying.copy_to(path, output).await
     }
 
-    #[allow(clippy::single_range_in_vec_init)] // A scalar read submits one descriptor.
+    #[allow(clippy::single_range_in_vec_init)] // A single-range read.
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         Ok(self
             .get_slices(path, vec![range])

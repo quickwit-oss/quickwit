@@ -93,18 +93,18 @@ impl Storage for StorageWithCache {
         super::read_batch_with_async_cache(
             requested_ranges,
             |requested_range| self.cache.get(path, requested_range),
-            |missing_ranges| async move {
+            |ranges_to_fetch| async move {
                 // Large batches bypass insertion as well as lookups to avoid creating an entry
                 // for every requested range. The per-query warmup cache still retains the data.
                 if skip_cache {
-                    return self.storage.get_slices(path, missing_ranges).await;
+                    return self.storage.get_slices(path, ranges_to_fetch).await;
                 }
                 let downloaded = self
                     .storage
-                    .get_slices(path, missing_ranges.clone())
+                    .get_slices(path, ranges_to_fetch.clone())
                     .await?;
-                assert_eq!(downloaded.len(), missing_ranges.len());
-                for (missing_range, bytes) in missing_ranges.into_iter().zip(&downloaded) {
+                assert_eq!(downloaded.len(), ranges_to_fetch.len());
+                for (missing_range, bytes) in ranges_to_fetch.into_iter().zip(&downloaded) {
                     self.cache
                         .put(path.to_owned(), missing_range, bytes.clone())
                         .await;

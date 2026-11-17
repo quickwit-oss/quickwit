@@ -235,11 +235,11 @@ impl FileHandle for CachingFileHandle {
         quickwit_storage::read_batch_with_cache(
             requested_ranges,
             |requested_range| self.cache.get_slice(requested_range),
-            |missing_ranges| async move {
+            |ranges_to_fetch| async move {
                 // Reserve every miss before starting I/O. Dropping these guards releases all
                 // reservations if any reservation or the download fails, or the future is dropped.
-                let mut read_reservations = Vec::with_capacity(missing_ranges.len());
-                for missing_range in &missing_ranges {
+                let mut read_reservations = Vec::with_capacity(ranges_to_fetch.len());
+                for missing_range in &ranges_to_fetch {
                     read_reservations.push(
                         self.memory_reserver
                             .try_reserve_memory(missing_range.len() as u64)?,
@@ -247,10 +247,10 @@ impl FileHandle for CachingFileHandle {
                 }
                 let downloaded = self
                     .underlying_filehandle
-                    .read_bytes_batch_async(missing_ranges.clone())
+                    .read_bytes_batch_async(ranges_to_fetch.clone())
                     .await?;
-                assert_eq!(downloaded.len(), missing_ranges.len());
-                for ((missing_range, bytes), read_reservation) in missing_ranges
+                assert_eq!(downloaded.len(), ranges_to_fetch.len());
+                for ((missing_range, bytes), read_reservation) in ranges_to_fetch
                     .into_iter()
                     .zip(&downloaded)
                     .zip(read_reservations)

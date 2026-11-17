@@ -140,12 +140,12 @@ impl CachedAndFetchedBytes {
         if self.request_indices_to_fetch.len() == requested_ranges.len() {
             return fetch_ranges(requested_ranges).await;
         }
-        let missing_ranges = self
+        let ranges_to_fetch = self
             .request_indices_to_fetch
             .iter()
             .map(|&request_index| requested_ranges[request_index].clone())
             .collect();
-        let downloaded = fetch_ranges(missing_ranges).await?;
+        let downloaded = fetch_ranges(ranges_to_fetch).await?;
         for (request_index, bytes) in self.request_indices_to_fetch.into_iter().zip(downloaded) {
             self.bytes_by_request[request_index] = bytes;
         }
@@ -192,7 +192,7 @@ mod tests {
 
     // Exercise both lookup APIs with successful and failed fetches, preserving caller order.
     async fn check_batch_read(ranges: Vec<Range<usize>>, expected_lookups: usize, cache_hit: bool) {
-        let missing_ranges: Vec<_> = ranges
+        let ranges_to_fetch: Vec<_> = ranges
             .iter()
             .filter(|range| !range.is_empty() && (!cache_hit || ranges.len() > 100))
             .cloned()
@@ -211,8 +211,8 @@ mod tests {
                 let fetch_ranges = |fetched_ranges: Vec<Range<usize>>| {
                     fetches += 1;
                     assert!(!fetched_ranges.is_empty());
-                    assert_eq!(fetched_ranges, missing_ranges);
-                    if missing_ranges.len() == ranges.len() {
+                    assert_eq!(fetched_ranges, ranges_to_fetch);
+                    if ranges_to_fetch.len() == ranges.len() {
                         assert_eq!(fetched_ranges.as_ptr(), address);
                     }
                     ready(if fail {
@@ -235,8 +235,8 @@ mod tests {
                     read_batch_with_cache(requested_ranges, get_cached, fetch_ranges).await
                 };
                 assert_eq!(lookups, expected_lookups);
-                assert_eq!(fetches, usize::from(!missing_ranges.is_empty()));
-                if fail && !missing_ranges.is_empty() {
+                assert_eq!(fetches, usize::from(!ranges_to_fetch.is_empty()));
+                if fail && !ranges_to_fetch.is_empty() {
                     assert_eq!(result.unwrap_err(), "read failed");
                 } else {
                     let buffers = result.unwrap();

@@ -51,8 +51,8 @@ struct FeuerStorage {
 /// Wrap `storage` with the supplied cache.
 /// Cache hits require matching object URIs and byte ranges.
 /// Batches above 100 ranges bypass cache lookups and insertion. Smaller batches check the cache
-/// before forwarding all misses together, without scalar-read fetch deduplication or disk
-/// fallthrough.
+/// before forwarding all misses together. Concurrent batch reads can download the same range
+/// independently. Disk cache hits wait for the disk read instead of downloading from storage.
 pub fn wrap_storage_with_storage_cache(
     cache: feuer::Cache,
     storage: Arc<dyn Storage>,
@@ -141,21 +141,21 @@ impl Storage for FeuerStorage {
             .map_err(|error| StorageErrorKind::Internal.with_error(error))?
             .into_string();
         let object_uri = object_uri.as_str();
-        // Batch lookups wait for disk hits and forward all misses together. Unlike scalar reads,
-        // they do not use Feuer's per-key fetch deduplication or disk fallthrough.
+        // Batch lookups wait for disk cache reads, then fetch all misses together.
+        // Concurrent calls can download the same missing range independently.
         crate::read_batch_with_async_cache(
             requested_ranges,
             |range| {
                 let lookup = self.cache.get(&split_slice_key(object_uri, &range));
                 async move { lookup.await.map(into_owned_bytes) }
             },
-            |missing_ranges| async move {
+            |ranges_to_fetch| async move {
                 if skip_cache {
-                    return self.inner.get_slices(path, missing_ranges).await;
+                    return self.inner.get_slices(path, ranges_to_fetch).await;
                 }
-                let downloaded = self.inner.get_slices(path, missing_ranges.clone()).await?;
-                assert_eq!(downloaded.len(), missing_ranges.len());
-                for (range, bytes) in missing_ranges.into_iter().zip(&downloaded) {
+                let downloaded = self.inner.get_slices(path, ranges_to_fetch.clone()).await?;
+                assert_eq!(downloaded.len(), ranges_to_fetch.len());
+                for (range, bytes) in ranges_to_fetch.into_iter().zip(&downloaded) {
                     self.cache.insert(
                         &split_slice_key(object_uri, &range),
                         bytes::Bytes::from_owner(bytes.clone()),
