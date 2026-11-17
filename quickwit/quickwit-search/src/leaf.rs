@@ -30,9 +30,7 @@ use quickwit_common::pretty::PrettySample;
 use quickwit_common::thread_pool::with_priority::Priority;
 use quickwit_common::uri::Uri;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
-use quickwit_doc_mapper::{
-    Automaton, AutomatonWarmup, DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo,
-};
+use quickwit_doc_mapper::{Automaton, DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo};
 use quickwit_metrics::HistogramTimer;
 use quickwit_proto::search::lambda_single_split_result::Outcome;
 use quickwit_proto::search::{
@@ -54,8 +52,8 @@ use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
 use tantivy::collector::Collector;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::index::SegmentId;
-use tantivy::schema::{Field, IndexRecordOption};
-use tantivy::{BitSet, DateTime, Index, ReloadPolicy, Searcher, TantivyError, Term};
+use tantivy::schema::Field;
+use tantivy::{DateTime, Index, ReloadPolicy, Searcher, TantivyError, Term};
 use tokio::task::{JoinError, JoinSet};
 use tokio_util::sync::CancellationToken;
 use tracing::*;
@@ -169,6 +167,17 @@ pub(crate) async fn open_split_bundle(
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<(OwnedBytes, BundleStorage)> {
+    let (hotcache, bundle, _) =
+        open_split_bundles(searcher_context, index_storage, split_and_footer_offsets).await?;
+    Ok((hotcache, bundle))
+}
+
+/// Share footer metadata while routing predicate body reads around the split cache.
+async fn open_split_bundles(
+    searcher_context: &SearcherContext,
+    index_storage: Arc<dyn Storage>,
+    split_and_footer_offsets: &SplitIdAndFooterOffsets,
+) -> anyhow::Result<(OwnedBytes, BundleStorage, BundleStorage)> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
     let footer_data = get_split_footer_from_cache_or_fetch(
         index_storage.clone(),
@@ -186,13 +195,18 @@ pub(crate) async fn open_split_bundle(
             index_storage.clone()
         };
 
+    let (predicate_storage, _) = BundleStorage::open_from_split_bytes(
+        index_storage,
+        split_file.clone(),
+        footer_data.clone(),
+    )?;
     let (bundle_storage, hotcache_bytes) = BundleStorage::open_from_split_bytes(
         index_storage_with_split_cache,
         split_file,
         footer_data,
     )?;
 
-    Ok((hotcache_bytes, bundle_storage))
+    Ok((hotcache_bytes, bundle_storage, predicate_storage))
 }
 
 /// Returns the process-wide expression compilation cache.
@@ -244,16 +258,39 @@ pub(crate) async fn open_index_with_caches(
     tokenizer_manager: Option<&TokenizerManager>,
     ephemeral_unbounded_cache: Option<ByteRangeCache>,
 ) -> anyhow::Result<(Index, HotDirectory)> {
+    let (index, directory, _) = open_index_with_predicate_directory(
+        searcher_context,
+        index_storage,
+        split_and_footer_offsets,
+        tokenizer_manager,
+        ephemeral_unbounded_cache,
+    )
+    .await?;
+    Ok((index, directory))
+}
+
+/// The predicate branch shares the hotcache but bypasses all body-byte cache layers.
+async fn open_index_with_predicate_directory(
+    searcher_context: &SearcherContext,
+    index_storage: Arc<dyn Storage>,
+    split_and_footer_offsets: &SplitIdAndFooterOffsets,
+    tokenizer_manager: Option<&TokenizerManager>,
+    ephemeral_unbounded_cache: Option<ByteRangeCache>,
+) -> anyhow::Result<(Index, HotDirectory, HotDirectory)> {
     let index_storage_with_retry_on_timeout =
         configure_storage_retries(searcher_context, index_storage);
 
-    let (hotcache_bytes, bundle_storage) = open_split_bundle(
+    let (hotcache_bytes, bundle_storage, predicate_storage) = open_split_bundles(
         searcher_context,
         index_storage_with_retry_on_timeout,
         split_and_footer_offsets,
     )
     .await?;
 
+    let predicate_directory = HotDirectory::open(
+        StorageDirectory::new(Arc::new(predicate_storage)),
+        hotcache_bytes.clone(),
+    )?;
     let bundle_storage_with_cache = wrap_storage_with_cache(
         searcher_context.fast_fields_cache.clone(),
         Arc::new(bundle_storage),
@@ -278,7 +315,7 @@ pub(crate) async fn open_index_with_caches(
             .clone(),
     );
     set_expr_compilation_cache(&mut index);
-    Ok((index, hot_directory))
+    Ok((index, hot_directory, predicate_directory))
 }
 
 /// Runs `fut`, racing it against `cancel`. If cancellation fires first, the
@@ -339,12 +376,15 @@ pub(crate) enum WarmupOutcome {
 ///
 /// The warmup plan determines whether to cache complete individual regex/wildcard hitsets
 /// in `predicate_cache` under `split_id`, so execution can avoid another term enumeration.
-/// Queries without predicate caching request postings-only warmup.
+/// Queries without predicate caching request postings-only warmup. Complete hitsets use
+/// `predicate_searcher`, which shares metadata with `searcher` and bypasses body-byte caches.
+/// Ordinary consumers continue warming `searcher` for synchronous execution.
 ///
 /// Returns [`WarmupOutcome::NoMatches`] when a required term proves the split empty,
 /// or [`WarmupOutcome::Ready`] with any prepared hitsets to retain in the executable query.
 pub(crate) async fn warmup(
     searcher: &Searcher,
+    predicate_searcher: Option<&Searcher>,
     warmup_info: &WarmupInfo,
     priority: Priority,
     on_absent: &(dyn Fn(&Term, SegmentId) + Sync),
@@ -402,8 +442,15 @@ pub(crate) async fn warmup(
     .instrument(debug_span!("warm_up_all_postings"));
     let mut warmed_hits = WarmedHits::default();
     let warm_up_automatons_future = run_cancellable(abort_token.as_ref(), async {
-        warmed_hits =
-            warm_up_automatons(searcher, warmup_info, predicate_cache, split_id, priority).await?;
+        warmed_hits = warm_up_automatons(
+            searcher,
+            predicate_searcher,
+            warmup_info,
+            predicate_cache,
+            split_id,
+            priority,
+        )
+        .await?;
         anyhow::Ok(())
     })
     .instrument(debug_span!("warm_up_automatons"));
@@ -589,6 +636,7 @@ impl QueryAstTransformer for WarmedHitsInjector {
 
 async fn warm_up_automatons(
     searcher: &Searcher,
+    predicate_searcher: Option<&Searcher>,
     warmup_info: &WarmupInfo,
     predicate_cache: Arc<dyn PredicateCache>,
     split_id: &str,
@@ -621,44 +669,47 @@ async fn warm_up_automatons(
                         })
                         .await
                         .context("automaton compilation task panicked")??;
-                    // The callback API preserves request priority, unlike Tantivy's concrete
-                    // executor. Warmed directory reads are cached for synchronous decoding below.
-                    inv_idx
-                        .warm_postings_automaton(automaton.clone(), cpu_intensive_executor)
-                        .await
-                        .context("failed to load automaton")?;
-                    let AutomatonWarmup::CacheHits(cache_keys) = warmup else {
+                    // Ordinary consumers still need cached bytes for synchronous search, even
+                    // when this automaton also prepares a complete predicate hitset.
+                    if warmup.needs_postings {
+                        inv_idx
+                            .warm_postings_automaton(automaton.clone(), cpu_intensive_executor)
+                            .await
+                            .context("failed to load automaton")?;
+                    }
+                    if warmup.predicate_keys.is_empty() {
                         return anyhow::Ok(WarmedHits::default());
-                    };
+                    }
                     anyhow::ensure!(
                         searcher.segment_readers().len() == 1,
                         "predicate hitsets require a single-segment split"
                     );
+                    let segment_id = segment_reader.segment_id();
+                    let predicate_segment = predicate_searcher
+                        .context("predicate warmup requires a cache-free reader")?
+                        .segment_readers()
+                        .iter()
+                        .find(|segment| segment.segment_id() == segment_id)
+                        .context("predicate reader is missing a segment")?;
+                    let bitset = predicate_segment
+                        .inverted_index(*field)?
+                        .read_postings_automaton_bitset(
+                            automaton,
+                            segment_reader.max_doc(),
+                            |task| async move {
+                                crate::search_thread_pool()
+                                    .run_cpu_intensive_with_priority(priority, task)
+                                    .await
+                                    .map_err(|_| std::io::Error::other("task panicked"))?
+                            },
+                        )
+                        .await
+                        .context("failed to read predicate postings")?;
                     let cache = predicate_cache.clone();
                     let split_id = split_id.to_string();
-                    let cache_keys = cache_keys.clone();
-                    let segment_id = segment_reader.segment_id();
-                    let max_doc = segment_reader.max_doc();
+                    let cache_keys = warmup.predicate_keys.clone();
                     crate::search_thread_pool()
                         .run_cpu_intensive_with_priority(priority, move || {
-                            let mut bitset = BitSet::with_max_value(max_doc);
-                            let mut terms = inv_idx
-                                .terms()
-                                .search(automaton)
-                                .without_keys()
-                                .into_stream()?;
-                            while terms.advance() {
-                                let mut postings = inv_idx.read_block_postings_from_terminfo(
-                                    terms.value(),
-                                    IndexRecordOption::Basic,
-                                )?;
-                                while !postings.docs().is_empty() {
-                                    for &doc in postings.docs() {
-                                        bitset.insert(doc);
-                                    }
-                                    postings.advance();
-                                }
-                            }
                             let hits = HitSet::from_bitset(bitset);
                             let mut warmed_hits = WarmedHits::default();
                             for key in cache_keys {
@@ -807,7 +858,7 @@ async fn leaf_search_single_split(
     // ABOVE this wrapper, so reads served from cache do not contribute to the
     // counters — that is the desired "downloaded from object storage" semantics.
     let (storage, download_counters) = CountingStorage::instrument_storage(storage);
-    let (index, hot_directory) = open_index_with_caches(
+    let (index, hot_directory, predicate_directory) = open_index_with_predicate_directory(
         &ctx.searcher_context,
         storage,
         &split,
@@ -923,8 +974,29 @@ async fn leaf_search_single_split(
             downloaded_mb = tracing::field::Empty,
             total_mb = tracing::field::Empty
         );
+        let needs_predicate_reader =
+            warmup_info
+                .automatons_grouped_by_field
+                .values()
+                .any(|automatons| {
+                    automatons
+                        .values()
+                        .any(|warmup| !warmup.predicate_keys.is_empty())
+                });
+        let predicate_searcher = if needs_predicate_reader {
+            Some(
+                Index::open(predicate_directory)?
+                    .reader_builder()
+                    .reload_policy(ReloadPolicy::Manual)
+                    .try_into()?
+                    .searcher(),
+            )
+        } else {
+            None
+        };
         let warmup_outcome = warmup(
             &searcher,
+            predicate_searcher.as_ref(),
             &warmup_info,
             priority,
             &record_absence,
@@ -2569,6 +2641,10 @@ async fn leaf_search_single_split_wrapper(
 }
 
 #[cfg(test)]
+#[path = "predicate_warmup_tests.rs"]
+mod predicate_warmup_tests;
+
+#[cfg(test)]
 mod tests {
     use std::ops::Bound;
 
@@ -3125,6 +3201,7 @@ mod tests {
             let reported = std::sync::Mutex::new(Vec::new());
             let outcome = warmup(
                 searcher,
+                None,
                 warmup_info,
                 Priority::default(),
                 &|term: &Term, _segment_id| {
@@ -3215,6 +3292,7 @@ mod tests {
                     .unwrap();
                 let WarmupOutcome::Ready(hits) = warmup(
                     &searcher,
+                    Some(&searcher),
                     &warmup_info,
                     Priority::default(),
                     &|_, _| {},
@@ -3277,10 +3355,11 @@ mod tests {
         assert_eq!(
             warmup_info.automatons_grouped_by_field[&body]
                 [&Automaton::Regex(None, "(?i)a.*".to_string())],
-            AutomatonWarmup::PostingsOnly
+            quickwit_doc_mapper::AutomatonWarmup::postings_only()
         );
         let hits = warm_up_automatons(
             &searcher,
+            None,
             &warmup_info,
             predicate_cache.clone(),
             split_id,

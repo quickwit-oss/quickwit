@@ -277,11 +277,11 @@ impl<'a> ExtractPrefixTermRangesAndAutomatons<'a> {
 
     fn predicate_warmup(&self, query_ast: &QueryAst) -> Result<AutomatonWarmup, InvalidQuery> {
         if !self.cache_predicates {
-            return Ok(AutomatonWarmup::PostingsOnly);
+            return Ok(AutomatonWarmup::postings_only());
         }
 
         let cache_key = serde_json::to_string(query_ast)?;
-        Ok(AutomatonWarmup::CacheHits(HashSet::from([cache_key])))
+        Ok(AutomatonWarmup::cache_hits(HashSet::from([cache_key])))
     }
 
     fn add_automaton_warmup(
@@ -294,7 +294,7 @@ impl<'a> ExtractPrefixTermRangesAndAutomatons<'a> {
             .entry(field)
             .or_default()
             .entry(automaton)
-            .or_insert(AutomatonWarmup::PostingsOnly)
+            .or_default()
             .merge(warmup);
     }
 }
@@ -374,7 +374,7 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRangesAndAutomatons<'b
         self.add_automaton_warmup(
             resolved.field,
             Automaton::Regex(resolved.json_path, resolved.regex),
-            AutomatonWarmup::PostingsOnly,
+            AutomatonWarmup::postings_only(),
         );
         Ok(())
     }
@@ -547,7 +547,7 @@ mod test {
                     let automaton = Automaton::Regex(None, regex.to_string());
                     (
                         service,
-                        HashMap::from([(automaton, AutomatonWarmup::PostingsOnly)]),
+                        HashMap::from([(automaton, AutomatonWarmup::postings_only())]),
                     )
                 })
                 .into_iter()
@@ -610,7 +610,10 @@ mod test {
                     service,
                     HashMap::from([(
                         Automaton::Regex(None, "api".to_string()),
-                        AutomatonWarmup::CacheHits(cache_keys.clone())
+                        AutomatonWarmup {
+                            needs_postings: true,
+                            predicate_keys: cache_keys.clone(),
+                        }
                     )]),
                 )])
             );
@@ -622,7 +625,7 @@ mod test {
                     service,
                     HashMap::from([(
                         Automaton::Regex(None, "api".to_string()),
-                        AutomatonWarmup::PostingsOnly,
+                        AutomatonWarmup::postings_only(),
                     )]),
                 )])
             );
@@ -655,7 +658,7 @@ mod test {
             warmup.automatons_grouped_by_field,
             HashMap::from([(
                 dynamic,
-                HashMap::from([(automaton, AutomatonWarmup::PostingsOnly)])
+                HashMap::from([(automaton, AutomatonWarmup::postings_only())])
             )])
         );
     }
