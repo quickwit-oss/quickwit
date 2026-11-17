@@ -29,10 +29,9 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 use crate::storage::SendableAsync;
 use crate::{BulkDeleteError, ListObjectsStream, OwnedBytes, PutPayload, Storage, StorageResult};
 
-mod plan;
-
 // Collection ends after this duration, measured from the first caller.
 const COLLECTION_DURATION: Duration = Duration::from_millis(1);
+const MAX_GAP: usize = 4 * 1024 * 1024;
 
 struct CollectedBatch {
     // Taking these ranges ends collection. Later callers start another batch because
@@ -211,7 +210,7 @@ async fn read_collected_ranges(
             .filter(|(_, requested_range)| !requested_range.is_empty())
             .collect();
         requests.sort_unstable_by_key(|(_, requested_range)| requested_range.start);
-        let download_ranges = plan::coalesce_ranges(
+        let download_ranges = coalesce_ranges(
             requests
                 .iter()
                 .map(|(_, requested_range)| requested_range.clone()),
@@ -236,6 +235,26 @@ async fn read_collected_ranges(
         }
     }
     Ok(buffers)
+}
+
+/// Ranges must have `start <= end` and be sorted by start offset. Empty ranges are ignored.
+/// Merges overlaps and gaps up to 4 MiB. This limits each gap, not the total download size
+/// or the total number of gap bytes downloaded.
+fn coalesce_ranges(requested_ranges: impl Iterator<Item = Range<usize>>) -> Vec<Range<usize>> {
+    let mut download_ranges: Vec<Range<usize>> = Vec::new();
+    for requested_range in requested_ranges {
+        if requested_range.is_empty() {
+            continue;
+        }
+        if let Some(previous) = download_ranges.last_mut()
+            && requested_range.start.saturating_sub(previous.end) <= MAX_GAP
+        {
+            previous.end = previous.end.max(requested_range.end);
+        } else {
+            download_ranges.push(requested_range);
+        }
+    }
+    download_ranges
 }
 
 // Requests are sorted, nonempty, and contained in the coalesced download range.
@@ -292,6 +311,128 @@ async fn read_download_range(
         return Err(io::Error::from(io::ErrorKind::InvalidData).into());
     }
     Ok(buffers)
+}
+
+#[cfg(test)]
+mod plan_tests {
+    use super::*;
+
+    const KIB: usize = 1024;
+    const MIB: usize = 1024 * KIB;
+
+    fn coalesce_ranges(mut ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
+        ranges.sort_unstable_by_key(|range| range.start);
+        super::coalesce_ranges(ranges.into_iter())
+    }
+
+    #[test]
+    fn test_coalesce_ranges_boundaries() {
+        let cases: &[(&[Range<usize>], &[Range<usize>])] = &[
+            (&[], &[]),
+            (&[10..20], &[10..20]),
+            (&[7..7, 0..0], &[]),
+            // Unsorted, duplicate, nested, adjacent, and separated ranges.
+            (
+                &[
+                    4 * MIB..5 * MIB,
+                    0..MIB,
+                    0..MIB,
+                    10..20,
+                    MIB..2 * MIB,
+                    2 * MIB + 512 * KIB..3 * MIB,
+                ],
+                &[0..5 * MIB],
+            ),
+            (&[0..20 * MIB, 24 * MIB..44 * MIB], &[0..44 * MIB]),
+            // Even large downloads cannot bridge a gap greater than 4 MiB.
+            (
+                &[0..20 * MIB, 24 * MIB + 1..44 * MIB + 1],
+                &[0..20 * MIB, 24 * MIB + 1..44 * MIB + 1],
+            ),
+            (
+                &[usize::MAX - 10..usize::MAX, 0..10],
+                &[0..10, usize::MAX - 10..usize::MAX],
+            ),
+            (&[0..usize::MAX, 1..2], &[0..usize::MAX]),
+        ];
+        for (ranges, expected) in cases {
+            assert_eq!(coalesce_ranges(ranges.to_vec()), *expected, "{ranges:?}");
+        }
+    }
+
+    #[derive(serde::Deserialize)]
+    struct QueryRanges {
+        query: String,
+        ranges: Vec<[usize; 2]>,
+    }
+
+    #[test]
+    fn test_coalesce_ranges_from_postings() {
+        // Reference plans independently calculated with a 4 MiB gap threshold.
+        // Pattern, requested ranges/bytes, download ranges/bytes.
+        for (fixture, json, expected) in [
+            (
+                "inline_8",
+                include_str!("../../test-data/coalescing/requested_ranges.json"),
+                [
+                    ("*ab*", 203, 288_249, 9, 38_242_633),
+                    ("*aba*", 16, 143_930, 2, 7_888_734),
+                    ("*traaa*", 0, 0, 0, 0),
+                    ("traaa*", 0, 0, 0, 0),
+                    ("*player*", 21, 4_221_761, 6, 15_382_086),
+                    ("*ms*", 27, 825_018, 8, 19_690_015),
+                ],
+            ),
+            (
+                // Original postings offsets, keeping the first 16,384 matching lists per query.
+                "no_inline",
+                include_str!("../../test-data/coalescing/requested_ranges_no_inline.json"),
+                [
+                    ("*ab*", 16_384, 82_276, 2, 107_392_855),
+                    ("*aba*", 2_817, 157_561, 4, 237_355_128),
+                    ("*traaa*", 2, 10, 2, 10),
+                    ("traaa*", 0, 0, 0, 0),
+                    ("*player*", 21, 4_221_761, 6, 17_345_872),
+                    ("*ms*", 16_384, 200_211, 2, 159_383_608),
+                ],
+            ),
+        ] {
+            let queries: Vec<QueryRanges> = serde_json::from_str(json).unwrap();
+            assert_eq!(queries.len(), expected.len(), "{fixture}");
+            for (query, (pattern, range_count, requested_bytes, download_count, download_bytes)) in
+                queries.into_iter().zip(expected)
+            {
+                assert_eq!(query.query, pattern, "{fixture}");
+                let pattern = format!("{fixture}: {pattern}");
+                let ranges: Vec<Range<usize>> = query
+                    .ranges
+                    .into_iter()
+                    .map(|[start, end]| start..end)
+                    .collect();
+                assert_eq!(ranges.len(), range_count, "{pattern}");
+                assert_eq!(
+                    ranges.iter().map(|range| range.len()).sum::<usize>(),
+                    requested_bytes,
+                    "{pattern}"
+                );
+                let downloads = coalesce_ranges(ranges.clone());
+                let fetched_bytes: usize = downloads.iter().map(|range| range.len()).sum();
+                println!(
+                    "{pattern}: {range_count} requested ranges, {requested_bytes} requested bytes \
+                     -> {} downloads, {fetched_bytes} fetched bytes",
+                    downloads.len()
+                );
+                assert_eq!(downloads.len(), download_count, "{pattern}");
+                assert_eq!(fetched_bytes, download_bytes, "{pattern}");
+                assert!(downloads.windows(2).all(|pair| pair[0].end < pair[1].start));
+                for range in ranges {
+                    assert!(downloads.iter().any(|download| {
+                        download.start <= range.start && range.end <= download.end
+                    }));
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
