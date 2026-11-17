@@ -1844,6 +1844,86 @@ mod tests {
                 "shard_throughput_limit (101.0 MiB) must be within 1MiB and 100MiB"
             );
         }
+        {
+            let ingest_api_config: IngestApiConfig = serde_yaml::from_str(
+                r#"
+                    shard_throughput_limit: 512KiB
+                "#,
+            )
+            .unwrap();
+            assert_eq!(
+                ingest_api_config.validate().unwrap_err().to_string(),
+                "shard_throughput_limit (512.0 KiB) must be within 1MiB and 100MiB"
+            );
+        }
+        for shard_throughput_limit in ["1MiB", "100MiB"] {
+            let ingest_api_config: IngestApiConfig = serde_yaml::from_str(&format!(
+                "shard_throughput_limit: {shard_throughput_limit}"
+            ))
+            .unwrap();
+            assert!(ingest_api_config.validate().is_ok());
+        }
+    }
+
+    #[test]
+    fn test_ingest_api_shard_scaling_ratios() {
+        let default_config = IngestApiConfig::default();
+        assert_eq!(default_config.shard_scale_up_short_term_ratio, 0.8);
+        assert_eq!(default_config.shard_scale_up_long_term_ratio, 0.3);
+        assert_eq!(default_config.shard_scale_down_ratio, 0.2);
+
+        let ingest_api_config: IngestApiConfig = serde_yaml::from_str(
+            r#"
+                shard_scale_up_short_term_ratio: 0.9
+                shard_scale_up_long_term_ratio: 0.8
+                shard_scale_down_ratio: 0.6
+            "#,
+        )
+        .unwrap();
+        assert!(ingest_api_config.validate().is_ok());
+        assert_eq!(ingest_api_config.shard_scale_up_short_term_ratio, 0.9);
+        assert_eq!(ingest_api_config.shard_scale_up_long_term_ratio, 0.8);
+        assert_eq!(ingest_api_config.shard_scale_down_ratio, 0.6);
+
+        let ingest_api_config: IngestApiConfig = serde_yaml::from_str(
+            r#"
+                shard_scale_up_short_term_ratio: 0.5
+                shard_scale_up_long_term_ratio: 0.5
+                shard_scale_down_ratio: 0.4
+            "#,
+        )
+        .unwrap();
+        assert!(ingest_api_config.validate().is_ok());
+
+        for (ratios_yaml, expected_error) in [
+            (
+                "shard_scale_down_ratio: 0.0",
+                "shard_scale_down_ratio (0) must be greater than 0 and less than \
+                 shard_scale_up_long_term_ratio (0.3)",
+            ),
+            (
+                "shard_scale_down_ratio: 0.3",
+                "shard_scale_down_ratio (0.3) must be greater than 0 and less than \
+                 shard_scale_up_long_term_ratio (0.3)",
+            ),
+            (
+                "shard_scale_up_long_term_ratio: 0.9",
+                "shard_scale_up_long_term_ratio (0.9) must be at most \
+                 shard_scale_up_short_term_ratio (0.8), which must be at most 1",
+            ),
+            (
+                "shard_scale_up_short_term_ratio: 1.1",
+                "shard_scale_up_long_term_ratio (0.3) must be at most \
+                 shard_scale_up_short_term_ratio (1.1), which must be at most 1",
+            ),
+        ] {
+            let ingest_api_config: IngestApiConfig = serde_yaml::from_str(ratios_yaml).unwrap();
+            assert_eq!(
+                ingest_api_config.validate().unwrap_err().to_string(),
+                expected_error,
+                "{ratios_yaml}"
+            );
+        }
     }
 
     #[test]

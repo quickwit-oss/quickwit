@@ -448,4 +448,47 @@ mod tests {
             .unwrap();
         assert_eq!(scaling_mode, ScalingMode::Up(4));
     }
+
+    #[test]
+    fn test_scaling_arbiter_uses_configured_ratios() {
+        let mut ingest_api_config = IngestApiConfig::default();
+        ingest_api_config.shard_throughput_limit = ByteSize::mib(10);
+        ingest_api_config.shard_scale_up_factor = 2.0;
+        ingest_api_config.shard_scale_up_short_term_ratio = 0.5;
+        ingest_api_config.shard_scale_up_long_term_ratio = 0.25;
+        ingest_api_config.shard_scale_down_ratio = 0.1;
+        let custom_scaling_arbiter = ScalingArbiter::new(&ingest_api_config);
+        let default_scaling_arbiter = scaling_arbiter_for_test(2.0);
+        let min_shards = NonZeroUsize::MIN;
+
+        let busy_shard_stats = ShardStats {
+            num_open_shards: 2,
+            num_closed_shards: 0,
+            avg_short_term_ingestion_rate: 6.0,
+            avg_long_term_ingestion_rate: 6.0,
+        };
+        assert_eq!(
+            custom_scaling_arbiter.should_scale(busy_shard_stats, min_shards),
+            Some(ScalingMode::Up(2))
+        );
+        assert_eq!(
+            default_scaling_arbiter.should_scale(busy_shard_stats, min_shards),
+            None
+        );
+
+        let quiet_shard_stats = ShardStats {
+            num_open_shards: 2,
+            num_closed_shards: 0,
+            avg_short_term_ingestion_rate: 1.5,
+            avg_long_term_ingestion_rate: 1.5,
+        };
+        assert_eq!(
+            custom_scaling_arbiter.should_scale(quiet_shard_stats, min_shards),
+            None
+        );
+        assert_eq!(
+            default_scaling_arbiter.should_scale(quiet_shard_stats, min_shards),
+            Some(ScalingMode::Down)
+        );
+    }
 }
