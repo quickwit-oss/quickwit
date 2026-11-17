@@ -183,23 +183,6 @@ async fn test_one_download_failure_fails_all_callers_and_cancels_peers() {
     );
 }
 
-#[tokio::test]
-async fn test_singleton_length_mismatch() {
-    for length in [1, 3] {
-        let mut storage = MockStorage::default();
-        storage
-            .expect_get_slice()
-            .times(1)
-            .return_once(move |_, _| Ok(OwnedBytes::new(vec![0; length])));
-        let storage = CoalescingStorage::new(Arc::new(storage));
-        let error = storage
-            .get_slice(Path::new("file"), 0..2)
-            .await
-            .unwrap_err();
-        assert_eq!(io::Error::from(error).kind(), io::ErrorKind::InvalidData);
-    }
-}
-
 #[tokio::test(start_paused = true)]
 async fn test_stream_calls_bypass_collection() {
     let mut storage = MockStorage::default();

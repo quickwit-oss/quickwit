@@ -96,78 +96,69 @@ mod tests {
     }
 
     #[test]
-    fn test_coalesce_ranges_from_postings_inline_8() {
-        let queries: Vec<QueryRanges> = serde_json::from_str(include_str!(
-            "../../test-data/coalescing/requested_ranges.json"
-        ))
-        .unwrap();
-
+    fn test_coalesce_ranges_from_postings() {
         // Reference plans independently calculated with a 4 MiB gap threshold.
         // Pattern, requested ranges/bytes, download ranges/bytes.
-        let expected = [
-            ("*ab*", 203, 288_249, 9, 38_242_633),
-            ("*aba*", 16, 143_930, 2, 7_888_734),
-            ("*traaa*", 0, 0, 0, 0),
-            ("traaa*", 0, 0, 0, 0),
-            ("*player*", 21, 4_221_761, 6, 15_382_086),
-            ("*ms*", 27, 825_018, 8, 19_690_015),
-        ];
-        assert_postings_read_plans(queries, expected);
-    }
-
-    #[test]
-    fn test_coalesce_ranges_from_postings_no_inline() {
-        let queries: Vec<QueryRanges> = serde_json::from_str(include_str!(
-            "../../test-data/coalescing/requested_ranges_no_inline.json"
-        ))
-        .unwrap();
-        // Original postings offsets, keeping the first 16,384 matching lists per query.
-        // Pattern, requested ranges/bytes, download ranges/bytes.
-        let expected = [
-            ("*ab*", 16_384, 82_276, 2, 107_392_855),
-            ("*aba*", 2_817, 157_561, 4, 237_355_128),
-            ("*traaa*", 2, 10, 2, 10),
-            ("traaa*", 0, 0, 0, 0),
-            ("*player*", 21, 4_221_761, 6, 17_345_872),
-            ("*ms*", 16_384, 200_211, 2, 159_383_608),
-        ];
-        assert_postings_read_plans(queries, expected);
-    }
-
-    fn assert_postings_read_plans(
-        queries: Vec<QueryRanges>,
-        expected: [(&str, usize, usize, usize, usize); 6],
-    ) {
-        assert_eq!(queries.len(), expected.len());
-        for (query, (pattern, range_count, requested_bytes, download_count, download_bytes)) in
-            queries.into_iter().zip(expected)
-        {
-            assert_eq!(query.query, pattern);
-            let ranges: Vec<Range<usize>> = query
-                .ranges
-                .into_iter()
-                .map(|[start, end]| start..end)
-                .collect();
-            assert_eq!(ranges.len(), range_count, "{pattern}");
-            assert_eq!(
-                ranges.iter().map(|range| range.len()).sum::<usize>(),
-                requested_bytes,
-                "{pattern}"
-            );
-            let downloads = coalesce_ranges(ranges.clone());
-            let fetched_bytes: usize = downloads.iter().map(|range| range.len()).sum();
-            println!(
-                "{pattern}: {range_count} requested ranges, {requested_bytes} requested bytes -> \
-                 {} downloads, {fetched_bytes} fetched bytes",
-                downloads.len()
-            );
-            assert_eq!(downloads.len(), download_count, "{pattern}");
-            assert_eq!(fetched_bytes, download_bytes, "{pattern}");
-            assert!(downloads.windows(2).all(|pair| pair[0].end < pair[1].start));
-            for range in ranges {
-                assert!(downloads.iter().any(|download| {
-                    download.start <= range.start && range.end <= download.end
-                }));
+        for (fixture, json, expected) in [
+            (
+                "inline_8",
+                include_str!("../../test-data/coalescing/requested_ranges.json"),
+                [
+                    ("*ab*", 203, 288_249, 9, 38_242_633),
+                    ("*aba*", 16, 143_930, 2, 7_888_734),
+                    ("*traaa*", 0, 0, 0, 0),
+                    ("traaa*", 0, 0, 0, 0),
+                    ("*player*", 21, 4_221_761, 6, 15_382_086),
+                    ("*ms*", 27, 825_018, 8, 19_690_015),
+                ],
+            ),
+            (
+                // Original postings offsets, keeping the first 16,384 matching lists per query.
+                "no_inline",
+                include_str!("../../test-data/coalescing/requested_ranges_no_inline.json"),
+                [
+                    ("*ab*", 16_384, 82_276, 2, 107_392_855),
+                    ("*aba*", 2_817, 157_561, 4, 237_355_128),
+                    ("*traaa*", 2, 10, 2, 10),
+                    ("traaa*", 0, 0, 0, 0),
+                    ("*player*", 21, 4_221_761, 6, 17_345_872),
+                    ("*ms*", 16_384, 200_211, 2, 159_383_608),
+                ],
+            ),
+        ] {
+            let queries: Vec<QueryRanges> = serde_json::from_str(json).unwrap();
+            assert_eq!(queries.len(), expected.len(), "{fixture}");
+            for (query, (pattern, range_count, requested_bytes, download_count, download_bytes)) in
+                queries.into_iter().zip(expected)
+            {
+                assert_eq!(query.query, pattern, "{fixture}");
+                let pattern = format!("{fixture}: {pattern}");
+                let ranges: Vec<Range<usize>> = query
+                    .ranges
+                    .into_iter()
+                    .map(|[start, end]| start..end)
+                    .collect();
+                assert_eq!(ranges.len(), range_count, "{pattern}");
+                assert_eq!(
+                    ranges.iter().map(|range| range.len()).sum::<usize>(),
+                    requested_bytes,
+                    "{pattern}"
+                );
+                let downloads = coalesce_ranges(ranges.clone());
+                let fetched_bytes: usize = downloads.iter().map(|range| range.len()).sum();
+                println!(
+                    "{pattern}: {range_count} requested ranges, {requested_bytes} requested bytes \
+                     -> {} downloads, {fetched_bytes} fetched bytes",
+                    downloads.len()
+                );
+                assert_eq!(downloads.len(), download_count, "{pattern}");
+                assert_eq!(fetched_bytes, download_bytes, "{pattern}");
+                assert!(downloads.windows(2).all(|pair| pair[0].end < pair[1].start));
+                for range in ranges {
+                    assert!(downloads.iter().any(|download| {
+                        download.start <= range.start && range.end <= download.end
+                    }));
+                }
             }
         }
     }

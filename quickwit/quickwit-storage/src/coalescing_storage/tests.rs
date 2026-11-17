@@ -84,31 +84,42 @@ async fn test_collects_by_object_and_collector() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn test_singleton_waits_and_preserves_allocation() {
-    let bytes = OwnedBytes::new(vec![5, 6, 7, 8]);
-    let address = bytes.as_ptr();
-    let mut storage = MockStorage::default();
-    storage
-        .expect_get_slice()
-        .times(1)
-        .return_once(move |_, range| {
-            assert_eq!(range, 5..9);
-            Ok(bytes)
-        });
-    let storage = CoalescingStorage::new(Arc::new(storage));
-    let read_start = tokio::time::Instant::now();
-    for ranges in [Vec::new(), vec![2..2, usize::MAX..usize::MAX]] {
-        let expected_len = ranges.len();
-        let buffers = storage.get_slices(Path::new("file"), ranges).await.unwrap();
-        assert_eq!(buffers.len(), expected_len);
-        assert!(buffers.iter().all(|bytes| bytes.is_empty()));
+async fn test_singleton_waits_and_validates_response() {
+    for length in [3, 4, 5] {
+        let bytes = OwnedBytes::new((5..5 + length).collect::<Vec<u8>>());
+        let address = bytes.as_ptr();
+        let mut storage = MockStorage::default();
+        storage
+            .expect_get_slice()
+            .times(1)
+            .return_once(move |_, range| {
+                assert_eq!(range, 5..9);
+                Ok(bytes)
+            });
+        let storage = CoalescingStorage::new(Arc::new(storage));
+        let read_start = tokio::time::Instant::now();
+        for ranges in [Vec::new(), vec![2..2, usize::MAX..usize::MAX]] {
+            let expected_len = ranges.len();
+            let buffers = storage.get_slices(Path::new("file"), ranges).await.unwrap();
+            assert_eq!(buffers.len(), expected_len);
+            assert!(buffers.iter().all(|bytes| bytes.is_empty()));
+        }
+        assert_eq!(read_start.elapsed(), Duration::ZERO);
+        assert!(storage.batches_by_object.lock().unwrap().is_empty());
+        let result = storage.get_slice(Path::new("file"), 5..9).await;
+        assert!(read_start.elapsed() >= COLLECTION_DURATION);
+        if length == 4 {
+            let bytes = result.unwrap();
+            assert_eq!(bytes.as_ptr(), address);
+            assert_eq!(bytes.as_slice(), &[5, 6, 7, 8]);
+        } else {
+            assert_eq!(
+                io::Error::from(result.unwrap_err()).kind(),
+                io::ErrorKind::InvalidData,
+                "response length: {length}"
+            );
+        }
     }
-    assert_eq!(read_start.elapsed(), Duration::ZERO);
-    assert!(storage.batches_by_object.lock().unwrap().is_empty());
-    let bytes = storage.get_slice(Path::new("file"), 5..9).await.unwrap();
-    assert!(read_start.elapsed() >= COLLECTION_DURATION);
-    assert_eq!(bytes.as_ptr(), address);
-    assert_eq!(bytes.as_slice(), &[5, 6, 7, 8]);
 }
 
 #[tokio::test]
