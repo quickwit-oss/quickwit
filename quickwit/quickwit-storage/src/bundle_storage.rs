@@ -45,12 +45,15 @@ pub struct BundleStorage {
 }
 
 impl BundleStorage {
-    /// Translates file-relative offsets to byte offsets in the bundle.
-    fn bundle_range(&self, path: &Path, range: Range<usize>) -> StorageResult<Range<usize>> {
-        let file_range = self.file_ranges.get(path).ok_or_else(|| {
+    fn file_range(&self, path: &Path) -> StorageResult<Range<u64>> {
+        self.file_ranges.get(path).ok_or_else(|| {
             crate::StorageErrorKind::NotFound
                 .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })?;
+        })
+    }
+
+    /// Translates file-relative offsets to byte offsets in the bundle.
+    fn bundle_range(file_range: &Range<u64>, range: Range<usize>) -> StorageResult<Range<usize>> {
         // Underlying storage only sees the split object, not this file's boundaries.
         if range.end as u64 > file_range.end - file_range.start {
             return Err(
@@ -524,7 +527,7 @@ impl Storage for BundleStorage {
         path: &Path,
         range: Range<usize>,
     ) -> crate::StorageResult<OwnedBytes> {
-        let range = self.bundle_range(path, range)?;
+        let range = Self::bundle_range(&self.file_range(path)?, range)?;
         self.storage.get_slice(&self.bundle_filepath, range).await
     }
 
@@ -537,8 +540,9 @@ impl Storage for BundleStorage {
         if requested_ranges.is_empty() {
             return Ok(Vec::new());
         }
+        let file_range = self.file_range(path)?;
         for requested_range in &mut requested_ranges {
-            *requested_range = self.bundle_range(path, requested_range.clone())?;
+            *requested_range = Self::bundle_range(&file_range, requested_range.clone())?;
         }
         self.storage
             .get_slices(&self.bundle_filepath, requested_ranges)
@@ -554,10 +558,7 @@ impl Storage for BundleStorage {
         if buffer.is_empty() {
             return Ok(());
         }
-        let file_range = self.file_ranges.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })?;
+        let file_range = self.file_range(path)?;
         let new_range =
             file_range.start as usize + range.start..file_range.start as usize + range.end;
         self.storage
@@ -574,10 +575,7 @@ impl Storage for BundleStorage {
     }
 
     async fn get_all(&self, path: &Path) -> crate::StorageResult<OwnedBytes> {
-        let file_range = self.file_ranges.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })?;
+        let file_range = self.file_range(path)?;
         self.storage
             .get_slice(
                 &self.bundle_filepath,
@@ -603,10 +601,7 @@ impl Storage for BundleStorage {
     }
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
-        let file_range = self.file_ranges.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })?;
+        let file_range = self.file_range(path)?;
         Ok(file_range.end - file_range.start)
     }
 
