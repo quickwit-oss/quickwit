@@ -26,7 +26,9 @@ use bytesize::ByteSize;
 use http::HeaderMap;
 use quickwit_common::net::HostAddr;
 use quickwit_common::shared_consts::{
-    DEFAULT_SHARD_BURST_LIMIT, DEFAULT_SHARD_SCALE_UP_FACTOR, DEFAULT_SHARD_THROUGHPUT_LIMIT,
+    DEFAULT_SHARD_BURST_LIMIT, DEFAULT_SHARD_SCALE_DOWN_RATIO, DEFAULT_SHARD_SCALE_UP_FACTOR,
+    DEFAULT_SHARD_SCALE_UP_LONG_TERM_RATIO, DEFAULT_SHARD_SCALE_UP_SHORT_TERM_RATIO,
+    DEFAULT_SHARD_THROUGHPUT_LIMIT,
 };
 use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
@@ -923,6 +925,15 @@ pub struct IngestApiConfig {
     /// Setting this too high will be cancelled out by the arbiter that prevents
     /// creating too many shards at once.
     pub shard_scale_up_factor: f32,
+    /// (hidden) Scale up when the average short-term ingestion rate per shard reaches this
+    /// fraction of `shard_throughput_limit`
+    pub shard_scale_up_short_term_ratio: f32,
+    /// (hidden) Scale up only while the average long-term ingestion rate per shard stays at or
+    /// above this fraction of `shard_throughput_limit`
+    pub shard_scale_up_long_term_ratio: f32,
+    /// (hidden) Scale down when the average long-term ingestion rate per shard falls to this
+    /// fraction of `shard_throughput_limit`
+    pub shard_scale_down_ratio: f32,
     #[serde(default)]
     pub grpc_compression_algorithm: Option<CompressionAlgorithm>,
     /// Maximum amount of time to wait for the ingester to finish decommissioning gracefully
@@ -942,6 +953,9 @@ impl Default for IngestApiConfig {
             shard_throughput_limit: DEFAULT_SHARD_THROUGHPUT_LIMIT,
             shard_burst_limit: DEFAULT_SHARD_BURST_LIMIT,
             shard_scale_up_factor: DEFAULT_SHARD_SCALE_UP_FACTOR,
+            shard_scale_up_short_term_ratio: DEFAULT_SHARD_SCALE_UP_SHORT_TERM_RATIO,
+            shard_scale_up_long_term_ratio: DEFAULT_SHARD_SCALE_UP_LONG_TERM_RATIO,
+            shard_scale_down_ratio: DEFAULT_SHARD_SCALE_DOWN_RATIO,
             grpc_compression_algorithm: None,
             decommission_timeout: HumanDuration::try_from("300s".to_string())
                 .expect("`300s` should be a valid human duration"),
@@ -997,13 +1011,13 @@ impl IngestApiConfig {
         );
         info!(
             "ingestion shard throughput limit: {}",
-            self.shard_throughput_limit.display().si()
+            self.shard_throughput_limit.display().iec()
         );
         ensure!(
             self.shard_throughput_limit >= ByteSize::mib(1)
-                && self.shard_throughput_limit <= ByteSize::mib(20),
-            "shard_throughput_limit ({}) must be within 1mb and 20mb",
-            self.shard_throughput_limit.display().si()
+                && self.shard_throughput_limit <= ByteSize::mib(100),
+            "shard_throughput_limit ({}) must be within 1MiB and 100MiB",
+            self.shard_throughput_limit.display().iec()
         );
         ensure!(
             self.max_decompressed_body_size <= ByteSize::gib(4),
@@ -1029,6 +1043,22 @@ impl IngestApiConfig {
             self.shard_scale_up_factor > 1.0,
             "shard_scale_up_factor ({}) must be greater than 1",
             self.shard_scale_up_factor,
+        );
+        ensure!(
+            self.shard_scale_down_ratio > 0.0
+                && self.shard_scale_down_ratio < self.shard_scale_up_long_term_ratio,
+            "shard_scale_down_ratio ({}) must be greater than 0 and less than \
+             shard_scale_up_long_term_ratio ({})",
+            self.shard_scale_down_ratio,
+            self.shard_scale_up_long_term_ratio,
+        );
+        ensure!(
+            self.shard_scale_up_long_term_ratio <= self.shard_scale_up_short_term_ratio
+                && self.shard_scale_up_short_term_ratio <= 1.0,
+            "shard_scale_up_long_term_ratio ({}) must be at most shard_scale_up_short_term_ratio \
+             ({}), which must be at most 1",
+            self.shard_scale_up_long_term_ratio,
+            self.shard_scale_up_short_term_ratio,
         );
         Ok(())
     }
@@ -1805,13 +1835,13 @@ mod tests {
         {
             let ingest_api_config: IngestApiConfig = serde_yaml::from_str(
                 r#"
-                    shard_throughput_limit: 21M
+                    shard_throughput_limit: 101MiB
                 "#,
             )
             .unwrap();
             assert_eq!(
                 ingest_api_config.validate().unwrap_err().to_string(),
-                "shard_throughput_limit (21.0 MB) must be within 1mb and 20mb"
+                "shard_throughput_limit (101.0 MiB) must be within 1MiB and 100MiB"
             );
         }
     }

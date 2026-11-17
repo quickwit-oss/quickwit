@@ -122,7 +122,6 @@ pub struct IndexingSchedulerState {
 /// plane will wait at least `MIN_DURATION_BETWEEN_SCHEDULING` before comparing the desired
 /// plan with the running plan.
 pub struct IndexingScheduler {
-    cluster_id: String,
     self_node_id: NodeId,
     indexer_pool: IndexerPool,
     state: IndexingSchedulerState,
@@ -132,7 +131,6 @@ pub struct IndexingScheduler {
 impl fmt::Debug for IndexingScheduler {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("IndexingScheduler")
-            .field("cluster_id", &self.cluster_id)
             .field("node_id", &self.self_node_id)
             .field(
                 "last_applied_plan_ts",
@@ -374,9 +372,8 @@ fn is_locality_aware(indexers: &IndexerPool) -> bool {
 }
 
 impl IndexingScheduler {
-    pub fn new(cluster_id: String, self_node_id: NodeId, indexer_pool: IndexerPool) -> Self {
+    pub fn new(self_node_id: NodeId, indexer_pool: IndexerPool) -> Self {
         IndexingScheduler {
-            cluster_id,
             self_node_id,
             indexer_pool,
             state: IndexingSchedulerState::default(),
@@ -1271,11 +1268,8 @@ mod tests {
             plan
         };
 
-        let mut scheduler = IndexingScheduler::new(
-            "test-cluster".to_string(),
-            NodeId::from_str("control-plane"),
-            IndexerPool::default(),
-        );
+        let mut scheduler =
+            IndexingScheduler::new(NodeId::from_str("control-plane"), IndexerPool::default());
         let locality_aware = false;
 
         // With no previous plan, the build starts from scratch: affinity-based placement gives
@@ -1585,11 +1579,7 @@ mod tests {
         indexer_pool.insert(ready_indexer_2.node_id.clone(), ready_indexer_2);
         indexer_pool.insert(retiring_indexer.node_id.clone(), retiring_indexer);
 
-        let scheduler = IndexingScheduler::new(
-            "test-cluster".to_string(),
-            NodeId::from_str("control-plane"),
-            indexer_pool,
-        );
+        let scheduler = IndexingScheduler::new(NodeId::from_str("control-plane"), indexer_pool);
         let selected = scheduler.select_ready_or_retiring_indexers();
 
         assert_eq!(selected.len(), 2);
@@ -1618,11 +1608,7 @@ mod tests {
         indexer_pool.insert(decommissioning_1.node_id.clone(), decommissioning_1);
         indexer_pool.insert(initializing_1.node_id.clone(), initializing_1);
 
-        let scheduler = IndexingScheduler::new(
-            "test-cluster".to_string(),
-            NodeId::from_str("control-plane"),
-            indexer_pool,
-        );
+        let scheduler = IndexingScheduler::new(NodeId::from_str("control-plane"), indexer_pool);
         let selected = scheduler.select_ready_or_retiring_indexers();
 
         assert_eq!(selected.len(), 2);
@@ -1636,11 +1622,7 @@ mod tests {
     #[test]
     fn test_select_available_indexers_returns_empty_when_pool_is_empty() {
         let indexer_pool = IndexerPool::default();
-        let scheduler = IndexingScheduler::new(
-            "test-cluster".to_string(),
-            NodeId::from_str("control-plane"),
-            indexer_pool,
-        );
+        let scheduler = IndexingScheduler::new(NodeId::from_str("control-plane"), indexer_pool);
         let selected = scheduler.select_ready_or_retiring_indexers();
         assert!(selected.is_empty());
     }
@@ -1663,11 +1645,7 @@ mod tests {
             indexer_pool.insert(indexer.node_id.clone(), indexer);
         }
 
-        let scheduler = IndexingScheduler::new(
-            "test-cluster".to_string(),
-            NodeId::from_str("control-plane"),
-            indexer_pool,
-        );
+        let scheduler = IndexingScheduler::new(NodeId::from_str("control-plane"), indexer_pool);
         let selected = scheduler.select_ready_and_draining_indexers();
 
         let selected_statuses: FnvHashSet<IngesterStatus> = selected
@@ -1825,11 +1803,7 @@ mod tests {
             indexer_pool.insert(indexer.node_id.clone(), indexer);
         }
 
-        let mut scheduler = IndexingScheduler::new(
-            "test-cluster".to_string(),
-            NodeId::from_str("control-plane"),
-            indexer_pool,
-        );
+        let mut scheduler = IndexingScheduler::new(NodeId::from_str("control-plane"), indexer_pool);
         let physical_plan = PhysicalIndexingPlan::with_indexer_ids(&[]);
         let waiter = scheduler.next_rebuild_tracker.next_rebuild_waiter();
         let notify_on_drop = scheduler.next_rebuild_tracker.start_rebuild();
@@ -1850,11 +1824,7 @@ mod tests {
         indexer_pool.insert(ready_indexer.node_id.clone(), ready_indexer);
         indexer_pool.insert(retiring_indexer.node_id.clone(), retiring_indexer);
 
-        let mut scheduler = IndexingScheduler::new(
-            "test-cluster".to_string(),
-            NodeId::from_str("control-plane"),
-            indexer_pool,
-        );
+        let mut scheduler = IndexingScheduler::new(NodeId::from_str("control-plane"), indexer_pool);
 
         let index_uid = IndexUid::from_str("index-1:11111111111111111111111111").unwrap();
         let task = IndexingTask {
@@ -1954,11 +1924,7 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let indexer = hanging_indexer_node_info(status);
         indexer_pool.insert(indexer.node_id.clone(), indexer);
-        let mut scheduler = IndexingScheduler::new(
-            "test-cluster".to_string(),
-            NodeId::from_str("control-plane"),
-            indexer_pool,
-        );
+        let mut scheduler = IndexingScheduler::new(NodeId::from_str("control-plane"), indexer_pool);
         let physical_plan = PhysicalIndexingPlan::with_indexer_ids(&[]);
         let waiter = scheduler.next_rebuild_tracker.next_rebuild_waiter();
         let notify_on_drop = scheduler.next_rebuild_tracker.start_rebuild();

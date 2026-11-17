@@ -27,6 +27,7 @@ use itertools::{Itertools as _, MinMaxResult};
 use quickwit_actors::Mailbox;
 use quickwit_common::Progress;
 use quickwit_common::pretty::PrettySample;
+use quickwit_config::IngestApiConfig;
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, GetOrCreateOpenShardsFailureReason,
@@ -392,18 +393,14 @@ impl IngestController {
     pub fn new(
         metastore: MetastoreServiceClient,
         ingester_pool: IngesterPool,
-        max_shard_ingestion_throughput_mib_per_sec: f32,
-        shard_scale_up_factor: f32,
+        ingest_api_config: &IngestApiConfig,
     ) -> Self {
         IngestController {
             metastore,
             ingester_pool,
             rebalance_semaphore: Arc::new(Semaphore::new(1)),
             stats: IngestControllerStats::default(),
-            scaling_arbiter: ScalingArbiter::with_max_shard_ingestion_throughput_mib_per_sec(
-                max_shard_ingestion_throughput_mib_per_sec,
-                shard_scale_up_factor,
-            ),
+            scaling_arbiter: ScalingArbiter::new(ingest_api_config),
         }
     }
 
@@ -1426,7 +1423,6 @@ mod tests {
     use itertools::Itertools;
     use quickwit_actors::Universe;
     use quickwit_common::setup_logging_for_tests;
-    use quickwit_common::shared_consts::DEFAULT_SHARD_THROUGHPUT_LIMIT;
     use quickwit_common::tower::DelayLayer;
     use quickwit_config::{DocMapping, INGEST_V2_SOURCE_ID, SourceConfig};
     use quickwit_ingest::{IngesterPoolEntry, RateMibPerSec, ShardInfo};
@@ -1443,9 +1439,6 @@ mod tests {
     use quickwit_proto::types::{DocMappingUid, Position, SourceId};
 
     use super::*;
-
-    const TEST_SHARD_THROUGHPUT_LIMIT_MIB: f32 =
-        DEFAULT_SHARD_THROUGHPUT_LIMIT.as_u64() as f32 / quickwit_common::shared_consts::MIB as f32;
 
     fn ingester_pool_entry(
         status: IngesterStatus,
@@ -1564,8 +1557,7 @@ mod tests {
         let mut controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
-            1.001,
+            &IngestApiConfig::default(),
         );
 
         let mut model = ControlPlaneModel::default();
@@ -1748,12 +1740,8 @@ mod tests {
             IngesterPoolEntry::ready_with_client(client.clone()),
         );
 
-        let mut controller = IngestController::new(
-            metastore,
-            ingester_pool,
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
-            1.001,
-        );
+        let mut controller =
+            IngestController::new(metastore, ingester_pool, &IngestApiConfig::default());
 
         let mut model = ControlPlaneModel::default();
         model.add_index(index_metadata_0.clone());
@@ -1789,12 +1777,8 @@ mod tests {
         let metastore = MetastoreServiceClient::mocked();
         let ingester_pool = IngesterPool::default();
 
-        let mut controller = IngestController::new(
-            metastore,
-            ingester_pool,
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
-            1.001,
-        );
+        let mut controller =
+            IngestController::new(metastore, ingester_pool, &IngestApiConfig::default());
         let mut model = ControlPlaneModel::default();
 
         let index_uid = IndexUid::for_test("test-index-0", 0);
@@ -2102,8 +2086,7 @@ mod tests {
         let controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
-            1.001,
+            &IngestApiConfig::default(),
         );
 
         let ingester_id_0 = NodeId::from_str("test-ingester-0");
@@ -2331,8 +2314,7 @@ mod tests {
         let mut controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
-            1.001,
+            &IngestApiConfig::default(),
         );
 
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -2490,8 +2472,7 @@ mod tests {
         let mut controller = IngestController::new(
             MetastoreServiceClient::from_mock(mock_metastore),
             ingester_pool,
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
-            1.001,
+            &IngestApiConfig::default(),
         );
 
         let opened_by_zone = controller
@@ -2575,8 +2556,7 @@ mod tests {
         let mut controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
-            1.001,
+            &IngestApiConfig::default(),
         );
 
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -2743,12 +2723,8 @@ mod tests {
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
         let ingester_pool = IngesterPool::default();
 
-        let mut controller = IngestController::new(
-            metastore,
-            ingester_pool,
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
-            1.001,
-        );
+        let mut controller =
+            IngestController::new(metastore, ingester_pool, &IngestApiConfig::default());
 
         let mut model = ControlPlaneModel::default();
         let local_shards_update = LocalShardsUpdate {
@@ -2798,8 +2774,7 @@ mod tests {
         let mut controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
-            1.001,
+            &IngestApiConfig::default(),
         );
 
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -2922,8 +2897,7 @@ mod tests {
         let mut controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
-            1.001,
+            &IngestApiConfig::default(),
         );
 
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -3033,8 +3007,7 @@ mod tests {
         let controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
-            1.001,
+            &IngestApiConfig::default(),
         );
 
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -3290,8 +3263,7 @@ mod tests {
         let controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
-            1.001,
+            &IngestApiConfig::default(),
         );
 
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -3366,12 +3338,8 @@ mod tests {
         let metastore = MetastoreServiceClient::mocked();
         let ingester_pool = IngesterPool::default();
 
-        let controller = IngestController::new(
-            metastore,
-            ingester_pool,
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
-            1.001,
-        );
+        let controller =
+            IngestController::new(metastore, ingester_pool, &IngestApiConfig::default());
 
         let mut model = ControlPlaneModel::default();
 
@@ -3444,8 +3412,7 @@ mod tests {
         let controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
-            1.001,
+            &IngestApiConfig::default(),
         );
 
         let closed_shards = controller.close_shards(Vec::new()).await;
@@ -3602,8 +3569,7 @@ mod tests {
         let mut controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
-            1.001,
+            &IngestApiConfig::default(),
         );
 
         let mut model = ControlPlaneModel::default();
@@ -4080,8 +4046,7 @@ mod tests {
         let controller = IngestController::new(
             MetastoreServiceClient::mocked(),
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
-            1.001,
+            &IngestApiConfig::default(),
         );
         let shards_to_rebalance = controller.compute_shards_to_rebalance(&model);
 

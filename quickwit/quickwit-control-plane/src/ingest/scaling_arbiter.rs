@@ -14,6 +14,9 @@
 
 use std::num::NonZeroUsize;
 
+use quickwit_common::shared_consts;
+use quickwit_config::IngestApiConfig;
+
 use crate::model::{ScalingMode, ShardStats};
 
 pub(crate) struct ScalingArbiter {
@@ -37,17 +40,17 @@ pub(crate) struct ScalingArbiter {
 }
 
 impl ScalingArbiter {
-    pub fn with_max_shard_ingestion_throughput_mib_per_sec(
-        max_shard_throughput_mib_per_sec: f32,
-        shard_scale_up_factor: f32,
-    ) -> ScalingArbiter {
+    pub fn new(ingest_api_config: &IngestApiConfig) -> ScalingArbiter {
+        let max_shard_throughput_mib_per_sec: f32 =
+            ingest_api_config.shard_throughput_limit.as_u64() as f32 / shared_consts::MIB as f32;
         ScalingArbiter {
             scale_up_shards_short_term_threshold_mib_per_sec: max_shard_throughput_mib_per_sec
-                * 0.8f32,
+                * ingest_api_config.shard_scale_up_short_term_ratio,
             scale_up_shards_long_term_threshold_mib_per_sec: max_shard_throughput_mib_per_sec
-                * 0.3f32,
-            scale_down_shards_threshold_mib_per_sec: max_shard_throughput_mib_per_sec * 0.2f32,
-            shard_scale_up_factor,
+                * ingest_api_config.shard_scale_up_long_term_ratio,
+            scale_down_shards_threshold_mib_per_sec: max_shard_throughput_mib_per_sec
+                * ingest_api_config.shard_scale_down_ratio,
+            shard_scale_up_factor: ingest_api_config.shard_scale_up_factor,
         }
     }
 
@@ -116,15 +119,24 @@ impl ScalingArbiter {
 mod tests {
     use std::num::NonZeroUsize;
 
+    use bytesize::ByteSize;
+    use quickwit_config::IngestApiConfig;
+
     use super::ScalingArbiter;
     use crate::model::{ScalingMode, ShardStats};
+
+    fn scaling_arbiter_for_test(shard_scale_up_factor: f32) -> ScalingArbiter {
+        let mut ingest_api_config = IngestApiConfig::default();
+        ingest_api_config.shard_throughput_limit = ByteSize::mib(10);
+        ingest_api_config.shard_scale_up_factor = shard_scale_up_factor;
+        ScalingArbiter::new(&ingest_api_config)
+    }
 
     #[test]
     fn test_scaling_arbiter_one_by_one() {
         // use shard throughput 10MiB to simplify calculations
         // with a factor close to 1 shards are effectively added 1 by 1
-        let scaling_arbiter =
-            ScalingArbiter::with_max_shard_ingestion_throughput_mib_per_sec(10.0, 1.01);
+        let scaling_arbiter = scaling_arbiter_for_test(1.01);
         assert_eq!(
             scaling_arbiter.should_scale(
                 ShardStats {
@@ -214,8 +226,7 @@ mod tests {
     #[test]
     fn test_scaling_arbiter_2x() {
         // use shard throughput 10MiB to simplify calculations
-        let scaling_arbiter =
-            ScalingArbiter::with_max_shard_ingestion_throughput_mib_per_sec(10.0, 2.);
+        let scaling_arbiter = scaling_arbiter_for_test(2.);
         assert_eq!(
             scaling_arbiter.should_scale(
                 ShardStats {
@@ -318,8 +329,7 @@ mod tests {
     #[test]
     fn test_scale_up_computations() {
         // use shard throughput 10MiB to simplify calculations
-        let scaling_arbiter =
-            ScalingArbiter::with_max_shard_ingestion_throughput_mib_per_sec(10.0, 1.5);
+        let scaling_arbiter = scaling_arbiter_for_test(1.5);
 
         let shard_stats = ShardStats {
             num_open_shards: 0,
@@ -399,8 +409,7 @@ mod tests {
 
     #[test]
     fn test_scaling_arbiter_idle() {
-        let scaling_arbiter =
-            ScalingArbiter::with_max_shard_ingestion_throughput_mib_per_sec(10.0, 1.5);
+        let scaling_arbiter = scaling_arbiter_for_test(1.5);
 
         let shard_stats = ShardStats {
             num_open_shards: 0,
@@ -425,8 +434,7 @@ mod tests {
 
     #[test]
     fn test_scaling_arbiter_min_shards() {
-        let scaling_arbiter =
-            ScalingArbiter::with_max_shard_ingestion_throughput_mib_per_sec(10.0, 1.5);
+        let scaling_arbiter = scaling_arbiter_for_test(1.5);
 
         let shard_stats = ShardStats {
             num_open_shards: 1,

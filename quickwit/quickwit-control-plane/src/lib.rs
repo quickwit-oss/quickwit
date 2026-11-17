@@ -42,3 +42,6 @@ mod cooldown_map;
 mod debouncer;
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+pub(crate) const TEST_DEFAULT_INDEX_ROOT_URI: &str = "ram:///indexes";

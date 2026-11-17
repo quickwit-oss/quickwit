@@ -28,11 +28,11 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, DeferableReplyHandler, Handler, Mailbox,
     Supervisor, Universe, WeakMailbox,
 };
+use quickwit_common::Progress;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::uri::Uri;
-use quickwit_common::{Progress, shared_consts};
-use quickwit_config::{ClusterConfig, IndexConfig, IndexTemplate, SourceConfig};
+use quickwit_config::{IndexConfig, IndexTemplate, IngestApiConfig, SourceConfig};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadataResponseExt};
 use quickwit_proto::control_plane::{
@@ -87,7 +87,7 @@ struct ControlPlaneLoop;
 struct RebuildPlan;
 
 pub struct ControlPlane {
-    cluster_config: ClusterConfig,
+    default_index_root_uri: Uri,
     // The control plane state is split into to independent functions, that we naturally isolated
     // code wise and state wise.
     //
@@ -113,7 +113,8 @@ impl fmt::Debug for ControlPlane {
 impl ControlPlane {
     pub fn spawn(
         universe: &Universe,
-        cluster_config: ClusterConfig,
+        default_index_root_uri: Uri,
+        ingest_api_config: &IngestApiConfig,
         self_node_id: NodeId,
         indexer_pool: IndexerPool,
         ingester_pool: IngesterPool,
@@ -125,26 +126,22 @@ impl ControlPlane {
     ) {
         info!("starting control plane");
         let (readiness_tx, readiness_rx) = watch::channel(false);
+        let ingest_api_config = ingest_api_config.clone();
         let (control_plane_mailbox, control_plane_handle) =
             universe.spawn_builder().supervise_fn(move || {
-                let cluster_id = cluster_config.cluster_id.clone();
-                let shard_throughput_limit_mib: f32 = cluster_config.shard_throughput_limit.as_u64()
-                    as f32
-                    / shared_consts::MIB as f32;
                 let indexing_scheduler =
-                    IndexingScheduler::new(cluster_id, self_node_id.clone(), indexer_pool.clone());
+                    IndexingScheduler::new(self_node_id.clone(), indexer_pool.clone());
                 let ingest_controller = IngestController::new(
                     metastore.clone(),
                     ingester_pool.clone(),
-                    shard_throughput_limit_mib,
-                    cluster_config.shard_scale_up_factor,
+                    &ingest_api_config,
                 );
 
                 let readiness_tx = readiness_tx.clone();
                 let _ = readiness_tx.send(false);
 
                 ControlPlane {
-                    cluster_config: cluster_config.clone(),
+                    default_index_root_uri: default_index_root_uri.clone(),
                     indexing_scheduler,
                     ingest_controller,
                     metastore: metastore.clone(),
@@ -210,9 +207,6 @@ impl ControlPlane {
         subrequests: &[GetOrCreateOpenShardsSubrequest],
         progress: &Progress,
     ) -> MetastoreResult<()> {
-        if !self.cluster_config.auto_create_indexes {
-            return Ok(());
-        }
         let mut index_ids = Vec::new();
 
         for subrequest in subrequests {
@@ -238,10 +232,8 @@ impl ControlPlane {
             // template fails. We should return a partial failure instead for the subrequest. I
             // want to do so in an upcoming refactor where the `GetOrCreateOpenShardsRequest` will
             // be processed in multiple steps in a dedicated workbench.
-            let index_config = apply_index_template_match(
-                index_template_match,
-                &self.cluster_config.default_index_root_uri,
-            )?;
+            let index_config =
+                apply_index_template_match(index_template_match, &self.default_index_root_uri)?;
             // We disable ingest V1 for index templates.
             let source_configs = [SourceConfig::ingest_v2(), SourceConfig::cli()];
 
@@ -1089,7 +1081,7 @@ mod tests {
     use tokio::sync::Semaphore;
 
     use super::*;
-    use crate::IndexerPoolEntry;
+    use crate::{IndexerPoolEntry, TEST_DEFAULT_INDEX_ROOT_URI};
 
     #[tokio::test]
     async fn test_control_plane_create_index() {
@@ -1122,10 +1114,10 @@ mod tests {
         mock_metastore
             .expect_list_indexes_metadata()
             .returning(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
-        let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
-            cluster_config,
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             self_node_id,
             indexer_pool,
             ingester_pool,
@@ -1163,10 +1155,10 @@ mod tests {
             .expect_list_indexes_metadata()
             .returning(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
 
-        let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
-            cluster_config,
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             self_node_id,
             indexer_pool,
             ingester_pool,
@@ -1220,10 +1212,10 @@ mod tests {
             .expect_list_shards()
             .return_once(move |_| Ok(ListShardsResponse::default()));
 
-        let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
-            cluster_config,
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             self_node_id,
             indexer_pool,
             ingester_pool,
@@ -1321,10 +1313,10 @@ mod tests {
             .expect_list_shards()
             .return_once(move |_| Ok(ListShardsResponse::default()));
 
-        let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
-            cluster_config,
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             self_node_id,
             indexer_pool,
             ingester_pool,
@@ -1388,10 +1380,10 @@ mod tests {
                 Ok(EmptyResponse {})
             });
 
-        let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
-            cluster_config,
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             self_node_id,
             indexer_pool,
             ingester_pool,
@@ -1442,10 +1434,10 @@ mod tests {
             .expect_list_indexes_metadata()
             .returning(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
 
-        let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
-            cluster_config,
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             self_node_id,
             indexer_pool,
             ingester_pool,
@@ -1514,10 +1506,10 @@ mod tests {
                 Ok(response)
             });
 
-        let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
-            cluster_config,
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             self_node_id,
             indexer_pool,
             ingester_pool,
@@ -1604,10 +1596,10 @@ mod tests {
             },
         );
 
-        let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, control_plane_handle, mut readiness_rx) = ControlPlane::spawn(
             &universe,
-            cluster_config,
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             node_id,
             indexer_pool,
             ingester_pool,
@@ -1795,7 +1787,8 @@ mod tests {
 
         let (control_plane_mailbox, control_plane_handle, mut readiness_rx) = ControlPlane::spawn(
             &universe,
-            ClusterConfig::for_test(),
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             NodeId::from_str("test-control-plane"),
             IndexerPool::default(),
             ingester_pool,
@@ -1909,10 +1902,10 @@ mod tests {
             },
         );
 
-        let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
-            cluster_config,
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             node_id,
             indexer_pool,
             ingester_pool,
@@ -2041,10 +2034,10 @@ mod tests {
             },
         );
 
-        let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
-            cluster_config,
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             node_id,
             indexer_pool,
             ingester_pool,
@@ -2126,10 +2119,10 @@ mod tests {
             },
         );
 
-        let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
-            cluster_config,
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             node_id,
             indexer_pool,
             ingester_pool,
@@ -2243,10 +2236,10 @@ mod tests {
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
         ingester_pool.insert(NodeId::from_str("node1"), ingester);
 
-        let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
-            cluster_config,
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             node_id,
             indexer_pool,
             ingester_pool,
@@ -2302,10 +2295,10 @@ mod tests {
             },
         );
 
-        let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
-            cluster_config,
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             node_id,
             indexer_pool,
             ingester_pool,
@@ -2409,10 +2402,10 @@ mod tests {
                 Ok(list_shards_resp)
             },
         );
-        let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
-            cluster_config,
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             node_id,
             indexer_pool,
             ingester_pool,
@@ -2434,9 +2427,6 @@ mod tests {
     #[tokio::test]
     async fn test_auto_create_indexes_on_get_or_create_open_shards_request() {
         let universe = Universe::default();
-
-        let mut cluster_config = ClusterConfig::for_test();
-        cluster_config.auto_create_indexes = true;
 
         let node_id = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
@@ -2469,7 +2459,10 @@ mod tests {
         mock_metastore.expect_create_index().return_once(|request| {
             let index_config = request.deserialize_index_config().unwrap();
             assert_eq!(index_config.index_id, "test-index-foo");
-            assert_eq!(index_config.index_uri, "ram:///indexes/test-index-foo");
+            assert_eq!(
+                index_config.index_uri,
+                format!("{TEST_DEFAULT_INDEX_ROOT_URI}/test-index-foo")
+            );
 
             let source_configs = request.deserialize_source_configs().unwrap();
             assert_eq!(source_configs.len(), 2);
@@ -2493,7 +2486,8 @@ mod tests {
 
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
-            cluster_config,
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             node_id,
             indexer_pool,
             ingester_pool,
@@ -2531,7 +2525,6 @@ mod tests {
     async fn test_control_plane_rebuilds_plan_on_indexer_joins_or_leaves_the_cluster() {
         let universe = Universe::with_accelerated_time();
 
-        let cluster_config = ClusterConfig::for_test();
         let node_id = NodeId::from_str("test-control-plane");
 
         let indexer_pool = IndexerPool::default();
@@ -2546,7 +2539,8 @@ mod tests {
         let metastore = MetastoreServiceClient::from_mock(mock_metastore);
         let (_control_plane_mailbox, control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
-            cluster_config,
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             node_id,
             indexer_pool.clone(),
             ingester_pool.clone(),
@@ -2614,7 +2608,6 @@ mod tests {
     async fn test_control_plane_handles_rebalance_shards_callback() {
         let universe = Universe::with_accelerated_time();
 
-        let cluster_config = ClusterConfig::for_test();
         let node_id = NodeId::from_str("test-control-plane");
 
         let indexer_pool = IndexerPool::default();
@@ -2683,7 +2676,8 @@ mod tests {
         let metastore = MetastoreServiceClient::from_mock(mock_metastore);
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
-            cluster_config,
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             node_id,
             indexer_pool.clone(),
             ingester_pool,
@@ -2750,7 +2744,6 @@ mod tests {
     async fn test_control_plane_get_debug_info() {
         let universe = Universe::with_accelerated_time();
 
-        let cluster_config = ClusterConfig::for_test();
         let node_id = NodeId::from_str("test-control-plane");
 
         let indexer_pool = IndexerPool::default();
@@ -2837,7 +2830,8 @@ mod tests {
         let metastore = MetastoreServiceClient::from_mock(mock_metastore);
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
-            cluster_config,
+            Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+            &IngestApiConfig::default(),
             node_id,
             indexer_pool.clone(),
             ingester_pool,
