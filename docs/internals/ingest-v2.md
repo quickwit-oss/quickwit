@@ -35,3 +35,17 @@ See [full configuration example](https://github.com/quickwit-oss/quickwit/blob/m
   - `ingest_api.replication_factor`, not working yet
 - ingest V1 always writes to the WAL of the node receiving the request, V2 potentially forwards it to another node, dynamically assigned by the control plane to distribute the indexing work more evenly.
 - ingest V2 parses and validates input documents synchronously. Schema and JSON formatting errors are returned in the ingest response (for ingest V1 those errors were available in the server logs only).
+
+## Capping shard scale-up by indexing capacity
+
+When ingestion throughput per shard is high, the control plane opens more shards. Under sudden load, it can open more shards than the indexers can process. Extra shards create extra indexing pipelines without increasing indexing throughput.
+
+Setting `QW_ENABLE_INDEXING_CAPACITY_SHARD_CAP=true` on the control plane caps throughput-driven shard scale-up:
+
+- The pipeline budget is the total CPU capacity advertised by indexers divided by `QW_CPU_MILLIS_PER_PIPELINE` (default `1000`, i.e. one pipeline per core).
+- Each source with shards uses `ceil(num_shards / max_shards_per_pipeline)` pipelines. Open and closed shards are counted. `max_shards_per_pipeline` is computed with the same load model as the indexing scheduler.
+- A scale-up for a source is clamped to the free slots in its last pipeline, plus `max_shards_per_pipeline` slots per pipeline left in the budget.
+
+Scale-ups needed to reach `min_shards`, and opening the first shards of a source, are never clamped. Non-sharded sources (Kafka, etc.) are not counted in the budget.
+
+The gauge `quickwit_control_plane_shard_scale_up_at_max_capacity` is `1` when the last scale-up was clamped, `0` otherwise.

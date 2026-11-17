@@ -25,8 +25,8 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use itertools::{Itertools as _, MinMaxResult};
 use quickwit_actors::Mailbox;
-use quickwit_common::Progress;
 use quickwit_common::pretty::PrettySample;
+use quickwit_common::{Progress, rate_limited_info};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, GetOrCreateOpenShardsFailureReason,
@@ -55,10 +55,12 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{Level, debug, enabled, error, info, instrument, warn};
 use ulid::Ulid;
 
+use super::indexing_capacity_cap::clamp_num_shards_to_open;
 use super::scaling_arbiter::ScalingArbiter;
+use crate::IndexerPool;
 use crate::control_plane::ControlPlane;
 use crate::ingest::wait_handle::WaitHandle;
-use crate::metrics::REBALANCE_SHARDS;
+use crate::metrics::{REBALANCE_SHARDS, SHARD_SCALE_UP_AT_MAX_CAPACITY};
 use crate::model::{ControlPlaneModel, ScalingMode, ShardEntry, ShardStats};
 
 const CLOSE_SHARDS_REQUEST_TIMEOUT: Duration = if cfg!(test) {
@@ -303,6 +305,9 @@ pub struct IngestController {
     // This semaphore ensures that only one rebalance operation is performed at a time.
     rebalance_semaphore: Arc<Semaphore>,
     scaling_arbiter: ScalingArbiter,
+    // When set, throughput-driven shard scale-up is capped by the indexing capacity advertised by
+    // the indexers of this pool. See `indexing_capacity_cap`.
+    indexer_pool_for_shard_cap: Option<IndexerPool>,
 }
 
 impl fmt::Debug for IngestController {
@@ -404,7 +409,48 @@ impl IngestController {
                 max_shard_ingestion_throughput_mib_per_sec,
                 shard_scale_up_factor,
             ),
+            indexer_pool_for_shard_cap: None,
         }
+    }
+
+    /// Caps throughput-driven shard scale-up so that the pipelines needed to index all the shards
+    /// do not exceed the indexing capacity advertised by the indexers of `indexer_pool`.
+    pub fn with_indexing_capacity_shard_cap(mut self, indexer_pool: IndexerPool) -> Self {
+        self.indexer_pool_for_shard_cap = Some(indexer_pool);
+        self
+    }
+
+    /// Clamps the number of shards to open on a scale-up, if the indexing capacity cap is
+    /// enabled. Scale-ups needed to reach `min_shards` are never clamped.
+    fn clamp_scale_up(
+        &self,
+        source_uid: &SourceUid,
+        shard_stats: ShardStats,
+        min_shards: NonZeroUsize,
+        model: &ControlPlaneModel,
+        num_shards_to_open: usize,
+    ) -> usize {
+        let Some(indexer_pool) = &self.indexer_pool_for_shard_cap else {
+            return num_shards_to_open;
+        };
+        if shard_stats.num_open_shards < min_shards.get() {
+            return num_shards_to_open;
+        }
+        let clamped_num_shards_to_open =
+            clamp_num_shards_to_open(model, indexer_pool, source_uid, num_shards_to_open);
+        if clamped_num_shards_to_open < num_shards_to_open {
+            SHARD_SCALE_UP_AT_MAX_CAPACITY.set(1.0);
+            rate_limited_info!(
+                limit_per_min=6,
+                index_id=%source_uid.index_uid.index_id,
+                source_id=%source_uid.source_id,
+                "clamping shard scale-up from {num_shards_to_open} to \
+                 {clamped_num_shards_to_open} shards: indexing capacity reached"
+            );
+        } else {
+            SHARD_SCALE_UP_AT_MAX_CAPACITY.set(0.0);
+        }
+        clamped_num_shards_to_open
     }
 
     /// Sends a retain shard request to the given list of ingesters.
@@ -517,6 +563,16 @@ impl IngestController {
         };
         match scaling_mode {
             ScalingMode::Up(num_shards) => {
+                let num_shards = self.clamp_scale_up(
+                    &local_shards_update.source_uid,
+                    shard_stats,
+                    min_shards,
+                    model,
+                    num_shards,
+                );
+                if num_shards == 0 {
+                    return Ok(());
+                }
                 self.try_scale_up_shards(
                     local_shards_update.source_uid,
                     shard_stats,
@@ -4197,5 +4253,146 @@ mod tests {
         test_compute_shards_to_rebalance_aux(&[1, 1], &[], &[3]);
         test_compute_shards_to_rebalance_aux(&[0, 0, 0], &[], &[5]);
         test_compute_shards_to_rebalance_aux(&[2], &[], &[1, 2]);
+    }
+
+    fn indexer_pool_with_capacity(cpu_millis: u32) -> IndexerPool {
+        let indexer_pool = IndexerPool::default();
+        let node_id = NodeId::from_str("test-indexer");
+        let indexer = crate::IndexerPoolEntry {
+            node_id: node_id.clone(),
+            generation_id: 0,
+            client: quickwit_proto::indexing::IndexingServiceClient::mocked(),
+            indexing_tasks: Vec::new(),
+            indexing_capacity: quickwit_proto::indexing::CpuCapacity::from_cpu_millis(cpu_millis),
+            ingester_status: IngesterStatus::Ready,
+            availability_zone: None,
+        };
+        indexer_pool.insert(node_id, indexer);
+        indexer_pool
+    }
+
+    #[tokio::test]
+    async fn test_handle_local_shards_update_scale_up_clamped_by_indexing_capacity() {
+        // The mock metastore has no expectation: opening a shard would panic.
+        let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
+        let ingester_pool = IngesterPool::default();
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester"),
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::mocked()),
+        );
+        // 1 core -> a budget of 1 pipeline, i.e. 3 shards with the default load model.
+        let mut controller = IngestController::new(
+            metastore,
+            ingester_pool,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            2.0,
+        )
+        .with_indexing_capacity_shard_cap(indexer_pool_with_capacity(1_000));
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let mut index_metadata = IndexMetadata::for_test("test-index", "ram://indexes/test-index");
+        let source_id: SourceId = INGEST_V2_SOURCE_ID.to_string();
+        index_metadata
+            .sources
+            .insert(source_id.clone(), SourceConfig::ingest_v2());
+        let mut model = ControlPlaneModel::default();
+        model.add_index(index_metadata);
+
+        let num_shards = 3;
+        let mut shards = Vec::with_capacity(num_shards);
+        let mut shard_infos = BTreeSet::new();
+        for shard_ord in 0..num_shards {
+            shards.push(Shard {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(shard_ord as u64)),
+                ingester_id: "test-ingester".to_string(),
+                shard_state: ShardState::Open as i32,
+                ..Default::default()
+            });
+            // High enough to trigger a scale-up.
+            shard_infos.insert(ShardInfo {
+                shard_id: ShardId::from(shard_ord as u64),
+                shard_state: ShardState::Open,
+                short_term_ingestion_rate: RateMibPerSec(4),
+                long_term_ingestion_rate: RateMibPerSec(4),
+            });
+        }
+        model.insert_shards(&index_uid, &source_id, shards);
+
+        let local_shards_update = LocalShardsUpdate {
+            ingester_id: NodeId::from_str("test-ingester"),
+            source_uid: SourceUid {
+                index_uid: index_uid.clone(),
+                source_id: source_id.clone(),
+            },
+            shard_infos,
+        };
+        let progress = Progress::default();
+        controller
+            .handle_local_shards_update(local_shards_update, &mut model, &progress)
+            .await
+            .unwrap();
+        assert_eq!(model.all_shards().count(), num_shards);
+    }
+
+    #[test]
+    fn test_clamp_scale_up_does_not_clamp_below_min_shards() {
+        let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
+        // Empty indexer pool -> a budget of 0 pipelines.
+        let controller = IngestController::new(
+            metastore,
+            IngesterPool::default(),
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            2.0,
+        )
+        .with_indexing_capacity_shard_cap(IndexerPool::default());
+        let model = ControlPlaneModel::default();
+        let source_uid = SourceUid {
+            index_uid: IndexUid::for_test("test-index", 0),
+            source_id: INGEST_V2_SOURCE_ID.to_string(),
+        };
+        let min_shards = NonZeroUsize::new(2).unwrap();
+
+        let below_min_shards = ShardStats {
+            num_open_shards: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            controller.clamp_scale_up(&source_uid, below_min_shards, min_shards, &model, 1),
+            1
+        );
+        let at_min_shards = ShardStats {
+            num_open_shards: 2,
+            ..Default::default()
+        };
+        assert_eq!(
+            controller.clamp_scale_up(&source_uid, at_min_shards, min_shards, &model, 1),
+            0
+        );
+    }
+
+    #[test]
+    fn test_clamp_scale_up_without_cap() {
+        let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
+        let controller = IngestController::new(
+            metastore,
+            IngesterPool::default(),
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            2.0,
+        );
+        let model = ControlPlaneModel::default();
+        let source_uid = SourceUid {
+            index_uid: IndexUid::for_test("test-index", 0),
+            source_id: INGEST_V2_SOURCE_ID.to_string(),
+        };
+        let shard_stats = ShardStats {
+            num_open_shards: 2,
+            ..Default::default()
+        };
+        assert_eq!(
+            controller.clamp_scale_up(&source_uid, shard_stats, NonZeroUsize::MIN, &model, 5),
+            5
+        );
     }
 }

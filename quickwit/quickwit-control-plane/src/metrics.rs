@@ -123,3 +123,9 @@ pub(crate) static METASTORE_ERROR_MAYBE_EXECUTED: LazyCounter = lazy_counter!(
         description: "Number of metastore transaction with an uncertain outcome (= do trigger a control plane restart)",
         subsystem: "control_plane",
 );
+
+pub(crate) static SHARD_SCALE_UP_AT_MAX_CAPACITY: LazyGauge = lazy_gauge!(
+        name: "shard_scale_up_at_max_capacity",
+        description: "1 if the last shard scale-up was clamped by the indexing capacity of the cluster, 0 otherwise. Only updated when `QW_ENABLE_INDEXING_CAPACITY_SHARD_CAP` is set.",
+        subsystem: "control_plane",
+);
