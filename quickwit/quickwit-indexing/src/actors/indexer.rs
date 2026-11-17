@@ -65,47 +65,64 @@ use crate::models::{
 // Random partition ID used to gather partitions exceeding the maximum number of partitions.
 pub(crate) const OTHER_PARTITION_ID: u64 = 3264326757911759461u64;
 
-const ENABLE_SPREAD_INDEXING_PIPELINES_ENV_KEY: &str = "QW_ENABLE_SPREAD_INDEXING_PIPELINES";
-
 #[derive(Debug)]
 struct CommitTimeout {
     workbench_id: Ulid,
 }
 
 enum IndexingMode {
-    Normal(Duration),
-    Cooperative(CooperativeIndexingCycle),
     Spread(PipelineSchedule),
+    Cooperative(CooperativeIndexingCycle),
 }
 
 impl IndexingMode {
-    fn new(
+    fn from_settings(
         pipeline_id: &IndexingPipelineId,
         commit_timeout: Duration,
         cooperative_indexing_permits_opt: Option<Arc<Semaphore>>,
-        enable_spread_indexing_pipelines: bool,
     ) -> Self {
-        if let Some(permits) = cooperative_indexing_permits_opt {
-            return Self::Cooperative(CooperativeIndexingCycle::new(
+        match cooperative_indexing_permits_opt {
+            Some(permits) => Self::Cooperative(CooperativeIndexingCycle::new(
                 pipeline_id,
                 commit_timeout,
                 permits,
-            ));
+            )),
+            None => Self::Spread(PipelineSchedule::new(pipeline_id, commit_timeout)),
         }
+    }
 
-        if enable_spread_indexing_pipelines {
-            return Self::Spread(PipelineSchedule::new(pipeline_id, commit_timeout));
+    fn initial_sleep_duration(&self) -> Option<Duration> {
+        match self {
+            // when spreading indexing pipelines is enabled, start indexing immediately and nudge
+            // pipelines on further commit timeout. This way, we are using all available CPU
+            // right away instead of idling on the first indexing cycle
+            Self::Spread(_) => None,
+            Self::Cooperative(cycle) => Some(cycle.initial_sleep_duration()),
         }
-
-        Self::Normal(commit_timeout)
     }
 
     fn commit_timeout(&self, now: Instant) -> Duration {
         match self {
-            Self::Normal(commit_timeout) => *commit_timeout,
-            Self::Cooperative(cycle) => cycle.commit_timeout(),
             Self::Spread(schedule) => schedule.nudged_commit_timeout(now),
+            Self::Cooperative(cycle) => cycle.commit_timeout(),
         }
+    }
+
+    async fn acquire_indexing_permit(&self) -> Option<IndexingPermit> {
+        match self {
+            Self::Spread(_) => None,
+            Self::Cooperative(cycle) => {
+                Some(IndexingPermit(cycle.cooperative_indexing_period().await))
+            }
+        }
+    }
+}
+
+struct IndexingPermit(CooperativeIndexingPeriod);
+
+impl IndexingPermit {
+    fn release(self, uncompressed_num_bytes: u64) -> (Duration, PipelineMetrics) {
+        self.0.end_of_work(uncompressed_num_bytes)
     }
 }
 
@@ -243,15 +260,9 @@ impl IndexerState {
             workbench_id=%workbench_id,
         );
         let indexing_span = info_span!(parent: batch_parent_span.id(), "indexer");
-        let cooperative_indexing_period =
-            if let IndexingMode::Cooperative(cooperative_indexing) = &self.indexing_mode {
-                Some(
-                    ctx.protect_future(cooperative_indexing.cooperative_indexing_period())
-                        .await,
-                )
-            } else {
-                None
-            };
+        let indexing_permit_opt = ctx
+            .protect_future(self.indexing_mode.acquire_indexing_permit())
+            .await;
 
         let last_delete_opstamp_request = LastDeleteOpstampRequest {
             index_uid: Some(self.pipeline_id.index_uid.clone()),
@@ -283,7 +294,7 @@ impl IndexerState {
             publish_lock,
             last_delete_opstamp,
             memory_usage: GaugeGuard::new(&IN_FLIGHT_INDEX_WRITER, 0.0),
-            cooperative_indexing_period,
+            indexing_permit_opt,
             split_builders_guard,
         };
         Ok(workbench)
@@ -408,7 +419,7 @@ struct IndexingWorkbench {
     // Number of bytes declared as used by tantivy.
     memory_usage: GaugeGuard,
     split_builders_guard: GaugeGuard,
-    cooperative_indexing_period: Option<CooperativeIndexingPeriod>,
+    indexing_permit_opt: Option<IndexingPermit>,
 }
 
 pub struct Indexer {
@@ -444,12 +455,10 @@ impl Actor for Indexer {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        let initial_sleep_duration = match &self.indexer_state.indexing_mode {
-            // when spreading indexing pipelines is enabled, start indexing immediately and nudge
-            // pipelines on further commit timeout. This way, we are using all available CPU
-            // right away instead of idling on the first indexing cycle
-            IndexingMode::Normal(_) | IndexingMode::Spread(_) => return Ok(()),
-            IndexingMode::Cooperative(cycle) => cycle.initial_sleep_duration(),
+        let Some(initial_sleep_duration) =
+            self.indexer_state.indexing_mode.initial_sleep_duration()
+        else {
+            return Ok(());
         };
         ctx.pause();
         ctx.schedule_self_msg(initial_sleep_duration, Command::Resume);
@@ -464,9 +473,7 @@ impl Actor for Indexer {
             return Ok(());
         };
 
-        let Some(cooperative_indexing_period) =
-            indexing_workbench.cooperative_indexing_period.take()
-        else {
+        let Some(indexing_permit) = indexing_workbench.indexing_permit_opt.take() else {
             return Ok(());
         };
 
@@ -477,8 +484,7 @@ impl Actor for Indexer {
             .sum::<u64>();
 
         // This also drops the indexing permit.
-        let (sleep_duration, pipeline_metrics) =
-            cooperative_indexing_period.end_of_work(uncompressed_num_bytes);
+        let (sleep_duration, pipeline_metrics) = indexing_permit.release(uncompressed_num_bytes);
 
         self.counters.pipeline_metrics_opt = Some(pipeline_metrics);
 
@@ -595,14 +601,10 @@ impl Indexer {
             // A configured fingerprinter supplies the mapping when the split is finalized.
             manual_doc_id_mapping: fingerprinter_opt.is_some(),
         };
-        let indexing_mode = IndexingMode::new(
+        let indexing_mode = IndexingMode::from_settings(
             &pipeline_id,
             indexing_settings.commit_timeout(),
             cooperative_indexing_permits_opt,
-            quickwit_common::get_bool_from_env_cached!(
-                ENABLE_SPREAD_INDEXING_PIPELINES_ENV_KEY,
-                false,
-            ),
         );
         Self {
             indexer_state: IndexerState {
@@ -1899,7 +1901,6 @@ mod tests {
         mock_metastore
             .expect_last_delete_opstamp()
             .returning(|_| Ok(LastDeleteOpstampResponse::new(10)));
-        unsafe { std::env::set_var(ENABLE_SPREAD_INDEXING_PIPELINES_ENV_KEY, "true") };
         let mut indexer = create_indexer_for_test(
             pipeline_id,
             doc_mapper,
