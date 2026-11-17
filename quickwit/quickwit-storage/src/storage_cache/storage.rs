@@ -229,15 +229,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_cache_hits_misses_and_lookup_limit() {
-        let boundary_ranges = |count: usize| {
-            (0..count - 1)
-                .map(|index| index..index + 1)
-                .chain([0..0])
-                .collect()
-        };
+        let boundary_ranges = |count: usize| (0..count).map(|index| index..index + 1).collect();
         for (ranges, fail) in [
-            (vec![4..6, 0..0, 2..4, 4..6], false),
-            (vec![4..6, 0..0, 2..4, 4..6], true),
+            (vec![4..6, 2..4, 4..6], false),
+            (vec![4..6, 2..4, 4..6], true),
             (boundary_ranges(100), false),
             (boundary_ranges(101), false),
         ] {
@@ -254,7 +249,7 @@ mod tests {
             );
             let expected_misses: Vec<_> = ranges
                 .iter()
-                .filter(|range| !range.is_empty() && (skip_cache || **range != (0..1)))
+                .filter(|range| skip_cache || **range != (0..1))
                 .cloned()
                 .collect();
             let mut backend = crate::MockStorage::default();

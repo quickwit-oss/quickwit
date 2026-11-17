@@ -552,9 +552,9 @@ mod tests {
     #[tokio::test]
     async fn test_caching_directory_batch_memory_accounting() {
         for (budget, ranges, reserved, reads) in [
-            // Overlaps and duplicates count once. Hits and empty ranges need no reservation,
+            // Overlaps and duplicates count once. Hits need no reservation,
             // even with only seven bytes left on the second read.
-            (17, vec![5..10, 0..2, 2..7, 5..10, 4..4], 10, [3, 0]),
+            (17, vec![5..10, 0..2, 2..7, 5..10], 10, [3, 0]),
             // Large batches bypass lookups, including when every range is already cached.
             (510, vec![0..5; 101], 5, [101, 101]),
         ] {

@@ -50,7 +50,7 @@ async fn test_plans_collected_ranges_and_preserves_order() {
                 largest_gap_read: gap_read_for_storage.clone(),
             }))
         });
-    let mut ranges: Vec<_> = [5 * MIB..5 * MIB + 2, 0..2, 1..3, 4..4, 5 * MIB..5 * MIB + 2]
+    let mut ranges: Vec<_> = [5 * MIB..5 * MIB + 2, 0..2, 1..3, 5 * MIB..5 * MIB + 2]
         .into_iter()
         .cycle()
         .take(10_000)
@@ -195,11 +195,21 @@ async fn test_empty_and_stream_reads_bypass_collection() {
         });
     let storage = CoalescingStorage::new(Arc::new(storage));
     let read_start = tokio::time::Instant::now();
-    for ranges in [Vec::new(), vec![2..2, usize::MAX..usize::MAX]] {
-        let expected_len = ranges.len();
-        let buffers = storage.get_slices(Path::new("file"), ranges).await.unwrap();
-        assert_eq!(buffers.len(), expected_len);
-        assert!(buffers.iter().all(|bytes| bytes.is_empty()));
+    assert!(
+        storage
+            .get_slices(Path::new("file"), Vec::new())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    for range in [2..2, usize::MAX..usize::MAX] {
+        assert!(
+            storage
+                .get_slice(Path::new("file"), range)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
     storage
         .get_slice_into(Path::new("file"), 2..2, &mut [])

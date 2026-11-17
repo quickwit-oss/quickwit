@@ -533,11 +533,12 @@ impl Storage for BundleStorage {
         path: &Path,
         mut requested_ranges: Vec<Range<usize>>,
     ) -> StorageResult<Vec<OwnedBytes>> {
-        // Validate every nonempty range before forwarding the batch. Empty ranges need no I/O.
+        debug_assert!(requested_ranges.iter().all(|range| range.start < range.end));
+        if requested_ranges.is_empty() {
+            return Ok(Vec::new());
+        }
         for requested_range in &mut requested_ranges {
-            if requested_range.start != requested_range.end {
-                *requested_range = self.bundle_range(path, requested_range.clone())?;
-            }
+            *requested_range = self.bundle_range(path, requested_range.clone())?;
         }
         self.storage
             .get_slices(&self.bundle_filepath, requested_ranges)
@@ -671,22 +672,26 @@ mod tests {
                 ]),
             },
         };
+        assert!(
+            storage
+                .get_slices(Path::new("missing"), Vec::new())
+                .await
+                .unwrap()
+                .is_empty()
+        );
         let error = storage
             .get_slices(Path::new("first"), vec![1..3, 9..11])
             .await
             .unwrap_err();
         assert_eq!(io::Error::from(error).kind(), io::ErrorKind::InvalidInput);
         let (first, second) = tokio::try_join!(
-            storage.get_slices(
-                Path::new("first"),
-                vec![8..10, 1..3, 8..10, usize::MAX..usize::MAX]
-            ),
+            storage.get_slices(Path::new("first"), vec![8..10, 1..3, 8..10]),
             storage.get_slice(Path::new("second"), 1..3),
         )
         .unwrap();
         assert_eq!(
             first.iter().map(OwnedBytes::as_slice).collect::<Vec<_>>(),
-            vec![&[108, 109][..], &[101, 102], &[108, 109], &[]]
+            vec![&[108, 109][..], &[101, 102], &[108, 109]]
         );
         assert_eq!(second.as_slice(), &[121, 122]);
     }

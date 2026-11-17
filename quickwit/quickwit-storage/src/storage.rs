@@ -131,8 +131,8 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
     ) -> StorageResult<()>;
 
     /// Reads ranges in one batch, returning one buffer per range in input order.
-    /// Overlaps and duplicates are preserved. Empty ranges return empty buffers without reads.
-    /// Callers must supply ranges with `start <= end`. An error returns no partial result.
+    /// Overlaps and duplicates are preserved. Empty batches return no buffers without reads.
+    /// Callers must supply ranges with `start < end`. An error returns no partial result.
     ///
     /// The default runs five scalar reads at a time. Wrappers above a coalescer must forward
     /// batches (after removing cache hits or translating offsets) so it can plan all misses
@@ -142,14 +142,9 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
         path: &Path,
         requested_ranges: Vec<Range<usize>>,
     ) -> StorageResult<Vec<OwnedBytes>> {
+        debug_assert!(requested_ranges.iter().all(|range| range.start < range.end));
         stream::iter(requested_ranges)
-            .map(|requested_range| async move {
-                if requested_range.is_empty() {
-                    Ok(OwnedBytes::empty())
-                } else {
-                    self.get_slice(path, requested_range).await
-                }
-            })
+            .map(|requested_range| self.get_slice(path, requested_range))
             .buffered(5)
             .try_collect()
             .await
@@ -353,7 +348,7 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
-        let ranges = vec![5..8, 0..2, 6..8, 5..8, 0..0];
+        let ranges = vec![5..8, 0..2, 6..8, 5..8];
         let buffers = storage
             .get_slices(Path::new("file"), ranges.clone())
             .await

@@ -116,8 +116,8 @@ async fn check_batch_through_directory_caches_and_bundle(large_batch: bool) {
 
     // FileSlice translates offsets before cache lookups (small batches) or bypass (large batches).
     let file = FileSlice::new(handle).slice(2..content.len());
-    let mut ranges = vec![8..10, 2..4, 0..2, 5..7, 8..10, 4..4, 798..799];
-    let mut expected: Vec<&[u8]> = vec![b"ab", b"45", b"23", b"78", b"ab", b"", &content[800..801]];
+    let mut ranges = vec![8..10, 2..4, 0..2, 5..7, 8..10, 798..799];
+    let mut expected: Vec<&[u8]> = vec![b"ab", b"45", b"23", b"78", b"ab", &content[800..801]];
     // A 10k-range batch must reach the coalescer intact, rather than five ranges at a time.
     if large_batch {
         for start in (16..content.len()).step_by(8) {
@@ -144,11 +144,11 @@ async fn check_batch_through_directory_caches_and_bundle(large_batch: bool) {
     // Hotcache-only reads and empty batches bypass storage.
     let hot_handle = hot_directory.get_file_handle(path).unwrap();
     let hot_bytes = hot_handle
-        .read_bytes_batch_async(vec![4..6, 6..6])
+        .read_bytes_batch_async(vec![4..5, 5..6])
         .await
         .unwrap();
-    assert_eq!(hot_bytes[0].as_slice(), b"45");
-    assert!(hot_bytes[1].is_empty());
+    assert_eq!(hot_bytes[0].as_slice(), b"4");
+    assert_eq!(hot_bytes[1].as_slice(), b"5");
     for handle in [
         caching_directory.get_file_handle(path).unwrap(),
         hot_handle,

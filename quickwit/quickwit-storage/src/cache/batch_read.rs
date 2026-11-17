@@ -22,11 +22,11 @@ use crate::OwnedBytes;
 pub(crate) const MAX_NUM_RANGES_FOR_CACHE_LOOKUP: usize = 100;
 
 /// Checks a synchronous cache, then reads all misses as one batch.
-/// Preserves input order and duplicates. Empty ranges bypass cache and storage.
-/// Batches with more than 100 ranges skip cache lookups and pass all nonempty ranges
+/// Preserves input order and duplicates. An empty batch returns no buffers.
+/// Batches with more than 100 ranges skip cache lookups and pass all ranges
 /// to `fetch_ranges`, which controls cache insertion.
 ///
-/// Ranges must have `start <= end`. `fetch_ranges` must return one buffer per range,
+/// Ranges must have `start < end`. `fetch_ranges` must return one buffer per range,
 /// in input order, and may populate its cache after the whole read succeeds.
 pub async fn read_batch_with_cache<FetchRangesFuture, Error>(
     requested_ranges: Vec<Range<usize>>,
@@ -36,16 +36,36 @@ pub async fn read_batch_with_cache<FetchRangesFuture, Error>(
 where
     FetchRangesFuture: Future<Output = Result<Vec<OwnedBytes>, Error>>,
 {
-    let mut batch = CachedAndFetchedBytes::new(requested_ranges.len());
-    if batch.skip_cache_lookups(&requested_ranges) {
-        return batch.fetch_ranges(requested_ranges, fetch_ranges).await;
+    debug_assert!(requested_ranges.iter().all(|range| range.start < range.end));
+    if requested_ranges.len() > MAX_NUM_RANGES_FOR_CACHE_LOOKUP {
+        return fetch_ranges(requested_ranges).await;
     }
+    let mut bytes_by_request = vec![OwnedBytes::empty(); requested_ranges.len()];
+    let mut request_indices_to_fetch = Vec::new();
     for (index, requested_range) in requested_ranges.iter().enumerate() {
-        if !requested_range.is_empty() {
-            batch.record_cache_lookup(index, get_cached(requested_range.clone()));
+        let cached_bytes = get_cached(requested_range.clone());
+        if let Some(bytes) = cached_bytes {
+            bytes_by_request[index] = bytes;
+        } else {
+            request_indices_to_fetch.push(index);
         }
     }
-    batch.fetch_ranges(requested_ranges, fetch_ranges).await
+    if request_indices_to_fetch.is_empty() {
+        return Ok(bytes_by_request);
+    }
+    // Forward the original allocation when every range misses.
+    if request_indices_to_fetch.len() == requested_ranges.len() {
+        return fetch_ranges(requested_ranges).await;
+    }
+    let ranges_to_fetch = request_indices_to_fetch
+        .iter()
+        .map(|&index| requested_ranges[index].clone())
+        .collect();
+    let downloaded = fetch_ranges(ranges_to_fetch).await?;
+    for (index, bytes) in request_indices_to_fetch.into_iter().zip(downloaded) {
+        bytes_by_request[index] = bytes;
+    }
+    Ok(bytes_by_request)
 }
 
 /// Like [`read_batch_with_cache`], with up to 32 concurrent asynchronous cache lookups.
@@ -54,103 +74,31 @@ where
 /// `fetch_ranges` returns the fetched buffers or an error.
 pub async fn read_batch_with_async_cache<CacheLookupFuture, FetchRangesFuture, Error>(
     requested_ranges: Vec<Range<usize>>,
-    mut get_cached: impl FnMut(Range<usize>) -> CacheLookupFuture,
+    get_cached: impl FnMut(Range<usize>) -> CacheLookupFuture,
     fetch_ranges: impl FnOnce(Vec<Range<usize>>) -> FetchRangesFuture,
 ) -> Result<Vec<OwnedBytes>, Error>
 where
     CacheLookupFuture: Future<Output = Option<OwnedBytes>>,
     FetchRangesFuture: Future<Output = Result<Vec<OwnedBytes>, Error>>,
 {
-    let mut batch = CachedAndFetchedBytes::new(requested_ranges.len());
-    if batch.skip_cache_lookups(&requested_ranges) {
-        return batch.fetch_ranges(requested_ranges, fetch_ranges).await;
-    }
-    let mut lookups = stream::iter(
-        requested_ranges
-            .iter()
-            .cloned()
-            .enumerate()
-            .filter(|(_, requested_range)| !requested_range.is_empty()),
+    debug_assert!(requested_ranges.iter().all(|range| range.start < range.end));
+    let cached_bytes: Vec<_> = if requested_ranges.len() <= MAX_NUM_RANGES_FOR_CACHE_LOOKUP {
+        stream::iter(requested_ranges.iter().cloned())
+            .map(get_cached)
+            .buffered(32)
+            .collect()
+            .await
+    } else {
+        Vec::new()
+    };
+    // `buffered` keeps lookup results in request order for the cache callback below.
+    let mut cached_bytes = cached_bytes.into_iter();
+    read_batch_with_cache(
+        requested_ranges,
+        |_| cached_bytes.next().expect("one lookup per range"),
+        fetch_ranges,
     )
-    .map(|(index, requested_range)| {
-        let lookup = get_cached(requested_range);
-        async move { (index, lookup.await) }
-    })
-    .buffered(32);
-    while let Some((index, bytes)) = lookups.next().await {
-        batch.record_cache_lookup(index, bytes);
-    }
-    drop(lookups);
-    batch.fetch_ranges(requested_ranges, fetch_ranges).await
-}
-
-/// Combines cached and fetched bytes in request order.
-/// Empty ranges and unread ranges initially contain empty bytes.
-struct CachedAndFetchedBytes {
-    bytes_by_request: Vec<OwnedBytes>,
-    request_indices_to_fetch: Vec<usize>,
-}
-
-impl CachedAndFetchedBytes {
-    fn new(num_ranges: usize) -> Self {
-        Self {
-            bytes_by_request: vec![OwnedBytes::empty(); num_ranges],
-            request_indices_to_fetch: Vec::new(),
-        }
-    }
-
-    /// Treats every nonempty range as a miss when the batch exceeds the lookup limit.
-    fn skip_cache_lookups(&mut self, requested_ranges: &[Range<usize>]) -> bool {
-        if requested_ranges.len() <= MAX_NUM_RANGES_FOR_CACHE_LOOKUP {
-            return false;
-        }
-        self.request_indices_to_fetch = requested_ranges
-            .iter()
-            .enumerate()
-            .filter(|(_, range)| !range.is_empty())
-            .map(|(index, _)| index)
-            .collect();
-        true
-    }
-
-    /// Stores cached bytes or saves the request index for fetching on a miss.
-    fn record_cache_lookup(&mut self, request_index: usize, cached_bytes: Option<OwnedBytes>) {
-        if let Some(bytes) = cached_bytes {
-            self.bytes_by_request[request_index] = bytes;
-        } else {
-            self.request_indices_to_fetch.push(request_index);
-        }
-    }
-
-    /// Reads all recorded cache misses in one callback and combines them with cached hits in
-    /// the original request order. Empty ranges keep their empty buffers. Skips the callback
-    /// when there are no misses and forwards the original ranges directly when every range misses.
-    /// The callback must return one buffer per missing range, in the order supplied.
-    async fn fetch_ranges<FetchRangesFuture, Error>(
-        mut self,
-        requested_ranges: Vec<Range<usize>>,
-        fetch_ranges: impl FnOnce(Vec<Range<usize>>) -> FetchRangesFuture,
-    ) -> Result<Vec<OwnedBytes>, Error>
-    where
-        FetchRangesFuture: Future<Output = Result<Vec<OwnedBytes>, Error>>,
-    {
-        if self.request_indices_to_fetch.is_empty() {
-            return Ok(self.bytes_by_request);
-        }
-        if self.request_indices_to_fetch.len() == requested_ranges.len() {
-            return fetch_ranges(requested_ranges).await;
-        }
-        let ranges_to_fetch = self
-            .request_indices_to_fetch
-            .iter()
-            .map(|&request_index| requested_ranges[request_index].clone())
-            .collect();
-        let downloaded = fetch_ranges(ranges_to_fetch).await?;
-        for (request_index, bytes) in self.request_indices_to_fetch.into_iter().zip(downloaded) {
-            self.bytes_by_request[request_index] = bytes;
-        }
-        Ok(self.bytes_by_request)
-    }
+    .await
 }
 
 #[cfg(test)]
@@ -160,22 +108,17 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_cache_hits_empty_ranges_and_lookup_limit() {
+    async fn test_cache_hits_empty_batch_and_lookup_limit() {
         let boundary_ranges = |num_ranges: usize| {
-            let mut ranges: Vec<_> = (0..num_ranges - 2)
+            (0..num_ranges)
                 .rev()
                 .map(|index| index % 7..index % 7 + 1)
-                .collect();
-            ranges.insert(0, 0..0);
-            ranges.insert(50, 2..2);
-            ranges
+                .collect()
         };
         for (requested_ranges, expected_lookups) in [
             (vec![], 0),
-            (vec![0..0, usize::MAX..usize::MAX], 0),
-            (vec![0..0; 101], 0),
-            (vec![4..6, 0..0, 0..2, 4..6], 3),
-            (boundary_ranges(100), 98),
+            (vec![4..6, 0..2, 4..6], 3),
+            (boundary_ranges(100), 100),
             (boundary_ranges(101), 0),
         ] {
             check_batch_read(requested_ranges, expected_lookups, true).await;
@@ -194,7 +137,7 @@ mod tests {
     async fn check_batch_read(ranges: Vec<Range<usize>>, expected_lookups: usize, cache_hit: bool) {
         let ranges_to_fetch: Vec<_> = ranges
             .iter()
-            .filter(|range| !range.is_empty() && (!cache_hit || ranges.len() > 100))
+            .filter(|_| !cache_hit || ranges.len() > 100)
             .cloned()
             .collect();
         for async_cache in [false, true] {

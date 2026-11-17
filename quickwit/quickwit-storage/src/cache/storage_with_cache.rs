@@ -245,7 +245,7 @@ mod tests {
     #[tokio::test]
     async fn test_batch_cache_limit() {
         for num_ranges in [100, 101] {
-            let cache_operations = if num_ranges == 100 { 99 } else { 0 };
+            let cache_operations = if num_ranges == 100 { 100 } else { 0 };
             let mut cache = MockStorageCache::default();
             cache
                 .expect_get()
@@ -264,7 +264,7 @@ mod tests {
                 .returning(move |_, ranges| {
                     assert_eq!(
                         ranges,
-                        (0..num_ranges - 1)
+                        (0..num_ranges)
                             .map(|index| index..index + 1)
                             .collect::<Vec<_>>()
                     );
@@ -277,14 +277,12 @@ mod tests {
                 storage: Arc::new(backend),
                 cache: Arc::new(cache),
             };
-            let mut ranges: Vec<_> = (0..num_ranges - 1).map(|index| index..index + 1).collect();
-            ranges.push(0..0);
+            let ranges: Vec<_> = (0..num_ranges).map(|index| index..index + 1).collect();
             let buffers = storage.get_slices(Path::new("file"), ranges).await.unwrap();
             assert_eq!(buffers.len(), num_ranges);
-            for (index, buffer) in buffers[..num_ranges - 1].iter().enumerate() {
+            for (index, buffer) in buffers.iter().enumerate() {
                 assert_eq!(buffer.as_slice(), &[index as u8]);
             }
-            assert!(buffers[num_ranges - 1].is_empty());
         }
     }
 

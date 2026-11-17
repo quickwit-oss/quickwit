@@ -72,7 +72,8 @@ impl CollectedBatch {
 /// object for 1 ms, including singletons. Batch reads submit all ranges together, with one shared
 /// read future per caller. Merges overlaps and gaps up to 4 MiB and runs at most five downloads per
 /// collected group. Streams merged downloads, retaining requested slices and discarding gaps.
-/// Callers must supply ranges with `start <= end`; ranges may be in any order.
+/// Batch ranges must have `start < end`; ranges may be in any order. Empty batches return no
+/// buffers.
 ///
 /// Place this below exact-range caches and above timeout/retry storage. Caches then see original
 /// ranges, and only their misses wait for collection. Object paths are relative to `underlying`.
@@ -129,6 +130,9 @@ impl Storage for CoalescingStorage {
 
     #[allow(clippy::single_range_in_vec_init)] // A single-range read.
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
+        if range.is_empty() {
+            return Ok(OwnedBytes::empty());
+        }
         Ok(self
             .get_slices(path, vec![range])
             .await?
@@ -154,8 +158,9 @@ impl Storage for CoalescingStorage {
         path: &Path,
         requested_ranges: Vec<Range<usize>>,
     ) -> StorageResult<Vec<OwnedBytes>> {
-        if requested_ranges.iter().all(Range::is_empty) {
-            return Ok(vec![OwnedBytes::empty(); requested_ranges.len()]);
+        debug_assert!(requested_ranges.iter().all(|range| range.start < range.end));
+        if requested_ranges.is_empty() {
+            return Ok(Vec::new());
         }
         let (batch, caller_result_indices) = self.collect_ranges(path, requested_ranges);
         // Keep the batch alive while this caller awaits its results.
@@ -204,11 +209,7 @@ async fn read_collected_ranges(
     let mut buffers = vec![OwnedBytes::empty(); requested_ranges.len()];
     // Coalesce the collected ranges, then run at most five downloads concurrently.
     let (requests, download_ranges) = run_cpu_intensive(move || {
-        let mut requests: Vec<_> = requested_ranges
-            .into_iter()
-            .enumerate()
-            .filter(|(_, requested_range)| !requested_range.is_empty())
-            .collect();
+        let mut requests: Vec<_> = requested_ranges.into_iter().enumerate().collect();
         requests.sort_unstable_by_key(|(_, requested_range)| requested_range.start);
         let download_ranges = coalesce_ranges(
             requests
@@ -237,15 +238,13 @@ async fn read_collected_ranges(
     Ok(buffers)
 }
 
-/// Ranges must have `start <= end` and be sorted by start offset. Empty ranges are ignored.
+/// Ranges must have `start < end` and be sorted by start offset.
 /// Merges overlaps and gaps up to 4 MiB. This limits each gap, not the total download size
 /// or the total number of gap bytes downloaded.
 fn coalesce_ranges(requested_ranges: impl Iterator<Item = Range<usize>>) -> Vec<Range<usize>> {
     let mut download_ranges: Vec<Range<usize>> = Vec::new();
     for requested_range in requested_ranges {
-        if requested_range.is_empty() {
-            continue;
-        }
+        debug_assert!(requested_range.start < requested_range.end);
         if let Some(previous) = download_ranges.last_mut()
             && requested_range.start.saturating_sub(previous.end) <= MAX_GAP
         {
@@ -330,7 +329,6 @@ mod plan_tests {
         let cases: &[(&[Range<usize>], &[Range<usize>])] = &[
             (&[], &[]),
             (&[10..20], &[10..20]),
-            (&[7..7, 0..0], &[]),
             // Unsorted, duplicate, nested, adjacent, and separated ranges.
             (
                 &[

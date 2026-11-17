@@ -85,17 +85,17 @@ async fn test_collects_by_object_and_collector() {
         futures::future::try_join_all(requests.iter().map(|(collector, path, range)| {
             collectors[*collector].get_slice(Path::new(path), range.clone())
         })),
-        collectors[0].get_slices(Path::new("file"), vec![8..10, 4..4, 0..4, 8..10]),
+        collectors[0].get_slices(Path::new("file"), vec![8..10, 0..4, 8..10]),
         collectors[0].get_slice_into(Path::new("file"), 0..4, &mut into_buffer),
     )
     .unwrap();
     assert_eq!(into_buffer, [0, 1, 2, 3]);
     assert_eq!(
         batch.iter().map(OwnedBytes::as_slice).collect::<Vec<_>>(),
-        vec![&[8, 9][..], &[], &[0, 1, 2, 3], &[8, 9]]
+        vec![&[8, 9][..], &[0, 1, 2, 3], &[8, 9]]
     );
-    assert_eq!(batch[0].as_ptr(), batch[3].as_ptr());
-    assert_eq!(batch[2].as_ptr(), buffers[0].as_ptr());
+    assert_eq!(batch[0].as_ptr(), batch[2].as_ptr());
+    assert_eq!(batch[1].as_ptr(), buffers[0].as_ptr());
     assert_eq!(buffers[0].as_ptr(), buffers[2].as_ptr());
     assert_ne!(buffers[0].as_ptr(), buffers[7].as_ptr());
     for ((_, path, range), buffer) in requests.into_iter().zip(buffers) {
