@@ -230,20 +230,20 @@ impl FileHandle for CachingFileHandle {
 
     async fn read_bytes_batch_async(
         &self,
-        byte_ranges: Vec<Range<usize>>,
+        requested_ranges: Vec<Range<usize>>,
     ) -> io::Result<Vec<OwnedBytes>> {
         quickwit_storage::read_batch_with_cache(
-            byte_ranges,
-            |range| self.cache.get_slice(range),
-            |ranges| async move {
-                let payloads = self
+            requested_ranges,
+            |requested_range| self.cache.get_slice(requested_range),
+            |missing_ranges| async move {
+                let downloaded = self
                     .underlying_filehandle
-                    .read_bytes_batch_async(ranges.clone())
+                    .read_bytes_batch_async(missing_ranges.clone())
                     .await?;
-                for (range, bytes) in ranges.into_iter().zip(&payloads) {
-                    self.cache.put_slice(range, bytes.clone());
+                for (missing_range, bytes) in missing_ranges.into_iter().zip(&downloaded) {
+                    self.cache.put_slice(missing_range, bytes.clone());
                 }
-                Ok(payloads)
+                Ok(downloaded)
             },
         )
         .await

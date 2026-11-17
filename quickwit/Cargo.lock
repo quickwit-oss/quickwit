@@ -4843,7 +4843,7 @@ dependencies = [
 [[package]]
 name = "jitexpr"
 version = "0.1.0"
-source = "git+https://github.com/PSeitz/tantivy/?rev=96fbe7a8b06959ae5058b435b389f8620ae4c580#96fbe7a8b06959ae5058b435b389f8620ae4c580"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=058f4973eec96fbb2a17ec5d01694049fd51a951#058f4973eec96fbb2a17ec5d01694049fd51a951"
 dependencies = [
  "cranelift",
  "cranelift-jit",
@@ -6324,7 +6324,7 @@ checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
 [[package]]
 name = "ownedbytes"
 version = "0.9.0"
-source = "git+https://github.com/PSeitz/tantivy/?rev=96fbe7a8b06959ae5058b435b389f8620ae4c580#96fbe7a8b06959ae5058b435b389f8620ae4c580"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=058f4973eec96fbb2a17ec5d01694049fd51a951#058f4973eec96fbb2a17ec5d01694049fd51a951"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -10801,7 +10801,7 @@ checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 [[package]]
 name = "tantivy"
 version = "0.27.0"
-source = "git+https://github.com/PSeitz/tantivy/?rev=96fbe7a8b06959ae5058b435b389f8620ae4c580#96fbe7a8b06959ae5058b435b389f8620ae4c580"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=058f4973eec96fbb2a17ec5d01694049fd51a951#058f4973eec96fbb2a17ec5d01694049fd51a951"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -10817,7 +10817,6 @@ dependencies = [
  "fastdivide",
  "fnv",
  "fs4",
- "futures-channel",
  "futures-util",
  "hashbrown 0.17.1",
  "htmlescape",
@@ -10860,7 +10859,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.27.0"
-source = "git+https://github.com/PSeitz/tantivy/?rev=96fbe7a8b06959ae5058b435b389f8620ae4c580#96fbe7a8b06959ae5058b435b389f8620ae4c580"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=058f4973eec96fbb2a17ec5d01694049fd51a951#058f4973eec96fbb2a17ec5d01694049fd51a951"
 dependencies = [
  "bitpacking",
 ]
@@ -10868,7 +10867,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.27.0"
-source = "git+https://github.com/PSeitz/tantivy/?rev=96fbe7a8b06959ae5058b435b389f8620ae4c580#96fbe7a8b06959ae5058b435b389f8620ae4c580"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=058f4973eec96fbb2a17ec5d01694049fd51a951#058f4973eec96fbb2a17ec5d01694049fd51a951"
 dependencies = [
  "downcast-rs",
  "fastdivide",
@@ -10885,7 +10884,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.27.0"
-source = "git+https://github.com/PSeitz/tantivy/?rev=96fbe7a8b06959ae5058b435b389f8620ae4c580#96fbe7a8b06959ae5058b435b389f8620ae4c580"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=058f4973eec96fbb2a17ec5d01694049fd51a951#058f4973eec96fbb2a17ec5d01694049fd51a951"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -10922,7 +10921,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.27.0"
-source = "git+https://github.com/PSeitz/tantivy/?rev=96fbe7a8b06959ae5058b435b389f8620ae4c580#96fbe7a8b06959ae5058b435b389f8620ae4c580"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=058f4973eec96fbb2a17ec5d01694049fd51a951#058f4973eec96fbb2a17ec5d01694049fd51a951"
 dependencies = [
  "fnv",
  "nom 7.1.3",
@@ -10934,7 +10933,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.27.0"
-source = "git+https://github.com/PSeitz/tantivy/?rev=96fbe7a8b06959ae5058b435b389f8620ae4c580#96fbe7a8b06959ae5058b435b389f8620ae4c580"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=058f4973eec96fbb2a17ec5d01694049fd51a951#058f4973eec96fbb2a17ec5d01694049fd51a951"
 dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
@@ -10945,7 +10944,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.27.0"
-source = "git+https://github.com/PSeitz/tantivy/?rev=96fbe7a8b06959ae5058b435b389f8620ae4c580#96fbe7a8b06959ae5058b435b389f8620ae4c580"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=058f4973eec96fbb2a17ec5d01694049fd51a951#058f4973eec96fbb2a17ec5d01694049fd51a951"
 dependencies = [
  "murmurhash32",
  "tantivy-common",
@@ -10954,7 +10953,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.7.0"
-source = "git+https://github.com/PSeitz/tantivy/?rev=96fbe7a8b06959ae5058b435b389f8620ae4c580#96fbe7a8b06959ae5058b435b389f8620ae4c580"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=058f4973eec96fbb2a17ec5d01694049fd51a951#058f4973eec96fbb2a17ec5d01694049fd51a951"
 dependencies = [
  "serde",
 ]

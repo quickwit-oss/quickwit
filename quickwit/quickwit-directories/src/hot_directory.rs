@@ -407,12 +407,12 @@ impl FileHandle for FileSliceWithCache {
 
     async fn read_bytes_batch_async(
         &self,
-        byte_ranges: Vec<Range<usize>>,
+        requested_ranges: Vec<Range<usize>>,
     ) -> io::Result<Vec<OwnedBytes>> {
         quickwit_storage::read_batch_with_cache(
-            byte_ranges,
-            |range| self.static_cache.try_read_bytes(range),
-            |ranges| self.underlying.read_bytes_batch_async(ranges),
+            requested_ranges,
+            |requested_range| self.static_cache.try_read_bytes(requested_range),
+            |missing_ranges| self.underlying.read_bytes_batch_async(missing_ranges),
         )
         .await
     }

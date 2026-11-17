@@ -42,17 +42,21 @@ struct CollectedBatch {
 }
 
 impl CollectedBatch {
-    fn new(underlying: Arc<dyn Storage>, path: PathBuf, ranges: Vec<Range<usize>>) -> Arc<Self> {
-        let ranges_to_read = Arc::new(Mutex::new(Some(ranges)));
+    fn new(
+        underlying: Arc<dyn Storage>,
+        path: PathBuf,
+        requested_ranges: Vec<Range<usize>>,
+    ) -> Arc<Self> {
+        let ranges_to_read = Arc::new(Mutex::new(Some(requested_ranges)));
         let collected_ranges = ranges_to_read.clone();
         let read_future = async move {
             tokio::time::sleep(COLLECTION_DURATION).await;
-            let ranges = collected_ranges
+            let requested_ranges = collected_ranges
                 .lock()
                 .unwrap()
                 .take()
                 .expect("collected ranges are taken once");
-            read_collected_ranges(underlying.as_ref(), &path, ranges)
+            read_collected_ranges(underlying.as_ref(), &path, requested_ranges)
                 .await
                 .map(Arc::new)
         }
@@ -90,32 +94,31 @@ impl CoalescingStorage {
         }
     }
 
-    fn collect_ranges(
+    async fn collect_ranges(
         &self,
         path: &Path,
-        ranges: Vec<Range<usize>>,
-    ) -> impl Future<Output = StorageResult<Vec<OwnedBytes>>> + Send + use<> {
+        requested_ranges: Vec<Range<usize>>,
+    ) -> StorageResult<Vec<OwnedBytes>> {
         let (batch, caller_result_indices) = 'collect: {
             let mut batches_by_object = self.batches_by_object.lock().unwrap();
             if let Some(batch) = batches_by_object.get(path).and_then(Weak::upgrade) {
                 let mut ranges_to_read = batch.ranges_to_read.lock().unwrap();
                 if let Some(ranges_to_read) = ranges_to_read.as_mut() {
                     let caller_result_indices =
-                        ranges_to_read.len()..ranges_to_read.len() + ranges.len();
-                    ranges_to_read.extend(ranges);
+                        ranges_to_read.len()..ranges_to_read.len() + requested_ranges.len();
+                    ranges_to_read.extend(requested_ranges);
                     break 'collect (batch.clone(), caller_result_indices);
                 }
             }
-            let caller_result_indices = 0..ranges.len();
-            let batch = CollectedBatch::new(self.underlying.clone(), path.to_owned(), ranges);
+            let caller_result_indices = 0..requested_ranges.len();
+            let batch =
+                CollectedBatch::new(self.underlying.clone(), path.to_owned(), requested_ranges);
             batches_by_object.insert(path.to_owned(), Arc::downgrade(&batch));
             (batch, caller_result_indices)
         };
         // Keep the batch alive while this caller awaits its results.
-        async move {
-            let buffers = batch.read_future.clone().await?;
-            Ok(buffers[caller_result_indices].to_vec())
-        }
+        let buffers = batch.read_future.clone().await?;
+        Ok(buffers[caller_result_indices].to_vec())
     }
 }
 
@@ -145,12 +148,12 @@ impl Storage for CoalescingStorage {
     async fn get_slices(
         &self,
         path: &Path,
-        ranges: Vec<Range<usize>>,
+        requested_ranges: Vec<Range<usize>>,
     ) -> StorageResult<Vec<OwnedBytes>> {
-        if ranges.iter().all(Range::is_empty) {
-            return Ok(vec![OwnedBytes::empty(); ranges.len()]);
+        if requested_ranges.iter().all(Range::is_empty) {
+            return Ok(vec![OwnedBytes::empty(); requested_ranges.len()]);
         }
-        self.collect_ranges(path, ranges).await
+        self.collect_ranges(path, requested_ranges).await
     }
 
     async fn get_slice_stream(
@@ -189,28 +192,34 @@ impl Storage for CoalescingStorage {
 async fn read_collected_ranges(
     storage: &dyn Storage,
     path: &Path,
-    byte_ranges: Vec<Range<usize>>,
+    requested_ranges: Vec<Range<usize>>,
 ) -> StorageResult<Vec<OwnedBytes>> {
-    let mut buffers = vec![OwnedBytes::empty(); byte_ranges.len()];
+    let mut buffers = vec![OwnedBytes::empty(); requested_ranges.len()];
     // Coalesce the collected ranges, then run at most five downloads concurrently.
     let (requests, download_ranges) = run_cpu_intensive(move || {
-        let mut requests: Vec<_> = byte_ranges
+        let mut requests: Vec<_> = requested_ranges
             .into_iter()
             .enumerate()
-            .filter(|(_, range)| range.start != range.end)
+            .filter(|(_, requested_range)| !requested_range.is_empty())
             .collect();
-        requests.sort_unstable_by_key(|(_, range)| range.start);
-        let download_ranges =
-            plan::coalesce_ranges(requests.iter().map(|(_, range)| range.clone()));
+        requests.sort_unstable_by_key(|(_, requested_range)| requested_range.start);
+        let download_ranges = plan::coalesce_ranges(
+            requests
+                .iter()
+                .map(|(_, requested_range)| requested_range.clone()),
+        );
         (requests, download_ranges)
     })
     .await
     .map_err(io::Error::other)?;
     let mut downloads = stream::iter(download_ranges)
-        .map(|range| {
-            let first = requests.partition_point(|(_, requested)| requested.start < range.start);
-            let end = requests.partition_point(|(_, requested)| requested.start < range.end);
-            read_download_range(storage, path, range, &requests[first..end])
+        .map(|download_range| {
+            let first = requests.partition_point(|(_, requested_range)| {
+                requested_range.start < download_range.start
+            });
+            let end = requests
+                .partition_point(|(_, requested_range)| requested_range.start < download_range.end);
+            read_download_range(storage, path, download_range, &requests[first..end])
         })
         .buffer_unordered(5);
     while let Some(downloaded) = downloads.try_next().await? {
@@ -225,20 +234,22 @@ async fn read_collected_ranges(
 async fn read_download_range(
     storage: &dyn Storage,
     path: &Path,
-    range: Range<usize>,
+    download_range: Range<usize>,
     mut requests: &[(usize, Range<usize>)],
 ) -> StorageResult<Vec<(usize, OwnedBytes)>> {
     if let [(index, _)] = requests {
-        let bytes = storage.get_slice(path, range.clone()).await?;
-        if bytes.len() != range.len() {
+        let bytes = storage.get_slice(path, download_range.clone()).await?;
+        if bytes.len() != download_range.len() {
             return Err(io::Error::from(io::ErrorKind::InvalidData).into());
         }
         return Ok(vec![(*index, bytes)]);
     }
-    let reader = storage.get_slice_stream(path, range.clone()).await?;
+    let reader = storage
+        .get_slice_stream(path, download_range.clone())
+        .await?;
     let mut reader = tokio::io::BufReader::new(reader);
     let mut buffers = Vec::with_capacity(requests.len());
-    let mut position = range.start;
+    let mut position = download_range.start;
     while !requests.is_empty() {
         // Read overlapping requests together so the stream never needs to seek backwards.
         let mut useful = requests[0].1.clone();
@@ -252,14 +263,15 @@ async fn read_download_range(
         let mut bytes = vec![0; useful.len()];
         reader.read_exact(&mut bytes).await?;
         let bytes = OwnedBytes::new(bytes);
-        for (index, requested) in &requests[..count] {
-            let result = if *requested == useful {
+        for (index, requested_range) in &requests[..count] {
+            let result = if *requested_range == useful {
                 bytes.clone()
             } else {
                 // Copy proper subranges so cached results don't retain the entire
                 // overlapping-request buffer.
                 OwnedBytes::new(
-                    bytes[requested.start - useful.start..requested.end - useful.start].to_vec(),
+                    bytes[requested_range.start - useful.start..requested_range.end - useful.start]
+                        .to_vec(),
                 )
             };
             buffers.push((*index, result));
@@ -267,7 +279,7 @@ async fn read_download_range(
         position = useful.end;
         requests = &requests[count..];
     }
-    debug_assert_eq!(position, range.end);
+    debug_assert_eq!(position, download_range.end);
     if reader.read(&mut [0]).await? != 0 {
         return Err(io::Error::from(io::ErrorKind::InvalidData).into());
     }

@@ -140,14 +140,14 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
     async fn get_slices(
         &self,
         path: &Path,
-        ranges: Vec<Range<usize>>,
+        requested_ranges: Vec<Range<usize>>,
     ) -> StorageResult<Vec<OwnedBytes>> {
-        stream::iter(ranges)
-            .map(|range| async move {
-                if range.is_empty() {
+        stream::iter(requested_ranges)
+            .map(|requested_range| async move {
+                if requested_range.is_empty() {
                     Ok(OwnedBytes::empty())
                 } else {
-                    self.get_slice(path, range).await
+                    self.get_slice(path, requested_range).await
                 }
             })
             .buffered(5)

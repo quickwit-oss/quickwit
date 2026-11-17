@@ -19,21 +19,23 @@ const MAX_GAP: usize = 4 * 1024 * 1024;
 /// Ranges must have `start <= end` and be sorted by start offset. Empty ranges are ignored.
 /// Merges overlaps and gaps up to 4 MiB. This limits each gap, not the total download size
 /// or the total number of gap bytes downloaded.
-pub(super) fn coalesce_ranges(ranges: impl Iterator<Item = Range<usize>>) -> Vec<Range<usize>> {
-    let mut downloads: Vec<Range<usize>> = Vec::new();
-    for range in ranges {
-        if range.is_empty() {
+pub(super) fn coalesce_ranges(
+    requested_ranges: impl Iterator<Item = Range<usize>>,
+) -> Vec<Range<usize>> {
+    let mut download_ranges: Vec<Range<usize>> = Vec::new();
+    for requested_range in requested_ranges {
+        if requested_range.is_empty() {
             continue;
         }
-        if let Some(previous) = downloads.last_mut()
-            && range.start.saturating_sub(previous.end) <= MAX_GAP
+        if let Some(previous) = download_ranges.last_mut()
+            && requested_range.start.saturating_sub(previous.end) <= MAX_GAP
         {
-            previous.end = previous.end.max(range.end);
+            previous.end = previous.end.max(requested_range.end);
         } else {
-            downloads.push(range);
+            download_ranges.push(requested_range);
         }
     }
-    downloads
+    download_ranges
 }
 
 #[cfg(test)]

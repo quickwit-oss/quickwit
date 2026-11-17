@@ -67,11 +67,11 @@ impl FileHandle for StorageDirectoryFileHandle {
 
     async fn read_bytes_batch_async(
         &self,
-        ranges: Vec<Range<usize>>,
+        requested_ranges: Vec<Range<usize>>,
     ) -> io::Result<Vec<OwnedBytes>> {
         self.storage_directory
             .storage
-            .get_slices(&self.path, ranges)
+            .get_slices(&self.path, requested_ranges)
             .await
             .map_err(io::Error::from)
     }

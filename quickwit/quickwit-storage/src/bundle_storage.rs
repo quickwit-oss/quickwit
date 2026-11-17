@@ -531,15 +531,17 @@ impl Storage for BundleStorage {
     async fn get_slices(
         &self,
         path: &Path,
-        mut ranges: Vec<Range<usize>>,
+        mut requested_ranges: Vec<Range<usize>>,
     ) -> StorageResult<Vec<OwnedBytes>> {
         // Validate every nonempty range before forwarding the batch. Empty ranges need no I/O.
-        for range in &mut ranges {
-            if range.start != range.end {
-                *range = self.bundle_range(path, range.clone())?;
+        for requested_range in &mut requested_ranges {
+            if requested_range.start != requested_range.end {
+                *requested_range = self.bundle_range(path, requested_range.clone())?;
             }
         }
-        self.storage.get_slices(&self.bundle_filepath, ranges).await
+        self.storage
+            .get_slices(&self.bundle_filepath, requested_ranges)
+            .await
     }
 
     async fn get_slice_into(
