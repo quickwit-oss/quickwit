@@ -683,10 +683,7 @@ fn get_shard_locality_metrics(
     for (indexer, tasks) in physical_plan.indexing_tasks_per_indexer() {
         for task in tasks {
             for shard_id in &task.shard_ids {
-                if shard_locations
-                    .get_shard_locations(shard_id)
-                    .contains(&indexer)
-                {
+                if shard_locations.get_shard_location(shard_id) == Some(indexer) {
                     num_local_shards += 1;
                 } else if is_shard_in_same_zone(indexer, shard_id, shard_locations, indexer_infos) {
                     num_zonal_shards += 1;
