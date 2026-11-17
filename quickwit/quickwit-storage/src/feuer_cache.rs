@@ -423,7 +423,7 @@ mod tests {
         cache.put("key", OwnedBytes::new(&b"value"[..]));
         assert_eq!(cache.get("key").await.unwrap().as_slice(), b"value");
         assert!(queues.queues.lock().unwrap().is_none());
-        assert!(!config.directory().unwrap().exists());
+        assert!(!config.directory().unwrap().try_exists().unwrap());
     }
 
     #[tokio::test]
