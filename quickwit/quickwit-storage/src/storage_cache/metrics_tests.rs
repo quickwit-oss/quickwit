@@ -351,7 +351,7 @@ fn test_native_memory_registration_and_values_without_runtime() {
     let _guard = ::metrics::set_default_local_recorder(&recorder);
     let cache_name = "metrics_native_memory";
     // Feuer registration validates names, descriptions, types, ordered labels and buckets.
-    let cache = crate::FeuerCache::memory(1 << 20, cache_name).unwrap();
+    let cache = crate::FeuerCache::memory(1 << 20, cache_name, 1024).unwrap();
     futures::executor::block_on(async {
         cache.put("key", crate::OwnedBytes::new(&b"value"[..]));
         assert_eq!(cache.get("key").await.unwrap().as_slice(), b"value");

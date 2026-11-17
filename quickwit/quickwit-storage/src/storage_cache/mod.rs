@@ -54,7 +54,8 @@ pub fn open_storage_cache(
         cost_per_request: 256_000.0,
         ..Default::default()
     });
-    queues.open(config, "storage_cache", "storage", scorer, 1)
+    // Averages ~1MB per entry on a live system benchmark
+    queues.open(config, "storage_cache", "storage", scorer, 1, 1024 * 1024)
 }
 
 #[cfg(test)]

@@ -525,6 +525,7 @@ impl SearcherContext {
                         "partial_request",
                         None,
                         1,
+                        2 * 1024,
                     )?),
                     None => None,
                 };

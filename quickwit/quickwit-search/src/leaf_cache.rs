@@ -53,7 +53,7 @@ impl LeafSearchCache {
     pub fn new(config: &CacheConfig) -> LeafSearchCache {
         let memory_capacity = config.memory_capacity().as_u64();
         LeafSearchCache {
-            cache: FeuerCache::memory(memory_capacity, "partial_request")
+            cache: FeuerCache::memory(memory_capacity, "partial_request", 2 * 1024)
                 .expect("invalid Feuer memory cache configuration"),
             lookup_metrics: (memory_capacity > 0).then_some(&PARTIAL_REQUEST_CACHE),
         }
@@ -287,6 +287,7 @@ impl PredicateCacheImpl {
             "predicate",
             Some(scorer.clone()),
             2, // Version 2 adds fill CPU nanoseconds after the segment ID.
+            16 * 1024,
         )?;
         Ok(Self {
             cache,
@@ -707,7 +708,7 @@ mod tests {
             let request = SearchRequest::default();
             let cache = if supplied {
                 LeafSearchCache::with_feuer_cache(
-                    FeuerCache::memory(capacity, "partial_request").unwrap(),
+                    FeuerCache::memory(capacity, "partial_request", 2 * 1024).unwrap(),
                 )
             } else {
                 LeafSearchCache::new(&config)
@@ -768,7 +769,7 @@ mod tests {
     #[tokio::test]
     async fn test_supplied_leaf_cache_put_in_async_runtime() {
         let cache = LeafSearchCache::with_feuer_cache(
-            quickwit_storage::FeuerCache::memory(1_000_000, "partial_request").unwrap(),
+            quickwit_storage::FeuerCache::memory(1_000_000, "partial_request", 2 * 1024).unwrap(),
         );
         let split = SplitIdAndFooterOffsets::default();
         let request = SearchRequest::default();

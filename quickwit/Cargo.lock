@@ -3326,7 +3326,7 @@ dependencies = [
 [[package]]
 name = "feuer"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=452e992491ef5183070a5bca71bf28bb0a69682e#452e992491ef5183070a5bca71bf28bb0a69682e"
+source = "git+https://github.com/PSeitz/feuer?rev=cff661183a34a0522350e1928da862d32b41a87c#cff661183a34a0522350e1928da862d32b41a87c"
 dependencies = [
  "bytes",
  "feuer-historian",
@@ -3342,7 +3342,7 @@ dependencies = [
 [[package]]
 name = "feuer-historian"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=452e992491ef5183070a5bca71bf28bb0a69682e#452e992491ef5183070a5bca71bf28bb0a69682e"
+source = "git+https://github.com/PSeitz/feuer?rev=cff661183a34a0522350e1928da862d32b41a87c#cff661183a34a0522350e1928da862d32b41a87c"
 dependencies = [
  "feuer-utils",
  "parking_lot",
@@ -3352,7 +3352,7 @@ dependencies = [
 [[package]]
 name = "feuer-memory"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=452e992491ef5183070a5bca71bf28bb0a69682e#452e992491ef5183070a5bca71bf28bb0a69682e"
+source = "git+https://github.com/PSeitz/feuer?rev=cff661183a34a0522350e1928da862d32b41a87c#cff661183a34a0522350e1928da862d32b41a87c"
 dependencies = [
  "bytes",
  "bytesize",
@@ -3367,7 +3367,7 @@ dependencies = [
 [[package]]
 name = "feuer-storage"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=452e992491ef5183070a5bca71bf28bb0a69682e#452e992491ef5183070a5bca71bf28bb0a69682e"
+source = "git+https://github.com/PSeitz/feuer?rev=cff661183a34a0522350e1928da862d32b41a87c#cff661183a34a0522350e1928da862d32b41a87c"
 dependencies = [
  "bytes",
  "feuer-historian",
@@ -3387,7 +3387,7 @@ dependencies = [
 [[package]]
 name = "feuer-utils"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=452e992491ef5183070a5bca71bf28bb0a69682e#452e992491ef5183070a5bca71bf28bb0a69682e"
+source = "git+https://github.com/PSeitz/feuer?rev=cff661183a34a0522350e1928da862d32b41a87c#cff661183a34a0522350e1928da862d32b41a87c"
 dependencies = [
  "bytesize",
  "getrandom 0.4.3",

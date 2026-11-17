@@ -25,7 +25,7 @@ pub struct ListFieldsCache {
 impl ListFieldsCache {
     pub fn new(config: &CacheConfig) -> ListFieldsCache {
         Self {
-            cache: FeuerCache::memory(config.memory_capacity().as_u64(), "list_fields")
+            cache: FeuerCache::memory(config.memory_capacity().as_u64(), "list_fields", 100 * 1024)
                 .expect("invalid Feuer memory cache configuration"),
             metrics: (config.memory_capacity().as_u64() > 0).then_some(&PARTIAL_REQUEST_CACHE),
         }

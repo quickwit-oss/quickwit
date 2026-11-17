@@ -34,6 +34,19 @@ static DISK_CACHE_STARTUP_FALLBACK: LazyGauge = lazy_gauge!(
     subsystem: "storage",
 );
 
+/// Retain history for eight times the estimated resident object count so it can outlive eviction.
+/// Estimate object sizes by object count, rather than weighting frequently read objects more
+/// heavily.
+fn history_entry_limit(
+    memory_capacity: u64,
+    disk_capacity: u64,
+    estimated_average_object_size: u64,
+) -> usize {
+    let capacity = memory_capacity + disk_capacity;
+    let entries = (capacity * 8).div_ceil(estimated_average_object_size);
+    entries as usize
+}
+
 /// Shared I/O concurrency for independent Feuer caches on the same disk.
 /// Queues are created lazily: memory-only instances do not require io_uring.
 #[derive(Clone, Default)]
@@ -52,6 +65,7 @@ impl FeuerIoQueues {
         cache_name: &'static str,
         scorer: Arc<dyn feuer::RetentionScorer>,
         payload_version: u64,
+        estimated_average_object_size: u64,
     ) -> anyhow::Result<feuer::Cache> {
         let memory_capacity = config.memory_capacity.as_u64();
         let disk_capacity = config.disk_capacity.as_u64();
@@ -72,7 +86,12 @@ impl FeuerIoQueues {
                 .payload_version(payload_version)
                 .with_metrics(&registry)
                 .with_memory_retention_scorer(scorer.clone())
-                .with_disk_retention_scorer(scorer.clone());
+                .with_disk_retention_scorer(scorer.clone())
+                .history_entry_limit(history_entry_limit(
+                    memory_capacity,
+                    disk_capacity,
+                    estimated_average_object_size,
+                ));
             #[cfg(target_os = "linux")]
             let builder = if disk_capacity == 0 {
                 builder
@@ -125,7 +144,12 @@ pub struct FeuerCache {
 
 impl FeuerCache {
     /// Open a memory-only instance without a Tokio runtime. Zero capacity disables caching.
-    pub fn memory(capacity: u64, cache_name: &'static str) -> anyhow::Result<Self> {
+    /// `estimated_average_object_size` is in bytes and must be positive.
+    pub fn memory(
+        capacity: u64,
+        cache_name: &'static str,
+        estimated_average_object_size: u64,
+    ) -> anyhow::Result<Self> {
         if capacity == 0 {
             return Ok(Self { cache: None });
         }
@@ -141,6 +165,7 @@ impl FeuerCache {
             cache_name,
             None,
             1,
+            estimated_average_object_size,
         )
     }
 
@@ -148,6 +173,8 @@ impl FeuerCache {
     /// Disk initialization blocks and requires an entered Tokio runtime.
     /// `file_name` must be distinct for caches in the same directory.
     /// `cache_name` identifies the cache in metrics; use a fixed name, not a path or request key.
+    /// `estimated_average_object_size` is in bytes and must be positive. History is sized for
+    /// eight times the estimated resident object count across both tiers.
     /// `scorer` defaults to frequency-based retention in both memory and disk.
     /// Increment `payload_version` when changing the encoded result format.
     pub fn open(
@@ -157,6 +184,7 @@ impl FeuerCache {
         cache_name: &'static str,
         scorer: Option<Arc<dyn feuer::RetentionScorer>>,
         payload_version: u64,
+        estimated_average_object_size: u64,
     ) -> anyhow::Result<Self> {
         if config.memory_capacity.as_u64() == 0 && config.disk_capacity.as_u64() == 0 {
             return Ok(Self { cache: None });
@@ -168,6 +196,7 @@ impl FeuerCache {
                 cache_name,
                 scorer.unwrap_or_else(|| Arc::new(feuer::FetchCostScorer::default())),
                 payload_version,
+                estimated_average_object_size,
             )?),
         })
     }
@@ -205,7 +234,7 @@ mod startup_tests {
 
     #[tokio::test]
     async fn test_oversized_values_do_not_evict_cached_entries() {
-        let cache = FeuerCache::memory(8, "test_size_limit").unwrap();
+        let cache = FeuerCache::memory(8, "test_size_limit", 8).unwrap();
         cache.put("fits", OwnedBytes::new(&b"12345678"[..]));
         cache.put("oversized", OwnedBytes::new(&b"123456789"[..]));
         assert!(cache.get("oversized").await.is_none());
@@ -244,6 +273,7 @@ mod startup_tests {
             "predicate",
             Some(scorer.clone()),
             2,
+            16 * 1024,
         )
         .unwrap();
         // More entries than memory shards force eviction to consult the scorer.
@@ -270,7 +300,7 @@ mod startup_tests {
         let scorer = Arc::new(feuer::FetchCostScorer::default());
         for cache_name in ["storage", "partial_request", "predicate"] {
             let cache = queues
-                .open(&config, cache_name, cache_name, scorer.clone(), 1)
+                .open(&config, cache_name, cache_name, scorer.clone(), 1, 1024)
                 .unwrap();
             assert_eq!(cache.config().disk_capacity(), 0);
             assert_eq!(
@@ -307,6 +337,7 @@ mod startup_tests {
                 "storage",
                 Arc::new(feuer::FetchCostScorer::default()),
                 1,
+                1024 * 1024,
             )
         };
         let mut config = StorageCacheConfig {
@@ -342,7 +373,7 @@ mod startup_tests {
         let recorder = DebuggingRecorder::new();
         let snapshotter = recorder.snapshotter();
         let _guard = ::metrics::set_default_local_recorder(&recorder);
-        FeuerCache::memory(1024, "storage").unwrap();
+        FeuerCache::memory(1024, "storage", 1024 * 1024).unwrap();
         let fallback = snapshotter
             .snapshot()
             .into_vec()
@@ -381,6 +412,7 @@ mod tests {
             "partial_request",
             None,
             1,
+            2 * 1024,
         )
         .unwrap();
         cache.put("key", OwnedBytes::new(&b"value"[..]));
@@ -408,6 +440,7 @@ mod tests {
             "partial_request",
             None,
             1,
+            2 * 1024,
         )
         .unwrap();
         let predicate = FeuerCache::open(
@@ -417,6 +450,7 @@ mod tests {
             "predicate",
             None,
             1,
+            16 * 1024,
         )
         .unwrap();
         let capacities: HashMap<_, _> = snapshotter
