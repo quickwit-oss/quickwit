@@ -378,7 +378,7 @@ pub(crate) async fn warmup(
     let warm_up_automatons_future = run_cancellable(abort_token.as_ref(), async {
         warmed_hits =
             warm_up_automatons(searcher, warmup_info, predicate_cache, split_id, priority).await?;
-        anyhow::Ok(())
+        Ok::<(), SearchError>(())
     })
     .instrument(debug_span!("warm_up_automatons"));
 
@@ -586,28 +586,37 @@ async fn warm_up_automatons(
                     let automaton = crate::search_thread_pool()
                         .run_cpu_intensive_with_priority(priority, move || {
                             let Automaton::Regex(path, regex) = automaton;
-                            let automaton = get_or_compile_cached_fst_regex(&regex)
-                                .context("failed to parse regex during warmup")?;
-                            anyhow::Ok(quickwit_query::query_ast::JsonPathPrefix {
+                            let automaton =
+                                get_or_compile_cached_fst_regex(&regex).ok_or_else(|| {
+                                    SearchError::InvalidArgument(format!(
+                                        "failed to parse regex `{regex}` during warmup"
+                                    ))
+                                })?;
+                            Ok::<_, SearchError>(quickwit_query::query_ast::JsonPathPrefix {
                                 automaton,
                                 prefix: path.unwrap_or_default(),
                             })
                         })
                         .await
-                        .context("automaton compilation task panicked")??;
+                        .map_err(|_| {
+                            SearchError::Internal("automaton compilation task panicked".to_string())
+                        })??;
                     // The callback API preserves request priority, unlike Tantivy's concrete
                     // executor. Warmed directory reads are cached for synchronous decoding below.
                     inv_idx
                         .warm_postings_automaton(automaton.clone(), cpu_intensive_executor)
                         .await
-                        .context("failed to load automaton")?;
+                        .map_err(|error| {
+                            SearchError::from(error).with_context("failed to load automaton")
+                        })?;
                     let AutomatonWarmup::CacheHits(cache_keys) = warmup else {
-                        return anyhow::Ok(WarmedHits::default());
+                        return Ok::<_, SearchError>(WarmedHits::default());
                     };
-                    anyhow::ensure!(
-                        searcher.segment_readers().len() == 1,
-                        "predicate hitsets require a single-segment split"
-                    );
+                    if searcher.segment_readers().len() != 1 {
+                        return Err(SearchError::Internal(
+                            "predicate hitsets require a single-segment split".to_string(),
+                        ));
+                    }
                     let cache = predicate_cache.clone();
                     let split_id = split_id.to_string();
                     let cache_keys = cache_keys.clone();
@@ -615,6 +624,9 @@ async fn warm_up_automatons(
                     let max_doc = segment_reader.max_doc();
                     crate::search_thread_pool()
                         .run_cpu_intensive_with_priority(priority, move || {
+                            // This synchronous CPU task's elapsed time estimates the cost saved
+                            // by caching, excluding download and executor queue time.
+                            let start = Instant::now();
                             let mut bitset = BitSet::with_max_value(max_doc);
                             let mut terms = inv_idx
                                 .terms()
@@ -634,15 +646,24 @@ async fn warm_up_automatons(
                                 }
                             }
                             let hits = HitSet::from_bitset(bitset);
+                            let cpu_time = start.elapsed();
                             let mut warmed_hits = WarmedHits::default();
                             for key in cache_keys {
-                                cache.put(split_id.clone(), key.clone(), segment_id, hits.clone());
+                                cache.put(
+                                    split_id.clone(),
+                                    key.clone(),
+                                    segment_id,
+                                    hits.clone(),
+                                    cpu_time,
+                                );
                                 warmed_hits.insert(key, (segment_id, hits.clone()));
                             }
-                            anyhow::Ok(warmed_hits)
+                            Ok::<_, SearchError>(warmed_hits)
                         })
                         .await
-                        .context("automaton cache fill task panicked")?
+                        .map_err(|_| {
+                            SearchError::Internal("automaton cache fill task panicked".to_string())
+                        })?
                 });
             }
         }
@@ -943,7 +964,7 @@ async fn leaf_search_single_split(
                     .expect("injector preserves nodes");
                 // Preserve initial cache hits as well as warmed hits. Looking up the shared
                 // cache again could lose results evicted since the first query build.
-                let (query, _) = doc_mapper.query(schema, query_ast, false, None)?;
+                let (query, _) = doc_mapper.query(schema, query_ast, false)?;
                 anyhow::Ok(query)
             })
             .await
@@ -2554,8 +2575,8 @@ mod tests {
     use async_trait::async_trait;
     use quickwit_config::{LambdaConfig, SearcherConfig};
     use quickwit_proto::search::LambdaSingleSplitResult;
-    use quickwit_storage::{RamStorageBuilder, StorageError, StorageErrorKind};
     use quickwit_query::query_ast::RegexQuery;
+    use quickwit_storage::{RamStorageBuilder, StorageError, StorageErrorKind};
     use tantivy::TantivyDocument;
     use tantivy::schema::Schema;
 
@@ -3173,15 +3194,23 @@ mod tests {
             admit: bool,
             writes: AtomicUsize,
         }
+        #[async_trait]
         impl PredicateCache for TestCache {
-            fn get(&self, split: String, query: String) -> Option<(SegmentId, HitSet)> {
-                self.shared.get(split, query)
+            async fn get(&self, split: String, query: String) -> Option<(SegmentId, HitSet)> {
+                self.shared.get(split, query).await
             }
 
-            fn put(&self, split: String, query: String, segment: SegmentId, hits: HitSet) {
+            fn put(
+                &self,
+                split: String,
+                query: String,
+                segment: SegmentId,
+                hits: HitSet,
+                cpu_time: Duration,
+            ) {
                 self.writes.fetch_add(1, Ordering::Relaxed);
                 if self.admit {
-                    self.shared.put(split, query, segment, hits);
+                    self.shared.put(split, query, segment, hits, cpu_time);
                 }
             }
         }
@@ -3201,7 +3230,7 @@ mod tests {
                     admit,
                     writes: AtomicUsize::new(0),
                 });
-                let ast: QueryAst = serde_json::from_value(serde_json::json!({
+                let mut ast: QueryAst = serde_json::from_value(serde_json::json!({
                     "type": "bool",
                     "must": [
                         {"type": "regex", "field": "body", "regex": pattern},
@@ -3210,13 +3239,14 @@ mod tests {
                     ]
                 }))
                 .unwrap();
+                PredicateCacheInjector {
+                    cache: cache.clone(),
+                    split_id: "split".into(),
+                }
+                .resolve(&mut ast)
+                .await;
                 let (_, warmup_info, ast) = doc_mapper
-                    .query_and_ast(
-                        searcher.schema().clone(),
-                        ast,
-                        false,
-                        Some((cache.clone(), "split".into())),
-                    )
+                    .query_and_ast(searcher.schema().clone(), ast, false)
                     .unwrap();
                 let WarmupOutcome::Ready(hits) = warmup(
                     &searcher,
@@ -3236,6 +3266,7 @@ mod tests {
                     assert_eq!(
                         cache
                             .get("split".into(), key.clone())
+                            .await
                             .map(|(_, hits)| hits.into_buffer()),
                         admit.then(|| hits.clone().into_buffer())
                     );
@@ -3243,7 +3274,7 @@ mod tests {
                 assert_eq!(cache.writes.load(Ordering::Relaxed), 2);
                 let ast = WarmedHitsInjector(hits).transform(ast).unwrap().unwrap();
                 let (query, warmup_info) = doc_mapper
-                    .query(searcher.schema().clone(), ast, false, None)
+                    .query(searcher.schema().clone(), ast, false)
                     .unwrap();
                 assert!(warmup_info.automatons_grouped_by_field.is_empty());
                 assert_eq!(
@@ -3276,7 +3307,7 @@ mod tests {
         .into();
         let key = serde_json::to_string(&query).unwrap();
         let (_, warmup_info) = doc_mapper
-            .query(searcher.schema().clone(), query, false, None)
+            .query(searcher.schema().clone(), query, false)
             .unwrap();
         // Regex resolution adds case-insensitivity for the lowercasing text tokenizer.
         assert_eq!(
@@ -3294,7 +3325,12 @@ mod tests {
         .await
         .unwrap();
         assert!(hits.is_empty());
-        assert!(predicate_cache.get(split_id.to_string(), key).is_none());
+        assert!(
+            predicate_cache
+                .get(split_id.to_string(), key)
+                .await
+                .is_none()
+        );
     }
 
     fn nz(n: usize) -> std::num::NonZeroUsize {

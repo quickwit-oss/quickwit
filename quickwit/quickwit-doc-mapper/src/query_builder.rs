@@ -17,8 +17,9 @@ use std::convert::Infallible;
 use std::ops::Bound;
 
 use quickwit_query::query_ast::{
-    BuildTantivyAstContext, CalcFieldQuery, FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery,
-    QueryAst, QueryAstVisitor, RangeQuery, RegexQuery, TermSetQuery, WildcardQuery,
+    BuildTantivyAstContext, CacheNode, CacheState, CalcFieldQuery, FieldPresenceQuery,
+    FullTextQuery, PhrasePrefixQuery, QueryAst, QueryAstVisitor, RangeQuery, RegexQuery,
+    TermSetQuery, WildcardQuery,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_query::{InvalidQuery, find_field_or_hit_dynamic};
@@ -143,7 +144,6 @@ pub(crate) fn build_query(
     query_ast: QueryAst,
     context: &BuildTantivyAstContext,
 ) -> Result<(Box<dyn Query>, WarmupInfo, QueryAst), QueryParserError> {
-    let cache_predicates = true;
     // Visit after cache injection: cache hits do not evaluate the underlying predicate,
     // while uninitialized cache nodes and cache misses still need their input columns.
     let mut fast_fields_visitor = GetRequiredFastFieldsVisitor {
@@ -160,7 +160,7 @@ pub(crate) fn build_query(
             &query_ast,
             context.schema,
             context.tokenizer_manager,
-            cache_predicates,
+            false,
         )?;
 
     let mut terms_grouped_by_field: HashMap<Field, HashMap<_, bool>> = Default::default();
@@ -289,6 +289,19 @@ impl<'a> ExtractPrefixTermRangesAndAutomatons<'a> {
 
 impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRangesAndAutomatons<'b> {
     type Err = InvalidQuery;
+
+    fn visit_cache_node(&mut self, node: &'a CacheNode) -> Result<(), Self::Err> {
+        if matches!(node.state, CacheState::CacheHit(_)) {
+            return Ok(());
+        }
+        // Only resolved misses can retain prepared hitsets. Scored and cache-disabled queries
+        // leave nodes uninitialized and need postings for their ordinary query execution.
+        let previous = self.cache_predicates;
+        self.cache_predicates = matches!(node.state, CacheState::CacheMiss(_));
+        let result = self.visit(&node.inner);
+        self.cache_predicates = previous;
+        result
+    }
 
     fn visit_full_text(&mut self, full_text_query: &'a FullTextQuery) -> Result<(), Self::Err> {
         if let Some(prefix_term) =
@@ -603,7 +616,7 @@ mod test {
                 )])
             );
             // Without query caching, the plan must only warm postings.
-            let (_, warmup, _) = build_query(query, &context, None).unwrap();
+            let (_, warmup, _) = build_query(query, &context).unwrap();
             assert_eq!(
                 warmup.automatons_grouped_by_field,
                 HashMap::from([(

@@ -14,7 +14,8 @@
 
 use bitpacking::{BitPacker, BitPacker4x};
 use tantivy::directory::OwnedBytes;
-use tantivy::{DocId, DocSet, Score, TERMINATED};
+use tantivy::query::BitSetDocSet;
+use tantivy::{BitSet, DocId, DocSet, Score, TERMINATED};
 
 const BLOCK_LEN: usize = BitPacker4x::BLOCK_LEN;
 
@@ -42,6 +43,21 @@ impl HitSet {
 
     pub fn is_empty(&self) -> bool {
         self.size_hint() == 0
+    }
+
+    /// Compresses the document IDs in a bitset. Run this on a CPU executor.
+    pub fn from_bitset(hits: BitSet) -> Self {
+        // BitSetDocSet cannot initialize a bitset with zero buckets.
+        if hits.len() == 0 {
+            return Self::empty();
+        }
+        let mut docs = BitSetDocSet::from(hits);
+        let mut builder = HitSetBuilder::new();
+        while docs.doc() != TERMINATED {
+            builder.insert(docs.doc());
+            docs.advance();
+        }
+        builder.build()
     }
 
     /// The buffer must have been produced by `HitSet::into_buffer`.
@@ -293,6 +309,31 @@ mod tests {
     use tantivy::SeekDangerResult;
 
     use super::*;
+
+    #[test]
+    fn test_hit_set_from_bitset() {
+        for docs in [
+            vec![],
+            vec![0],
+            vec![63, 64, 127, 128, 1024],
+            (0..128).collect(),
+            (0..257).collect(),
+            (0..1030).map(|doc| doc * 3).collect(),
+        ] {
+            let max_doc = docs.last().map(|doc| doc + 1).unwrap_or(0);
+            let mut bitset = BitSet::with_max_value(max_doc);
+            for &doc in &docs {
+                bitset.insert(doc);
+            }
+            let mut hits = HitSet::from_bitset(bitset);
+            assert_eq!(hits.size_hint() as usize, docs.len());
+            for doc in docs {
+                assert_eq!(hits.doc(), doc);
+                hits.advance();
+            }
+            assert_eq!(hits.doc(), TERMINATED);
+        }
+    }
 
     fn build(docs: &[u32]) -> HitSet {
         let mut builder = HitSetBuilder::new();
