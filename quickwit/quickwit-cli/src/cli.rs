@@ -14,7 +14,7 @@
 
 use anyhow::{Context, bail};
 use clap::{Arg, ArgAction, ArgMatches, Command, arg};
-use quickwit_serve::EnvFilterReloadFn;
+use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use tracing::Level;
 
 use crate::index::{IndexCliCommand, build_index_command};
@@ -86,10 +86,16 @@ impl CliCommand {
         }
     }
 
-    pub async fn execute(self, env_filter_reload_fn: EnvFilterReloadFn) -> anyhow::Result<()> {
+    pub async fn execute(
+        self,
+        build_info: &'static BuildInfo,
+        env_filter_reload_fn: EnvFilterReloadFn,
+    ) -> anyhow::Result<()> {
         match self {
             CliCommand::Index(subcommand) => subcommand.execute().await,
-            CliCommand::Run(subcommand) => subcommand.execute(env_filter_reload_fn).await,
+            CliCommand::Run(subcommand) => {
+                subcommand.execute(build_info, env_filter_reload_fn).await
+            }
             CliCommand::Source(subcommand) => subcommand.execute().await,
             CliCommand::Split(subcommand) => subcommand.execute().await,
             CliCommand::Tool(subcommand) => subcommand.execute().await,

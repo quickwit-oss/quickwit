@@ -14,6 +14,8 @@
 
 #![recursion_limit = "256"]
 
+mod build_info;
+
 use std::num::NonZeroUsize;
 
 use anyhow::Context;
@@ -60,13 +62,13 @@ fn main() -> anyhow::Result<()> {
         .build()
         .context("failed to start main Tokio runtime")?;
 
-    rt.block_on(main_impl())
+    rt.block_on(main_impl(&build_info::BUILD_INFO))
 }
 
-fn parse_cli_command() -> (CliCommand, bool) {
+fn parse_cli_command(build_info: &BuildInfo) -> (CliCommand, bool) {
     let about_text = "Sub-second search & analytics engine on cloud storage.\n  Find more \
                       information at https://quickwit.io/docs\n\n";
-    let version_text = BuildInfo::get_version_text();
+    let version_text = build_info.get_version_text();
 
     let app = build_cli().about(about_text).version(version_text);
     let matches = app.get_matches();
@@ -114,12 +116,10 @@ fn init_telemetry(
     Ok((telemetry_handle, env_filter_reload_fn))
 }
 
-async fn main_impl() -> anyhow::Result<()> {
-    let (command, ansi_colors) = parse_cli_command();
+async fn main_impl(build_info: &'static BuildInfo) -> anyhow::Result<()> {
+    let (command, ansi_colors) = parse_cli_command(build_info);
 
     install_default_crypto_provider();
-
-    let build_info = BuildInfo::get();
     let (telemetry_handle, env_filter_reload_fn) = init_telemetry(
         &build_info.version,
         command.default_log_level(),
@@ -136,17 +136,18 @@ async fn main_impl() -> anyhow::Result<()> {
     #[cfg(target_os = "linux")]
     start_proc_io_metrics_loop();
 
-    let return_code: i32 = if let Err(command_error) = command.execute(env_filter_reload_fn).await {
-        error!(error=%command_error, "command failed");
-        eprintln!(
-            "{} command failed: {:?}\n",
-            "✘".color(RED_COLOR),
-            command_error
-        );
-        1
-    } else {
-        0
-    };
+    let return_code: i32 =
+        if let Err(command_error) = command.execute(build_info, env_filter_reload_fn).await {
+            error!(error=%command_error, "command failed");
+            eprintln!(
+                "{} command failed: {:?}\n",
+                "✘".color(RED_COLOR),
+                command_error
+            );
+            1
+        } else {
+            0
+        };
     telemetry_handle.shutdown().await?;
     std::process::exit(return_code)
 }

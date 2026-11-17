@@ -33,6 +33,7 @@ async fn call(tools: &Tools, name: &str, arguments: Value) -> Value {
     let message = json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
         "params":{"name":name,"arguments":arguments}});
     let (status, response) = protocol::handle(
+        crate::BuildInfo::for_tests(),
         message.to_string().as_bytes(),
         Some(protocol::PROTOCOL_VERSION),
         tools,
@@ -70,6 +71,7 @@ async fn test_mcp_search_uses_es_query_and_response_conversion() {
         })
     });
     let routes = mcp_api_handlers(
+        crate::BuildInfo::for_tests(),
         Arc::new(search),
         MetastoreServiceClient::mocked(),
         Vec::new(),

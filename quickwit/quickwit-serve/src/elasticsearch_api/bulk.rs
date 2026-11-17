@@ -210,6 +210,7 @@ mod tests {
             index_service,
             true,
             false,
+            crate::BuildInfo::for_tests(),
         );
         let payload = r#"
             { "create" : { "_index" : "my-index", "_id" : "1"} }
@@ -246,6 +247,7 @@ mod tests {
             index_service,
             true,
             false,
+            crate::BuildInfo::for_tests(),
         );
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
@@ -285,6 +287,7 @@ mod tests {
             index_service,
             true,
             false,
+            crate::BuildInfo::for_tests(),
         );
         let payload = "
             {\"create\": {\"_index\": \"my-index-1\", \"_id\": \"1674834324802805760\"}}
@@ -322,6 +325,7 @@ mod tests {
             index_service,
             true,
             false,
+            crate::BuildInfo::for_tests(),
         );
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
@@ -362,6 +366,7 @@ mod tests {
             index_service,
             true,
             false,
+            crate::BuildInfo::for_tests(),
         );
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
@@ -453,6 +458,7 @@ mod tests {
             index_service,
             true,
             false,
+            crate::BuildInfo::for_tests(),
         );
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
@@ -541,6 +547,7 @@ mod tests {
             index_service,
             true,
             false,
+            crate::BuildInfo::for_tests(),
         );
         let payload = r#"
             {"create": {"_index": "my-index", "_id": "1"},}

@@ -86,7 +86,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_rest_node_info() {
-        let build_info = BuildInfo::get();
+        let build_info = BuildInfo::for_tests();
         let runtime_info = RuntimeInfo::get();
         let mut config = NodeConfig::for_test();
         config.metastore_uri = Uri::for_test("postgresql://username:password@db");
@@ -96,11 +96,7 @@ mod tests {
         assert_eq!(resp.status(), 200);
         let info_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
         let build_info_json = info_json.get("build").unwrap();
-        let expected_build_info_json = serde_json::json!({
-            "commit_date": build_info.commit_date,
-            "version": build_info.version,
-        });
-        assert_json_include!(actual: build_info_json, expected: expected_build_info_json);
+        assert_eq!(build_info_json, &serde_json::to_value(build_info).unwrap());
 
         let runtime_info_json = info_json.get("runtime").unwrap();
         let expected_runtime_info_json = serde_json::json!({
