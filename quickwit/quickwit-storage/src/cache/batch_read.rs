@@ -24,17 +24,17 @@ pub(crate) const MAX_CACHE_RANGES: usize = 100;
 /// Checks a synchronous cache, then reads all misses as one batch.
 /// Preserves input order and duplicates. Empty ranges bypass cache and storage.
 /// Batches with more than 100 ranges skip cache lookups and pass all nonempty ranges
-/// to the read callback. The callback controls cache insertion.
+/// to `fetch_ranges`, which controls cache insertion.
 ///
 /// Ranges must have `start <= end`. `fetch_ranges` must return one buffer per range,
 /// in input order, and may populate its cache after the whole read succeeds.
-pub async fn read_batch_with_cache<ReadFuture, Error>(
+pub async fn read_batch_with_cache<FetchRangesFuture, Error>(
     requested_ranges: Vec<Range<usize>>,
     mut get_cached: impl FnMut(Range<usize>) -> Option<OwnedBytes>,
-    fetch_ranges: impl FnOnce(Vec<Range<usize>>) -> ReadFuture,
+    fetch_ranges: impl FnOnce(Vec<Range<usize>>) -> FetchRangesFuture,
 ) -> Result<Vec<OwnedBytes>, Error>
 where
-    ReadFuture: Future<Output = Result<Vec<OwnedBytes>, Error>>,
+    FetchRangesFuture: Future<Output = Result<Vec<OwnedBytes>, Error>>,
 {
     let mut batch = BatchReadBuffers::new(requested_ranges.len());
     if batch.skip_cache_lookups(&requested_ranges) {
@@ -50,14 +50,16 @@ where
 
 /// Like [`read_batch_with_cache`], with up to five concurrent asynchronous cache lookups.
 /// Collects all misses before calling `fetch_ranges`.
-pub async fn read_batch_with_async_cache<GetFuture, ReadFuture, Error>(
+/// `get_cached` returns cached bytes or `None` for a range.
+/// `fetch_ranges` returns the fetched buffers or an error.
+pub async fn read_batch_with_async_cache<CacheLookupFuture, FetchRangesFuture, Error>(
     requested_ranges: Vec<Range<usize>>,
-    mut get_cached: impl FnMut(Range<usize>) -> GetFuture,
-    fetch_ranges: impl FnOnce(Vec<Range<usize>>) -> ReadFuture,
+    mut get_cached: impl FnMut(Range<usize>) -> CacheLookupFuture,
+    fetch_ranges: impl FnOnce(Vec<Range<usize>>) -> FetchRangesFuture,
 ) -> Result<Vec<OwnedBytes>, Error>
 where
-    GetFuture: Future<Output = Option<OwnedBytes>>,
-    ReadFuture: Future<Output = Result<Vec<OwnedBytes>, Error>>,
+    CacheLookupFuture: Future<Output = Option<OwnedBytes>>,
+    FetchRangesFuture: Future<Output = Result<Vec<OwnedBytes>, Error>>,
 {
     let mut batch = BatchReadBuffers::new(requested_ranges.len());
     if batch.skip_cache_lookups(&requested_ranges) {
@@ -124,13 +126,13 @@ impl BatchReadBuffers {
     /// the original request order. Empty ranges keep their empty buffers. Skips the callback
     /// when there are no misses and forwards the original ranges directly when every range misses.
     /// The callback must return one buffer per missing range, in the order supplied.
-    async fn fetch_ranges<ReadFuture, Error>(
+    async fn fetch_ranges<FetchRangesFuture, Error>(
         mut self,
         requested_ranges: Vec<Range<usize>>,
-        fetch_ranges: impl FnOnce(Vec<Range<usize>>) -> ReadFuture,
+        fetch_ranges: impl FnOnce(Vec<Range<usize>>) -> FetchRangesFuture,
     ) -> Result<Vec<OwnedBytes>, Error>
     where
-        ReadFuture: Future<Output = Result<Vec<OwnedBytes>, Error>>,
+        FetchRangesFuture: Future<Output = Result<Vec<OwnedBytes>, Error>>,
     {
         if self.missing_range_indices.is_empty() {
             return Ok(self.results);
