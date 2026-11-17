@@ -110,7 +110,7 @@ async fn test_collects_by_object_and_collector() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn test_singleton_waits_and_validates_response() {
+async fn test_singleton_waits_and_forwards_response() {
     for length in [3, 4, 5] {
         let bytes = OwnedBytes::new((5..5 + length).collect::<Vec<u8>>());
         let address = bytes.as_ptr();
@@ -126,17 +126,9 @@ async fn test_singleton_waits_and_validates_response() {
         let read_start = tokio::time::Instant::now();
         let result = storage.get_slice(Path::new("file"), 5..9).await;
         assert!(read_start.elapsed() >= COLLECTION_DURATION);
-        if length == 4 {
-            let bytes = result.unwrap();
-            assert_eq!(bytes.as_ptr(), address);
-            assert_eq!(bytes.as_slice(), &[5, 6, 7, 8]);
-        } else {
-            assert_eq!(
-                io::Error::from(result.unwrap_err()).kind(),
-                io::ErrorKind::InvalidData,
-                "response length: {length}"
-            );
-        }
+        let bytes = result.unwrap();
+        assert_eq!(bytes.as_ptr(), address);
+        assert_eq!(bytes.as_slice(), &(5..5 + length).collect::<Vec<u8>>());
     }
 }
 

@@ -1832,12 +1832,12 @@ mod tests {
             OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_NUM_BYTES,
         };
 
-        // Streaming accounts for bytes actually read, including failed length checks.
+        // Streaming counts bytes read into the buffer, including reads that fail before filling it.
         // Empty reads must not issue a request.
         for (status, payload, succeeds) in [
             (206, "world", true),
             (206, "abcd", false),
-            (206, "abcdef", false),
+            (206, "abcdef", true),
             (404, "", false),
         ] {
             let client = StaticReplayClient::new(vec![ReplayEvent::new(
@@ -1869,11 +1869,11 @@ mod tests {
                 .await;
             assert_eq!(result.is_ok(), succeeds, "{result:?}");
             if succeeds {
-                assert_eq!(&buffer, b"world");
+                assert_eq!(&buffer, &payload.as_bytes()[..buffer.len()]);
             }
             assert_eq!(
                 OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.get() - bytes_before,
-                payload.len() as u64,
+                payload.len().min(buffer.len()) as u64,
             );
             assert_eq!(OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT.get(), count_before);
             assert_eq!(

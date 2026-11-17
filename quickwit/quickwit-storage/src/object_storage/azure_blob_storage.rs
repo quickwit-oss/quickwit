@@ -39,7 +39,7 @@ use quickwit_metrics::HistogramTimer;
 use regex::Regex;
 use tantivy::directory::OwnedBytes;
 use thiserror::Error;
-use tokio::io::{AsyncRead, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tokio_util::io::StreamReader;
 use tracing::{info, instrument, warn};
@@ -488,9 +488,8 @@ impl Storage for AzureBlobStorage {
             let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
             let _in_flight_guards = object_storage_get_slice_in_flight_guards(num_bytes);
             let mut buffer = buffer.lock().await;
-            let mut remaining = &mut **buffer;
             // Keep Azure errors intact so HTTP failures retain their retry classification.
-            let mut chunks = self
+            let chunks = self
                 .container_client
                 .blob_client(&name)
                 .get()
@@ -498,20 +497,9 @@ impl Storage for AzureBlobStorage {
                 .into_stream()
                 .map_ok(|page| page.data)
                 .try_flatten();
-            while let Some(chunk) = chunks.next().await {
-                let chunk = chunk?;
-                if chunk.len() > remaining.len() {
-                    return Err(AzureError::message(
-                        ErrorKind::Other,
-                        "range download returned too many bytes",
-                    )
-                    .into());
-                }
-                io::Write::write_all(&mut remaining, &chunk)?;
-            }
-            if !remaining.is_empty() {
-                return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
-            }
+            StreamReader::new(chunks.map_err(io::Error::other))
+                .read_exact(&mut buffer)
+                .await?;
             Ok::<_, AzureErrorWrapper>(())
         })
         .await?;
@@ -820,8 +808,8 @@ mod tests {
             ),
             (vec![short(), short(), short()], Some(StorageErrorKind::Io)),
             (
-                vec![response(PartialContent, vec![Ok("toolong".into())])],
-                Some(StorageErrorKind::Internal),
+                vec![response(PartialContent, vec![Ok("world!!".into())])],
+                None,
             ),
         ] {
             let attempts = responses.len();

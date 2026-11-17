@@ -186,16 +186,10 @@ impl Storage for TimeoutAndRetryStorage {
                         match timeout_at(deadline, reader.next()).await {
                             Ok(Some(result)) => {
                                 let bytes = result?;
-                                if bytes.len() > range.len() {
-                                    return Err(io::Error::new(
-                                        io::ErrorKind::InvalidData,
-                                        "get_slice_stream returned more bytes than requested",
-                                    ));
-                                }
                                 range.start += bytes.len();
                                 return Ok(Some((bytes, (range, timeouts, reader, deadline))));
                             }
-                            Ok(None) => return Ok(None),
+                            Ok(None) => return Ok::<_, io::Error>(None),
                             Err(_) => {}
                         }
                         // Drop the timed-out reader before reopening.
@@ -383,12 +377,13 @@ mod tests {
     async fn test_stream_preserves_body_failures() {
         for (body, expected_error) in [
             (Ok(&b"short"[..]), None),
-            (Ok(&b"too many bytes"[..]), Some(io::ErrorKind::InvalidData)),
+            (Ok(&b"too many bytes"[..]), None),
             (
                 Err(io::Error::other("body failure")),
                 Some(io::ErrorKind::Other),
             ),
         ] {
+            let expected_bytes = body.as_ref().ok().copied();
             let mut underlying = MockStorage::new();
             underlying
                 .expect_get_slice_stream()
@@ -402,8 +397,8 @@ mod tests {
             let mut bytes = Vec::new();
             let result = reader.read_to_end(&mut bytes).await;
             assert_eq!(result.err().map(|error| error.kind()), expected_error);
-            if expected_error.is_none() {
-                assert_eq!(bytes, b"short"); // Caller can detect truncation from the length.
+            if let Some(expected_bytes) = expected_bytes {
+                assert_eq!(bytes, expected_bytes);
             }
         }
     }

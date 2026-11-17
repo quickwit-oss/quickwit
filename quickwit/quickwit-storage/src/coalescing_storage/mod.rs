@@ -265,10 +265,7 @@ async fn fetch_requested_slices(
     mut requests: &[(usize, Range<usize>)],
 ) -> StorageResult<Vec<(usize, OwnedBytes)>> {
     if let [(index, _)] = requests {
-        let bytes = storage.get_slice(path, download_range.clone()).await?;
-        if bytes.len() != download_range.len() {
-            return Err(io::Error::from(io::ErrorKind::InvalidData).into());
-        }
+        let bytes = storage.get_slice(path, download_range).await?;
         return Ok(vec![(*index, bytes)]);
     }
     let reader = storage
@@ -307,9 +304,6 @@ async fn fetch_requested_slices(
         requests = &requests[count..];
     }
     debug_assert_eq!(position, download_range.end);
-    if reader.read(&mut [0]).await? != 0 {
-        return Err(io::Error::from(io::ErrorKind::InvalidData).into());
-    }
     Ok(buffers)
 }
 

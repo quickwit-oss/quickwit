@@ -206,7 +206,7 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
 /// Implements [`Storage::get_slice_into`] by reading [`Storage::get_slice_stream`] directly into
 /// the supplied buffer. Use this only when streaming reads preserve the storage's behavior.
 ///
-/// Returns an error if the stream contains fewer or more bytes than requested.
+/// Fills the buffer, returning an error if the stream ends before it is filled.
 /// Empty ranges succeed without opening a stream.
 pub async fn default_get_slice_into<S: Storage + ?Sized>(
     storage: &S,
@@ -219,12 +219,6 @@ pub async fn default_get_slice_into<S: Storage + ?Sized>(
     }
     let mut stream = storage.get_slice_stream(path, range).await?;
     stream.read_exact(buffer).await?;
-    if stream.read(&mut [0]).await? != 0 {
-        return Err(StorageErrorKind::Internal.with_error(anyhow::anyhow!(
-            "range download returned more than {} bytes",
-            buffer.len()
-        )));
-    }
     Ok(())
 }
 
@@ -308,7 +302,7 @@ mod tests {
     const CONTENT: &[u8] = b"hello world";
 
     #[tokio::test]
-    async fn test_get_slice_into_requires_the_exact_stream_length() {
+    async fn test_get_slice_into_fills_buffer() {
         for payload in [b"abc".as_slice(), b"abcd", b"abcde"] {
             let mut storage = MockStorage::new();
             storage.expect_get_slice().never();
@@ -322,9 +316,9 @@ mod tests {
             let mut buffer = [99; 4];
             let result =
                 default_get_slice_into(&storage, Path::new("object"), 10..14, &mut buffer).await;
-            if payload.len() == 4 {
+            if payload.len() >= buffer.len() {
                 result.unwrap();
-                assert_eq!(&buffer, payload);
+                assert_eq!(&buffer, &payload[..buffer.len()]);
             } else {
                 assert!(result.is_err());
             }
