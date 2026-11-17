@@ -967,6 +967,77 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_document_with_empty_array_object() {
+        use serde::Deserialize;
+
+        let doc_mapper_json = json!({
+            "field_mappings": [
+                {
+                    "name": "payload",
+                    "type": "object",
+                    "field_mappings": [
+                        {"name": "label", "type": "text"},
+                        {
+                            "name": "repo",
+                            "type": "object",
+                            "field_mappings": [
+                                {"name": "name", "type": "text"}
+                            ]
+                        }
+                    ]
+                }
+            ]
+        });
+        let doc_mapper = DocMapperBuilder::deserialize(doc_mapper_json)
+            .unwrap()
+            .try_build()
+            .unwrap();
+        let schema = doc_mapper.schema();
+        let label_field = schema.get_field("payload.label").unwrap();
+
+        // An empty array, or an array containing only `null` elements, is ignored like `null`.
+        for empty_repo in [json!([]), json!([null]), json!([null, null])] {
+            let JsonValue::Object(json_obj) = json!({
+                "payload": {
+                    "label": "main",
+                    "repo": empty_repo
+                }
+            }) else {
+                panic!("expected a JSON object");
+            };
+            let (_, document) = doc_mapper.doc_from_json_obj(json_obj, 0).unwrap();
+            assert_eq!(
+                document
+                    .get_first(label_field)
+                    .and_then(|value| value.as_str()),
+                Some("main")
+            );
+        }
+
+        // The same applies at the top level of the document.
+        for empty_payload in [json!([]), json!([null, null])] {
+            let JsonValue::Object(json_obj) = json!({"payload": empty_payload}) else {
+                panic!("expected a JSON object");
+            };
+            doc_mapper.doc_from_json_obj(json_obj, 0).unwrap();
+        }
+
+        // Arrays containing at least one non-null element are still rejected.
+        for non_empty_repo in [
+            json!([{"name": "quickwit"}]),
+            json!([null, {"name": "quickwit"}]),
+            json!([[]]),
+        ] {
+            let JsonValue::Object(json_obj) = json!({"payload": {"repo": non_empty_repo}}) else {
+                panic!("expected a JSON object");
+            };
+            let error = doc_mapper.doc_from_json_obj(json_obj, 0).unwrap_err();
+            assert!(matches!(error, DocParsingError::ValueError(field_path, _)
+                if field_path == "payload.repo"));
+        }
+    }
+
+    #[test]
     fn test_validate_document_with_null_object() {
         use serde::Deserialize;
 
@@ -1006,6 +1077,33 @@ mod tests {
             .unwrap_err();
         assert!(matches!(error, DocParsingError::ValueError(field_path, _)
             if field_path == "payload.repo"));
+
+        // An empty array, or an array containing only `null` elements, is ignored like `null`.
+        for json_doc in [
+            r#"{"payload": {"repo": []}}"#,
+            r#"{"payload": {"repo": [null, null]}}"#,
+            r#"{"payload": []}"#,
+            r#"{"payload": [null]}"#,
+        ] {
+            let json_val: serde_json_borrow::Value = serde_json::from_str(json_doc).unwrap();
+            doc_mapper
+                .validate_json_obj(json_val.as_object().unwrap())
+                .unwrap();
+        }
+
+        // Arrays containing at least one non-null element are still rejected.
+        for json_doc in [
+            r#"{"payload": {"repo": [{"name": "quickwit"}]}}"#,
+            r#"{"payload": {"repo": [null, {"name": "quickwit"}]}}"#,
+            r#"{"payload": {"repo": [[]]}}"#,
+        ] {
+            let json_val: serde_json_borrow::Value = serde_json::from_str(json_doc).unwrap();
+            let error = doc_mapper
+                .validate_json_obj(json_val.as_object().unwrap())
+                .unwrap_err();
+            assert!(matches!(error, DocParsingError::ValueError(field_path, _)
+                if field_path == "payload.repo"));
+        }
     }
 
     #[test]

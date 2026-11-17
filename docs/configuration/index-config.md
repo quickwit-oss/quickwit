@@ -430,7 +430,7 @@ To declare an array type of `i64` in the index config, you just have to set the 
 
 Quickwit supports nested objects as long as it does not contain arrays of objects.
 
-A `null` value for an `object` field is ignored along with all of its subfields (see [Behavior with null values or missing fields](#behavior-with-null-values-or-missing-fields)).
+A `null` value, an empty array (`[]`), or an array containing only `null` elements for an `object` field is ignored along with all of its subfields (see [Behavior with null values or missing fields](#behavior-with-null-values-or-missing-fields)).
 
 ```yaml
 name: resource
@@ -601,7 +601,7 @@ For field names containing the `.` character, you will need to escape it when re
 
 ### Behavior with null values or missing fields
 
-Fields with `null` or missing fields in your JSON document will be silently ignored when indexing. This applies to every field type, including `object` fields: when an `object` field is `null`, it and all of its subfields are skipped, and the rest of the document is indexed normally. This is true in all modes, including `strict`.
+Fields with `null` or missing fields in your JSON document will be silently ignored when indexing. This applies to every field type, including `object` fields: when an `object` field is `null`, an empty array (`[]`), or an array containing only `null` elements (e.g. `[null, null]`), it and all of its subfields are skipped, and the rest of the document is indexed normally. This is true in all modes, including `strict`. An array containing at least one non-null element is still rejected for an `object` field, since arrays of objects are not supported.
 
 ## Indexing settings
 

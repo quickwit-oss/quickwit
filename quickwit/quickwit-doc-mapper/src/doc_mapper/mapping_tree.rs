@@ -967,6 +967,30 @@ impl From<MappingNode> for Vec<FieldMappingEntry> {
     }
 }
 
+/// Returns true if the JSON value carries no data for an `object` field, in which case the field
+/// and all of its subfields are ignored.
+///
+/// This is the case for `null`, an empty array, and an array containing only `null` elements.
+/// Arrays are only inspected one level deep: nested arrays (e.g. `[[]]`) are not considered empty.
+fn is_empty_json_value(json_value: &JsonValue) -> bool {
+    match json_value {
+        JsonValue::Null => true,
+        JsonValue::Array(elements) => elements.iter().all(JsonValue::is_null),
+        _ => false,
+    }
+}
+
+/// Same as [`is_empty_json_value`] for a borrowed JSON value.
+fn is_empty_borrowed_json_value(json_value: &BorrowedJsonValue) -> bool {
+    if json_value.is_null() {
+        return true;
+    }
+    if let BorrowedJsonValue::Array(elements) = json_value {
+        return elements.iter().all(BorrowedJsonValue::is_null);
+    }
+    false
+}
+
 #[derive(Clone)]
 pub(crate) enum MappingTree {
     Leaf(MappingLeaf),
@@ -985,7 +1009,7 @@ impl MappingTree {
                 mapping_leaf.validate_from_json(json_value, strict_mode, field_path)
             }
             MappingTree::Node(mapping_node) => {
-                if json_value.is_null() {
+                if is_empty_borrowed_json_value(json_value) {
                     return Ok(());
                 }
                 if let Some(json_obj) = json_value.as_object() {
@@ -1013,7 +1037,7 @@ impl MappingTree {
                 mapping_leaf.doc_from_json(json_value, document, path, mode == ModeType::Strict)
             }
             MappingTree::Node(mapping_node) => {
-                if json_value.is_null() {
+                if is_empty_json_value(&json_value) {
                     return Ok(());
                 }
                 if let JsonValue::Object(json_obj) = json_value {
