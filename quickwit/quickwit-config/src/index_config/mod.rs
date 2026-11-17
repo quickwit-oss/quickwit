@@ -584,6 +584,10 @@ pub(super) fn validate_index_config(
     // TODO see if we should store the byproducton the IndexConfig.
     build_doc_mapper(doc_mapping, search_settings)?;
 
+    ensure!(
+        indexing_settings.commit_timeout_secs > 0,
+        "index config `commit_timeout_secs` must be strictly positive"
+    );
     indexing_settings.merge_policy.validate()?;
     indexing_settings.resources.validate()?;
 
