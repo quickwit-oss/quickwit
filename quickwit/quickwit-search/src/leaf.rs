@@ -771,7 +771,7 @@ async fn leaf_search_single_split(
                 .get(split_id.clone(), term_absence_cache_key(term))
         })
         .collect::<FuturesUnordered<_>>()
-        .any(|entry| ready(entry.is_some_and(|(_segment_id, hits)| hits.is_empty())))
+        .any(|entry| ready(matches!(entry, Some((_segment_id, hits)) if hits.is_empty())))
         .await;
     let provably_empty = if cached_known_empty {
         true
@@ -2437,7 +2437,6 @@ mod tests {
     use quickwit_config::{LambdaConfig, SearcherConfig};
     use quickwit_proto::search::LambdaSingleSplitResult;
     use quickwit_storage::{RamStorageBuilder, StorageError, StorageErrorKind};
-    use rand::RngExt;
     use tantivy::TantivyDocument;
     use tantivy::schema::Schema;
 

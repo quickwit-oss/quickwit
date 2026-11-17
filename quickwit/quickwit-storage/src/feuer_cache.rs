@@ -69,6 +69,11 @@ impl FeuerIoQueues {
     ) -> anyhow::Result<feuer::Cache> {
         let memory_capacity = config.memory_capacity.as_u64();
         let disk_capacity = config.disk_capacity.as_u64();
+        // Validate before opening I/O queues or applying the disk-error fallback.
+        anyhow::ensure!(
+            disk_capacity == 0 || (2 * 1024 * 1024..=i64::MAX as u64).contains(&disk_capacity),
+            "disk cache capacity must be at least 2 MiB and at most i64::MAX"
+        );
         let open = |disk_capacity: u64| -> anyhow::Result<feuer::Cache> {
             let directory = if disk_capacity == 0 {
                 Path::new("")

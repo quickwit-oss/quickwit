@@ -218,13 +218,13 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(&bytes[..8], b"FETR\x01\0\0\0");
-        let records: Vec<_> = bytes[8..].chunks_exact(41).collect();
+        let records: Vec<_> = bytes[8..].as_chunks::<41>().0.iter().collect();
         assert_eq!(bytes.len(), 8 + 6 * 41);
         assert_eq!(
             records.iter().map(|record| record[0]).collect::<Vec<_>>(),
             [0, 3, 0, 1, 0, 4]
         );
-        for (index, pair) in records.chunks_exact(2).enumerate() {
+        for (index, pair) in records.as_chunks::<2>().0.iter().enumerate() {
             let field = |record: &[u8], offset| {
                 u64::from_le_bytes(record[offset..offset + 8].try_into().unwrap())
             };

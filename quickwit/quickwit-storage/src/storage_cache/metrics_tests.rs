@@ -416,7 +416,9 @@ async fn test_native_disk_registration_matches_complete_inventory() {
             &super::super::config_for_test(directory.path()),
             "metrics_cache",
             cache_name,
+            std::sync::Arc::new(feuer::FetchCostScorer::default()),
             0,
+            1024 * 1024,
         )
         .unwrap();
     let values = cache_metrics(&snapshotter, &[cache_name]);

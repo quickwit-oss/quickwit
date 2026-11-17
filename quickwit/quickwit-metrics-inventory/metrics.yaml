@@ -1,3 +1,7 @@
+feuer_admission_filter_total:
+  module: quickwit_storage::storage_cache::metrics::declarations
+  kind: counter
+  description: Completed caller-supplied admission filter decisions
 feuer_disk_batch_bytes_total:
   module: quickwit_storage::storage_cache::metrics::declarations
   kind: counter
@@ -113,7 +117,7 @@ feuer_memory_operations_total:
 feuer_memory_used_bytes:
   module: quickwit_storage::storage_cache::metrics::declarations
   kind: gauge
-  description: Cached allocation charges plus idle buffer capacity
+  description: Allocation bytes charged to cached objects plus idle buffer capacity
 quickwit_actor_inboxes_count:
   module: quickwit_actors::mailbox
   kind: gauge
