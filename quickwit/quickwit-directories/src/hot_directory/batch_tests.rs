@@ -34,8 +34,17 @@ fn hotcache(file_len: usize) -> OwnedBytes {
 }
 
 #[tokio::test]
-#[allow(clippy::single_range_in_vec_init)] // A batch containing one byte range.
 async fn test_batch_through_directory_caches_and_bundle() {
+    check_batch_through_directory_caches_and_bundle(false).await;
+}
+
+#[tokio::test]
+async fn test_large_batch_bypasses_cache_and_populates_warmup() {
+    check_batch_through_directory_caches_and_bundle(true).await;
+}
+
+#[allow(clippy::single_range_in_vec_init)] // A batch containing one byte range.
+async fn check_batch_through_directory_caches_and_bundle(large_batch: bool) {
     let content: Vec<u8> = CONTENT
         .iter()
         .copied()
@@ -52,10 +61,10 @@ async fn test_batch_through_directory_caches_and_bundle() {
     let streamed_bytes = bytes.clone();
     storage
         .expect_get_slice_stream()
-        .times(1)
+        .times(if large_batch { 2 } else { 1 })
         .returning(move |path, range| {
             assert_eq!(path, Path::new("split.split"));
-            assert_eq!(range, 10..80_012);
+            assert_eq!(range, if large_batch { 5..80_012 } else { 10..15 });
             Ok(Box::new(std::io::Cursor::new(streamed_bytes.slice(range))))
         });
     storage
@@ -70,18 +79,24 @@ async fn test_batch_through_directory_caches_and_bundle() {
     let (bundle, _) =
         BundleStorage::open_from_split_bytes(storage, "split.split".into(), footer).unwrap();
     let mut cache = MockStorageCache::default();
-    cache.expect_get().times(10_004).returning(|path, range| {
-        assert_eq!(path, Path::new(TEST_PATH));
-        assert!(
-            [2..4, 10..12, 7..9].contains(&range)
-                || (range.start >= 16 && (range.start - 16).is_multiple_of(8) && range.len() == 1)
-        );
-        (range == (800..801)).then(|| OwnedBytes::new(vec![((800 - 16) % 251) as u8]))
-    });
+    // Large batches skip shared-cache access. The initial scalar read still uses it.
+    cache
+        .expect_get()
+        .times(if large_batch { 1 } else { 5 })
+        .returning(|path, range| {
+            assert_eq!(path, Path::new(TEST_PATH));
+            assert!(
+                [2..4, 10..12, 7..9].contains(&range)
+                    || (range.start >= 16
+                        && (range.start - 16).is_multiple_of(8)
+                        && range.len() == 1)
+            );
+            (range == (800..801)).then(|| OwnedBytes::new(vec![((800 - 16) % 251) as u8]))
+        });
     let cached_content = content.clone();
     cache
         .expect_put()
-        .times(10_003)
+        .times(if large_batch { 1 } else { 4 })
         .returning(move |path, range, bytes| {
             assert_eq!(path, Path::new(TEST_PATH));
             assert_ne!(range, 800..801);
@@ -99,14 +114,16 @@ async fn test_batch_through_directory_caches_and_bundle() {
     let initial = handle.read_bytes_async(2..4).await.unwrap();
     assert_eq!(initial.as_slice(), b"23");
 
-    // FileSlice translates offsets before the caches remove hits and storage collects misses.
+    // FileSlice translates offsets before cache lookups (small batches) or bypass (large batches).
     let file = FileSlice::new(handle).slice(2..content.len());
-    let mut ranges = vec![8..10, 2..4, 0..2, 5..7, 8..10, 4..4];
-    let mut expected: Vec<&[u8]> = vec![b"ab", b"45", b"23", b"78", b"ab", b""];
+    let mut ranges = vec![8..10, 2..4, 0..2, 5..7, 8..10, 4..4, 798..799];
+    let mut expected: Vec<&[u8]> = vec![b"ab", b"45", b"23", b"78", b"ab", b"", &content[800..801]];
     // A 10k-range batch must reach the coalescer intact, rather than five ranges at a time.
-    for start in (16..content.len()).step_by(8) {
-        ranges.push(start - 2..start - 1);
-        expected.push(&content[start..start + 1]);
+    if large_batch {
+        for start in (16..content.len()).step_by(8) {
+            ranges.push(start - 2..start - 1);
+            expected.push(&content[start..start + 1]);
+        }
     }
     let bytes = file.read_bytes_batch_async(ranges.clone()).await.unwrap();
     assert_eq!(
@@ -120,6 +137,7 @@ async fn test_batch_through_directory_caches_and_bundle() {
             *expected_bytes
         );
     }
+    // Small batches reuse cached data. Large batches bypass lookups and download again.
     let repeated = file.read_bytes_batch_async(ranges).await.unwrap();
     assert_eq!(repeated, bytes);
 

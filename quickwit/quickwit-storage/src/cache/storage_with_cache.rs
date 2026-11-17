@@ -26,6 +26,7 @@ use crate::storage::SendableAsync;
 use crate::{BulkDeleteError, ListObjectsStream, OwnedBytes, Storage, StorageResult};
 
 /// Use with care, StorageWithCache is read-only.
+/// Batch reads with more than 100 ranges bypass cache lookups and insertion.
 pub struct StorageWithCache {
     pub storage: Arc<dyn Storage>,
     pub cache: Arc<dyn StorageCache>,
@@ -87,10 +88,16 @@ impl Storage for StorageWithCache {
         path: &Path,
         requested_ranges: Vec<Range<usize>>,
     ) -> StorageResult<Vec<OwnedBytes>> {
+        let skip_cache = requested_ranges.len() > super::batch_read::MAX_CACHE_RANGES;
         super::read_batch_with_async_cache(
             requested_ranges,
             |requested_range| self.cache.get(path, requested_range),
             |missing_ranges| async move {
+                // Large batches bypass insertion as well as lookups to avoid creating an entry
+                // for every requested range. The per-query warmup cache still retains the data.
+                if skip_cache {
+                    return self.storage.get_slices(path, missing_ranges).await;
+                }
                 let downloaded = self
                     .storage
                     .get_slices(path, missing_ranges.clone())
@@ -226,6 +233,52 @@ mod tests {
         // Repeating the batch uses the inserted bytes without another storage read.
         let repeated = storage.get_slices(Path::new("file"), ranges).await.unwrap();
         assert_eq!(repeated, buffers);
+    }
+
+    #[tokio::test]
+    async fn test_batch_cache_limit() {
+        for num_ranges in [100, 101] {
+            let cache_operations = if num_ranges == 100 { 99 } else { 0 };
+            let mut cache = MockStorageCache::default();
+            cache
+                .expect_get()
+                .times(cache_operations)
+                .returning(|_, _| None);
+            cache
+                .expect_put()
+                .times(cache_operations)
+                .returning(|_, range, bytes| {
+                    assert_eq!(bytes.as_slice(), &[range.start as u8]);
+                });
+            let mut backend = MockStorage::default();
+            backend
+                .expect_get_slices()
+                .times(1)
+                .returning(move |_, ranges| {
+                    assert_eq!(
+                        ranges,
+                        (0..num_ranges - 1)
+                            .map(|index| index..index + 1)
+                            .collect::<Vec<_>>()
+                    );
+                    Ok(ranges
+                        .into_iter()
+                        .map(|range| OwnedBytes::new(vec![range.start as u8]))
+                        .collect())
+                });
+            let storage = StorageWithCache {
+                storage: Arc::new(backend),
+                cache: Arc::new(cache),
+            };
+            let mut ranges: Vec<_> = (0..num_ranges - 1).map(|index| index..index + 1).collect();
+            ranges.push(0..0);
+            let buffers = storage.get_slices(Path::new("file"), ranges).await.unwrap();
+            assert_eq!(buffers.len(), num_ranges);
+            for (index, buffer) in buffers[..num_ranges - 1].iter().enumerate() {
+                assert_eq!(buffer.as_slice(), &[index as u8]);
+            }
+            assert!(buffers[num_ranges - 1].is_empty());
+        }
     }
 
     #[tokio::test]

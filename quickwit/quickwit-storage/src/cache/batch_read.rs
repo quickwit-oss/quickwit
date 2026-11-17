@@ -19,8 +19,12 @@ use futures::{StreamExt, stream};
 
 use crate::OwnedBytes;
 
+pub(super) const MAX_CACHE_RANGES: usize = 100;
+
 /// Checks a synchronous cache, then reads all misses as one batch.
 /// Preserves input order and duplicates. Empty ranges bypass cache and storage.
+/// Batches with more than 100 ranges skip cache lookups and pass all nonempty ranges
+/// to the read callback. The callback controls cache insertion.
 ///
 /// Ranges must have `start <= end`. `read_missing_ranges` must return one buffer per range,
 /// in input order, and may populate its cache after the whole read succeeds.
@@ -33,6 +37,11 @@ where
     ReadFuture: Future<Output = Result<Vec<OwnedBytes>, Error>>,
 {
     let mut batch = BatchReadBuffers::new(requested_ranges.len());
+    if batch.skip_cache_lookups(&requested_ranges) {
+        return batch
+            .read_missing_ranges(requested_ranges, read_missing_ranges)
+            .await;
+    }
     for (index, requested_range) in requested_ranges.iter().enumerate() {
         if !requested_range.is_empty() {
             batch.record_cache_lookup(index, get_cached(requested_range.clone()));
@@ -55,6 +64,11 @@ where
     ReadFuture: Future<Output = Result<Vec<OwnedBytes>, Error>>,
 {
     let mut batch = BatchReadBuffers::new(requested_ranges.len());
+    if batch.skip_cache_lookups(&requested_ranges) {
+        return batch
+            .read_missing_ranges(requested_ranges, read_missing_ranges)
+            .await;
+    }
     let mut lookups = stream::iter(
         requested_ranges
             .iter()
@@ -89,6 +103,20 @@ impl BatchReadBuffers {
             results: vec![OwnedBytes::empty(); num_ranges],
             missing_range_indices: Vec::new(),
         }
+    }
+
+    /// Treats every nonempty range as a miss when the batch exceeds the lookup limit.
+    fn skip_cache_lookups(&mut self, requested_ranges: &[Range<usize>]) -> bool {
+        if requested_ranges.len() <= MAX_CACHE_RANGES {
+            return false;
+        }
+        self.missing_range_indices = requested_ranges
+            .iter()
+            .enumerate()
+            .filter(|(_, range)| !range.is_empty())
+            .map(|(index, _)| index)
+            .collect();
+        true
     }
 
     /// Stores a cache hit or saves the range index for reading on a miss.
@@ -138,6 +166,84 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn test_cache_lookup_limit() {
+        for async_cache in [false, true] {
+            for num_ranges in [100, 101] {
+                let mut requested_ranges: Vec<_> = (0..num_ranges - 2)
+                    .rev()
+                    .map(|index| index % 7..index % 7 + 1)
+                    .collect();
+                requested_ranges.insert(0, 0..0);
+                requested_ranges.insert(50, 2..2);
+                let expected_ranges: Vec<_> = requested_ranges
+                    .iter()
+                    .filter(|range| !range.is_empty())
+                    .cloned()
+                    .collect();
+                let mut lookups = 0;
+                let mut get_cached = |range: Range<usize>| {
+                    lookups += 1;
+                    Some(OwnedBytes::new(vec![range.start as u8]))
+                };
+                let read_missing_ranges = |ranges: Vec<Range<usize>>| {
+                    assert_eq!(num_ranges, 101);
+                    assert_eq!(ranges, expected_ranges);
+                    ready(Ok::<_, ()>(
+                        ranges
+                            .iter()
+                            .map(|range| OwnedBytes::new(vec![range.start as u8]))
+                            .collect(),
+                    ))
+                };
+                let results = if async_cache {
+                    read_batch_with_async_cache(
+                        requested_ranges.clone(),
+                        |range| ready(get_cached(range)),
+                        read_missing_ranges,
+                    )
+                    .await
+                } else {
+                    read_batch_with_cache(requested_ranges.clone(), get_cached, read_missing_ranges)
+                        .await
+                }
+                .unwrap();
+                assert_eq!(lookups, if num_ranges == 100 { 98 } else { 0 });
+                assert_eq!(results.len(), requested_ranges.len());
+                for (range, bytes) in requested_ranges.iter().zip(results) {
+                    assert_eq!(bytes.as_slice(), vec![range.start as u8; range.len()]);
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_large_batch_propagates_read_error() {
+        for async_cache in [false, true] {
+            let ranges = vec![0..1; 101];
+            let read_missing_ranges = |ranges: Vec<Range<usize>>| {
+                assert_eq!(ranges.len(), 101);
+                ready(Err::<Vec<OwnedBytes>, _>("read failed"))
+            };
+            let result = if async_cache {
+                read_batch_with_async_cache(
+                    ranges,
+                    |_| async { panic!("cache lookup must be skipped") },
+                    read_missing_ranges,
+                )
+                .await
+            } else {
+                read_batch_with_cache(
+                    ranges,
+                    |_| panic!("cache lookup must be skipped"),
+                    read_missing_ranges,
+                )
+                .await
+            };
+            assert_eq!(result.unwrap_err(), "read failed");
+        }
+    }
+
+    #[tokio::test]
     async fn test_all_misses_forward_original_vector() {
         for async_cache in [false, true] {
             let requested_ranges = vec![4..6, 0..2, 4..6];
@@ -173,6 +279,7 @@ mod tests {
         for requested_ranges in [
             vec![],
             vec![0..0, usize::MAX..usize::MAX],
+            vec![0..0; 101],
             vec![4..6, 0..0, 0..2, 4..6],
         ] {
             let expected: Vec<_> = requested_ranges
