@@ -74,8 +74,9 @@ test.describe("Views", () => {
 
   test("Should display every index tab", async ({ page }) => {
     await page.goto("/ui/indexes/otel-logs-v0_9");
+    await page.getByRole("tab", { name: "Summary" }).click();
+    await expect(page.getByRole("tabpanel").getByText("URI:")).toBeVisible();
     for (const name of [
-      "Summary",
       "Sources",
       "Doc Mapping",
       "Indexing settings",
@@ -84,7 +85,9 @@ test.describe("Views", () => {
       "Splits",
     ]) {
       await page.getByRole("tab", { name }).click();
-      await expect(page.getByRole("tabpanel")).toBeVisible();
+      await expect(
+        page.getByRole("tabpanel").locator(".monaco-editor .view-lines"),
+      ).toBeVisible();
     }
   });
 
