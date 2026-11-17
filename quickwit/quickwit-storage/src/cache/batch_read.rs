@@ -48,7 +48,7 @@ where
     batch.fetch_ranges(requested_ranges, fetch_ranges).await
 }
 
-/// Like [`read_batch_with_cache`], with up to five concurrent asynchronous cache lookups.
+/// Like [`read_batch_with_cache`], with up to 32 concurrent asynchronous cache lookups.
 /// Collects all misses before calling `fetch_ranges`.
 /// `get_cached` returns cached bytes or `None` for a range.
 /// `fetch_ranges` returns the fetched buffers or an error.
@@ -76,7 +76,7 @@ where
         let lookup = get_cached(requested_range);
         async move { (index, lookup.await) }
     })
-    .buffered(5);
+    .buffered(32);
     while let Some((index, bytes)) = lookups.next().await {
         batch.record_cache_lookup(index, bytes);
     }

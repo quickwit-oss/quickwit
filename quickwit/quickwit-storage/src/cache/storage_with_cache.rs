@@ -202,7 +202,13 @@ mod tests {
 
         let mut backend = MockStorage::default();
         backend.expect_get_slices().times(1).returning(|_, ranges| {
-            assert_eq!(ranges, vec![1..2, 3..4, 5..6, 7..8, 9..10]);
+            assert_eq!(
+                ranges,
+                (1..64)
+                    .step_by(2)
+                    .map(|start| start..start + 1)
+                    .collect::<Vec<_>>()
+            );
             Ok(ranges
                 .into_iter()
                 .map(|range| OwnedBytes::new(vec![range.start as u8]))
@@ -212,22 +218,22 @@ mod tests {
             storage: Arc::new(backend),
             cache: Arc::new(DelayedCache {
                 bytes_by_range: Mutex::new(
-                    (0..10)
+                    (0..64)
                         .step_by(2)
                         .map(|start| (start..start + 1, OwnedBytes::new(vec![start as u8])))
                         .collect(),
                 ),
             }),
         };
-        let ranges: Vec<_> = (0..10).map(|index| index..index + 1).collect();
+        let ranges: Vec<_> = (0..64).map(|index| index..index + 1).collect();
         let start = tokio::time::Instant::now();
         let buffers = storage
             .get_slices(Path::new("file"), ranges.clone())
             .await
             .unwrap();
-        // Ten delayed lookups run in two waves of five, then all misses are forwarded together.
+        // 64 delayed lookups run in two waves of 32, then all misses are forwarded together.
         assert_eq!(start.elapsed(), Duration::from_millis(20));
-        assert_eq!(buffers.len(), 10);
+        assert_eq!(buffers.len(), 64);
         for (index, buffer) in buffers.iter().enumerate() {
             assert_eq!(buffer.as_slice(), &[index as u8]);
         }
