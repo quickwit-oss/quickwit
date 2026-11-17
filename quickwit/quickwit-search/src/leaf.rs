@@ -25,7 +25,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use bytesize::ByteSize;
-use futures::future::try_join_all;
+use futures::StreamExt;
+use futures::future::{ready, try_join_all};
+use futures::stream::{self, FuturesUnordered};
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::thread_pool::with_priority::Priority;
 use quickwit_common::uri::Uri;
@@ -39,13 +41,13 @@ use quickwit_proto::search::{
 };
 use quickwit_proto::types::SplitId;
 use quickwit_query::query_ast::{
-    BoolQuery, CacheNode, HitSet, PredicateCache, QueryAst, QueryAstTransformer, RangeQuery,
-    TermQuery, get_or_compile_cached_fst_regex,
+    BoolQuery, CacheNode, HitSet, PredicateCache, PredicateCacheInjector, QueryAst,
+    QueryAstTransformer, RangeQuery, TermQuery, get_or_compile_cached_fst_regex,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
-    BundleStorage, ByteRangeCache, CountingStorage, MemorySizedCache, OwnedBytes, SearchSplitCache,
-    Storage, StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
+    BundleStorage, ByteRangeCache, CountingStorage, OwnedBytes, SearchSplitCache, Storage,
+    StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_storage_cache,
 };
 use tantivy::aggregation::AggContextParams;
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
@@ -70,6 +72,7 @@ use crate::search_permit_provider::{
     SearchPermit, SearchPermitFuture, compute_initial_memory_allocation,
 };
 use crate::service::{SearcherContext, deserialize_doc_mapper};
+use crate::split_warmup_memory::SplitWarmupMemory;
 use crate::{QuickwitAggregations, SearchError};
 
 /// Distributes items across batches using a greedy LPT (Longest Processing Time)
@@ -125,19 +128,22 @@ fn greedy_batch_split<T>(
     batches
 }
 
-async fn get_split_footer_from_cache_or_fetch(
+/// Returns the hotcache bytes and storage for the files inside the split.
+pub(crate) async fn open_split_bundle(
+    searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
-    footer_cache: &MemorySizedCache<String>,
-) -> anyhow::Result<OwnedBytes> {
-    {
-        let possible_val = footer_cache.get(&split_and_footer_offsets.split_id);
-        if let Some(footer_data) = possible_val {
-            return Ok(footer_data);
-        }
-    }
+) -> anyhow::Result<(OwnedBytes, BundleStorage)> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
-    let footer_data_opt = index_storage
+    let index_storage = match &searcher_context.split_cache_opt {
+        Some(split_cache) => SearchSplitCache::wrap_storage(split_cache.clone(), index_storage),
+        None => index_storage,
+    };
+    let cached_storage: Arc<dyn Storage> = match &searcher_context.storage_cache_opt {
+        Some(cache) => wrap_storage_with_storage_cache(cache.clone(), index_storage),
+        None => index_storage,
+    };
+    let footer_data = cached_storage
         .get_slice(
             &split_file,
             split_and_footer_offsets.split_footer_start as usize
@@ -147,48 +153,13 @@ async fn get_split_footer_from_cache_or_fetch(
         .with_context(|| {
             format!(
                 "failed to fetch hotcache and footer from {} for split `{}`",
-                index_storage.uri(),
+                cached_storage.uri(),
                 split_and_footer_offsets.split_id
             )
         })?;
 
-    footer_cache.put(
-        split_and_footer_offsets.split_id.to_owned(),
-        footer_data_opt.clone(),
-    );
-
-    Ok(footer_data_opt)
-}
-
-/// Returns hotcache_bytes and the split directory (`BundleStorage`) with cache layer:
-/// - A split footer cache given by `SearcherContext.split_footer_cache`.
-pub(crate) async fn open_split_bundle(
-    searcher_context: &SearcherContext,
-    index_storage: Arc<dyn Storage>,
-    split_and_footer_offsets: &SplitIdAndFooterOffsets,
-) -> anyhow::Result<(OwnedBytes, BundleStorage)> {
-    let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
-    let footer_data = get_split_footer_from_cache_or_fetch(
-        index_storage.clone(),
-        split_and_footer_offsets,
-        &searcher_context.split_footer_cache,
-    )
-    .await?;
-
-    // We wrap the top-level storage with the split cache.
-    // This is before the bundle storage: at this point, this storage is reading `.split` files.
-    let index_storage_with_split_cache =
-        if let Some(split_cache) = searcher_context.split_cache_opt.as_ref() {
-            SearchSplitCache::wrap_storage(split_cache.clone(), index_storage.clone())
-        } else {
-            index_storage.clone()
-        };
-
-    let (bundle_storage, hotcache_bytes) = BundleStorage::open_from_split_bytes(
-        index_storage_with_split_cache,
-        split_file,
-        footer_data,
-    )?;
+    let (bundle_storage, hotcache_bytes) =
+        BundleStorage::open_from_split_bytes(cached_storage, split_file, footer_data)?;
 
     Ok((hotcache_bytes, bundle_storage))
 }
@@ -231,17 +202,20 @@ fn configure_storage_retries(
 }
 
 /// Opens a `tantivy::Index` for the given split with several cache layers:
-/// - A split footer cache given by `SearcherContext.split_footer_cache`.
-/// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
+/// - The `storage_cache` given by `SearcherContext.storage_cache_opt`, including footer bytes.
 /// - An ephemeral unbounded cache directory (whose lifetime is tied to the returned `Index` if no
 ///   `ByteRangeCache` is provided).
+///
+/// If `warmup_memory` is provided, every read that misses the hotcache and the ephemeral cache
+/// first reserves memory in it, and fails if the warmup memory limit would be exceeded.
 pub(crate) async fn open_index_with_caches(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
     tokenizer_manager: Option<&TokenizerManager>,
     ephemeral_unbounded_cache: Option<ByteRangeCache>,
-) -> anyhow::Result<(Index, HotDirectory)> {
+    warmup_memory: Option<Arc<SplitWarmupMemory>>,
+) -> crate::Result<(Index, HotDirectory)> {
     let index_storage_with_retry_on_timeout =
         configure_storage_retries(searcher_context, index_storage);
 
@@ -252,15 +226,14 @@ pub(crate) async fn open_index_with_caches(
     )
     .await?;
 
-    let bundle_storage_with_cache = wrap_storage_with_cache(
-        searcher_context.fast_fields_cache.clone(),
-        Arc::new(bundle_storage),
-    );
-
-    let directory = StorageDirectory::new(bundle_storage_with_cache);
+    let directory = StorageDirectory::new(Arc::new(bundle_storage));
 
     let hot_directory = if let Some(cache) = ephemeral_unbounded_cache {
-        let caching_directory = CachingDirectory::new(Arc::new(directory), cache);
+        let mut caching_directory = CachingDirectory::new(Arc::new(directory), cache);
+        // Storage cache hits are also kept in the ephemeral cache, so they count too.
+        if let Some(warmup_memory) = warmup_memory {
+            caching_directory = caching_directory.with_memory_reserver(warmup_memory);
+        }
         HotDirectory::open(caching_directory, hotcache_bytes)?
     } else {
         HotDirectory::open(directory, hotcache_bytes)?
@@ -284,8 +257,8 @@ pub(crate) async fn open_index_with_caches(
 /// `Ok(())` is returned. With no token, `fut` simply runs to completion.
 async fn run_cancellable(
     cancel: Option<&CancellationToken>,
-    fut: impl std::future::Future<Output = anyhow::Result<()>>,
-) -> anyhow::Result<()> {
+    fut: impl std::future::Future<Output = crate::Result<()>>,
+) -> crate::Result<()> {
     let Some(cancel) = cancel else {
         return fut.await;
     };
@@ -330,7 +303,7 @@ pub(crate) async fn warmup(
     warmup_info: &WarmupInfo,
     priority: Priority,
     on_absent: &(dyn Fn(&Term, SegmentId) + Sync),
-) -> anyhow::Result<bool> {
+) -> crate::Result<bool> {
     debug!(warmup_info=?warmup_info);
 
     // Early-abort optimization: the split's downloads can be cancelled as soon as
@@ -407,7 +380,7 @@ pub(crate) async fn warmup(
 async fn warm_up_full_term_dictionaries(
     searcher: &Searcher,
     term_dict_fields: &HashSet<Field>,
-) -> anyhow::Result<()> {
+) -> crate::Result<()> {
     let mut warm_up_futures = Vec::new();
     for field in term_dict_fields {
         for segment_reader in searcher.segment_readers() {
@@ -423,7 +396,7 @@ async fn warm_up_full_term_dictionaries(
 }
 
 /// Warm up all postings, without positions, for each supplied field in every segment.
-async fn warm_up_all_postings(searcher: &Searcher, fields: &HashSet<Field>) -> anyhow::Result<()> {
+async fn warm_up_all_postings(searcher: &Searcher, fields: &HashSet<Field>) -> crate::Result<()> {
     let mut warm_up_futures = Vec::new();
     for field in fields {
         for segment_reader in searcher.segment_readers() {
@@ -438,7 +411,7 @@ async fn warm_up_all_postings(searcher: &Searcher, fields: &HashSet<Field>) -> a
 async fn warm_up_fastfield(
     fast_field_reader: &FastFieldReaders,
     fast_field: &FastFieldWarmupInfo,
-) -> anyhow::Result<()> {
+) -> crate::Result<()> {
     let mut columns = fast_field_reader
         .list_dynamic_column_handles(&fast_field.name)
         .await?;
@@ -462,7 +435,7 @@ async fn warm_up_fastfield(
 async fn warm_up_fastfields(
     searcher: &Searcher,
     fast_fields: &HashSet<FastFieldWarmupInfo>,
-) -> anyhow::Result<()> {
+) -> crate::Result<()> {
     let mut warm_up_futures = Vec::new();
     for segment_reader in searcher.segment_readers() {
         let fast_field_reader = segment_reader.fast_fields();
@@ -481,7 +454,7 @@ async fn warm_up_terms(
     required_terms: &HashSet<Term>,
     abort_token: Option<&CancellationToken>,
     on_absent: &(dyn Fn(&Term, SegmentId) + Sync),
-) -> anyhow::Result<()> {
+) -> crate::Result<()> {
     let mut warm_up_futures = Vec::new();
     for (field, terms) in terms_grouped_by_field {
         for segment_reader in searcher.segment_readers() {
@@ -504,7 +477,7 @@ async fn warm_up_terms(
                         on_absent(term, segment_id);
                         abort_token.cancel();
                     }
-                    anyhow::Ok(())
+                    Ok::<(), SearchError>(())
                 });
             }
         }
@@ -513,7 +486,7 @@ async fn warm_up_terms(
     // once a required term has proven the query empty.
     run_cancellable(abort_token, async move {
         try_join_all(warm_up_futures).await?;
-        anyhow::Ok(())
+        Ok::<(), SearchError>(())
     })
     .await
 }
@@ -521,7 +494,7 @@ async fn warm_up_terms(
 async fn warm_up_term_ranges(
     searcher: &Searcher,
     terms_grouped_by_field: &HashMap<Field, HashMap<TermRange, bool>>,
-) -> anyhow::Result<()> {
+) -> crate::Result<()> {
     let mut warm_up_futures = Vec::new();
     for (field, terms) in terms_grouped_by_field {
         for segment_reader in searcher.segment_readers() {
@@ -545,7 +518,7 @@ async fn warm_up_automatons(
     searcher: &Searcher,
     terms_grouped_by_field: &HashMap<Field, HashSet<Automaton>>,
     priority: Priority,
-) -> anyhow::Result<()> {
+) -> crate::Result<()> {
     let mut warm_up_futures = Vec::new();
     let cpu_intensive_executor = |task| async move {
         crate::search_thread_pool()
@@ -561,8 +534,12 @@ async fn warm_up_automatons(
                 warm_up_futures.push(async move {
                     match automaton {
                         Automaton::Regex(path, regex_str) => {
-                            let regex = get_or_compile_cached_fst_regex(regex_str)
-                                .context("failed to parse regex during warmup")?;
+                            let regex =
+                                get_or_compile_cached_fst_regex(regex_str).ok_or_else(|| {
+                                    SearchError::InvalidArgument(format!(
+                                        "failed to parse regex `{regex_str}` during warmup"
+                                    ))
+                                })?;
                             inv_idx_clone
                                 .warm_postings_automaton(
                                     quickwit_query::query_ast::JsonPathPrefix {
@@ -572,7 +549,10 @@ async fn warm_up_automatons(
                                     cpu_intensive_executor,
                                 )
                                 .await
-                                .context("failed to load automaton")
+                                .map_err(|io_error| {
+                                    SearchError::from(io_error)
+                                        .with_context("failed to load automaton")
+                                })
                         }
                     }
                 });
@@ -583,7 +563,7 @@ async fn warm_up_automatons(
     Ok(())
 }
 
-async fn warm_up_fieldnorms(searcher: &Searcher, requires_scoring: bool) -> anyhow::Result<()> {
+async fn warm_up_fieldnorms(searcher: &Searcher, requires_scoring: bool) -> crate::Result<()> {
     if !requires_scoring {
         return Ok(());
     }
@@ -686,7 +666,8 @@ async fn leaf_search_single_split(
     if let Some(cached_answer) = ctx
         .searcher_context
         .leaf_search_cache
-        .get(split.clone(), search_request.clone())
+        .get_async(split.clone(), search_request.clone())
+        .await
     {
         leaf_search_state_guard.set_state(SplitSearchState::CacheHit);
         return Ok(Some(cached_answer));
@@ -706,7 +687,7 @@ async fn leaf_search_single_split(
     let split_id = split.split_id.to_string();
     let byte_range_cache = ByteRangeCache::with_infinite_capacity();
     // Wrap storage at request scope so we observe per-split download volume.
-    // Cache layers (split cache, footer cache, hotcache, byte-range cache) live
+    // Cache layers (`storage_cache`, `split_cache`, hotcache, short-lived cache) live
     // ABOVE this wrapper, so reads served from cache do not contribute to the
     // counters — that is the desired "downloaded from object storage" semantics.
     let (storage, download_counters) = CountingStorage::instrument_storage(storage);
@@ -716,6 +697,7 @@ async fn leaf_search_single_split(
         &split,
         Some(ctx.doc_mapper.tokenizer_manager()),
         Some(byte_range_cache.clone()),
+        Some(search_permit.warmup_memory()),
     )
     .await
     .inspect_err(|_| {
@@ -723,10 +705,9 @@ async fn leaf_search_single_split(
             .set_state(SplitSearchState::Error(SplitSearchErrorKind::CreateReader))
     })?;
 
+    // The warmup cannot download more than the index, so we do not need to reserve more.
     let index_size = ByteSize(hot_directory.num_bytes_without_doc_store());
-    if index_size < search_permit.memory_allocation() {
-        search_permit.update_memory_usage(index_size);
-    }
+    search_permit.shrink_memory_allocation(index_size);
 
     let searcher = index
         .reader_builder()
@@ -748,18 +729,18 @@ async fn leaf_search_single_split(
         agg_context_params,
     )?;
 
-    let predicate_cache =
-        if collector.requires_scoring() || !ctx.searcher_context.predicate_cache.is_enabled() {
-            None
-        } else {
-            Some((
-                ctx.searcher_context.predicate_cache.clone() as Arc<dyn PredicateCache>,
-                split.split_id.clone(),
-            ))
-        };
+    let mut query_ast_for_build = query_ast.clone();
+    if !collector.requires_scoring() && ctx.searcher_context.predicate_cache.is_enabled() {
+        PredicateCacheInjector {
+            cache: ctx.searcher_context.predicate_cache.clone(),
+            split_id: split.split_id.clone(),
+        }
+        .resolve(&mut query_ast_for_build)
+        .await;
+    }
     let (query, mut warmup_info) =
         ctx.doc_mapper
-            .query(index.schema(), query_ast.clone(), false, predicate_cache)?;
+            .query(index.schema(), query_ast_for_build, false)?;
 
     let collector_warmup_info = collector.warmup_info();
     warmup_info.merge(collector_warmup_info);
@@ -768,8 +749,8 @@ async fn leaf_search_single_split(
     let warmup_start = Instant::now();
     // Baseline the counters so the span attributes cover warmup only. This matters for
     // `download_counters`: opening the index fetches the footer and hotcache through the same
-    // counted storage on a cold footer cache. The byte-range cache is usually still empty at
-    // this point, since index-open reads are served by the hotcache above it.
+    // counted storage when `storage_cache` is cold. The short-lived cache is usually
+    // still empty at this point, since index-open reads are served by the hotcache above it.
     let cache_bytes_before_warmup = byte_range_cache.get_num_bytes();
     let downloaded_bytes_before_warmup = download_counters.snapshot().0;
     leaf_search_state_guard.set_state(SplitSearchState::WarmUp);
@@ -781,16 +762,17 @@ async fn leaf_search_single_split(
     // required terms can only make it emptier. An empty result is segment- and
     // scoring-agnostic, so this holds even for scored queries (which the `CacheNode`
     // machinery itself does not support).
-    let cached_known_empty = warmup_info.required_terms.iter().any(|term| {
-        match ctx
-            .searcher_context
-            .predicate_cache
-            .get(split_id.clone(), term_absence_cache_key(term))
-        {
-            Some((_segment_id, hits)) => hits.is_empty(),
-            None => false,
-        }
-    });
+    let cached_known_empty = warmup_info
+        .required_terms
+        .iter()
+        .map(|term| {
+            ctx.searcher_context
+                .predicate_cache
+                .get(split_id.clone(), term_absence_cache_key(term))
+        })
+        .collect::<FuturesUnordered<_>>()
+        .any(|entry| ready(matches!(entry, Some((_segment_id, hits)) if hits.is_empty())))
+        .await;
     let provably_empty = if cached_known_empty {
         true
     } else {
@@ -803,13 +785,15 @@ async fn leaf_search_single_split(
                 term_absence_cache_key(term),
                 segment_id,
                 HitSet::empty(),
+                // CPU-equivalent retention cost for avoiding future warmup and search.
+                Duration::from_millis(10),
             );
         };
         // `downloaded_mb` is what warmup actually fetched from blob storage; `total_mb` adds the
-        // part served from the fast-field cache, since the byte-range cache sits above it and
-        // records every miss it has to resolve below. Both are deltas since `warmup_start`, so
-        // index-open reads are not attributed here, and are recorded after warmup, before the
-        // search adds to either.
+        // bytes served by `storage_cache` or `split_cache`, since the short-lived cache
+        // sits above both and records every miss it has to resolve below. Both are deltas since
+        // `warmup_start`, so index-open reads are not attributed here, and are recorded
+        // after warmup, before the search adds to either.
         const BYTES_PER_MB: f64 = 1_000_000.0;
         let warmup_span = info_span!(
             "warmup",
@@ -850,16 +834,10 @@ async fn leaf_search_single_split(
     let warmup_end = Instant::now();
     let warmup_duration: Duration = warmup_end.duration_since(warmup_start);
     let warmup_size = ByteSize(byte_range_cache.get_num_bytes());
-    if warmup_size > search_permit.memory_allocation() {
-        quickwit_common::rate_limited_warn!(
-            limit_per_min = 1,
-            memory_usage = ?warmup_size,
-            memory_allocation = ?search_permit.memory_allocation(),
-            "current leaf search is consuming more memory than the initial allocation"
-        );
-    }
     LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES.observe(warmup_size.as_u64() as f64);
-    search_permit.update_memory_usage(warmup_size);
+    // The memory for the warmup data was reserved while it was downloaded. We give back what the
+    // reservation holds in excess.
+    search_permit.release_unused_memory();
     search_permit.free_warmup_slot();
 
     if provably_empty {
@@ -1982,9 +1960,14 @@ async fn schedule_search_tasks(
                     .searcher_config
                     .warmup_single_split_initial_allocation,
             );
-            // A reservation above the total budget could never acquire a permit.
+            // A split search can never reserve more than the per-split limit, which is also lower
+            // or equal to the total budget (a reservation above it could never acquire a permit).
             let memory_allocation = ByteSize(memory_allocation.as_u64() * warmup_memory_factor)
-                .min(searcher_context.searcher_config.warmup_memory_budget);
+                .min(
+                    searcher_context
+                        .searcher_config
+                        .effective_warmup_single_split_max_allocation(),
+                );
             let job_cost = compute_split_query_cost(split.num_docs, query_complexity_factor);
             crate::search_permit_provider::SplitSearchTaskMetadata {
                 memory_allocation,
@@ -2051,9 +2034,8 @@ pub async fn single_doc_mapping_leaf_search(
         CanSplitDoBetter::from_request(&request, doc_mapper.timestamp_field_name());
     let mut split_with_req: Vec<(SplitIdAndFooterOffsets, SearchRequest)> =
         split_filter.optimize(&request, splits)?;
-    let cache_config = &searcher_context.searcher_config.partial_request_cache;
     let keep_hits_from_one_mature_split =
-        request.max_hits > 0 && cache_config.capacity().as_u64() > 0;
+        request.max_hits > 0 && searcher_context.leaf_search_cache.is_enabled();
     for (split, single_split_search_request) in &mut split_with_req {
         if keep_hits_from_one_mature_split
             && split.is_mature
@@ -2093,7 +2075,8 @@ pub async fn single_doc_mapping_leaf_search(
             split_with_req,
             split_outcome_counters.clone(),
             &mut incremental_merge_collector,
-        )?;
+        )
+        .await?;
     // Cached hits can already rule out uncached splits before they start warming up.
     if let Some(last_hit) = incremental_merge_collector.peek_worst_hit() {
         split_filter_arc
@@ -2278,7 +2261,7 @@ async fn run_local_search_tasks(
 
 /// We identify the splits that are in the cache and append them to the incremental merge collector.
 /// The (split, request) that are yet to be processed are returned.
-fn process_partial_result_cache(
+async fn process_partial_result_cache(
     leaf_search_cache: &LeafSearchCache,
     split_with_req: Vec<(SplitIdAndFooterOffsets, SearchRequest)>,
     split_outcome_counters: Arc<SplitSearchOutcomeCounters>,
@@ -2286,14 +2269,16 @@ fn process_partial_result_cache(
 ) -> Result<Vec<(SplitIdAndFooterOffsets, SearchRequest)>, SearchError> {
     let mut uncached_splits: Vec<(SplitIdAndFooterOffsets, SearchRequest)> =
         Vec::with_capacity(split_with_req.len());
-    for (split, search_request) in split_with_req {
-        if let Some(cached_response) = leaf_search_cache
-            // TODO remove the clone here.
-            .get(split.clone(), search_request.clone())
-        {
-            // The cached response already carries cache-hit `resource_stats`
-            // (set at write time by `LeafSearchCache::put`), so no per-read
-            // rewrite is needed here.
+    let mut cached_responses = stream::iter(split_with_req)
+        .map(|(split, search_request)| async move {
+            let cached_response = leaf_search_cache
+                .get_async(split.clone(), search_request.clone())
+                .await;
+            ((split, search_request), cached_response)
+        })
+        .buffer_unordered(128);
+    while let Some(((split, search_request), cached_response)) = cached_responses.next().await {
+        if let Some(cached_response) = cached_response {
             let mut split_search_guard = SplitSearchStateGuard::new(split_outcome_counters.clone());
             split_search_guard.set_state(SplitSearchState::CacheHit);
             incremental_merge_collector.add_result(cached_response)?;
@@ -2406,9 +2391,10 @@ async fn leaf_search_single_split_wrapper(
             &mut search_permit,
         )
         .await;
-
     // Explicitly drop the permit for readability.
-    // This should always happen after the ephemeral search cache is dropped.
+    // This should always happen after the ephemeral search cache is dropped. The split's
+    // `CachingDirectory` holds the other reference to the warmup memory, together with the
+    // ephemeral search cache, so the warmup memory is freed here.
     std::mem::drop(search_permit);
 
     if leaf_search_single_split_opt_res.is_ok() {
@@ -2430,7 +2416,7 @@ async fn leaf_search_single_split_wrapper(
         Err(err) => locked_incremental_merge_collector.add_failed_split(SplitSearchError {
             split_id: split.split_id.clone(),
             error: format!("{err}"),
-            retryable_error: true,
+            retryable_error: err.is_retryable_on_another_searcher(),
         }),
     }
     if let Some(last_hit) = locked_incremental_merge_collector.peek_worst_hit() {
@@ -2450,11 +2436,37 @@ mod tests {
     use async_trait::async_trait;
     use quickwit_config::{LambdaConfig, SearcherConfig};
     use quickwit_proto::search::LambdaSingleSplitResult;
+    use quickwit_storage::{RamStorageBuilder, StorageError, StorageErrorKind};
     use tantivy::TantivyDocument;
     use tantivy::schema::Schema;
 
     use super::*;
     use crate::LambdaLeafSearchInvoker;
+
+    #[tokio::test]
+    async fn test_open_split_bundle_preserves_footer_fetch_error() {
+        let storage: Arc<dyn Storage> = Arc::new(RamStorageBuilder::default().build());
+        let offsets = SplitIdAndFooterOffsets {
+            split_id: "missing".to_string(),
+            split_footer_start: 10,
+            split_footer_end: 20,
+            ..Default::default()
+        };
+        let error = open_split_bundle(&SearcherContext::for_test(), storage.clone(), &offsets)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "failed to fetch hotcache and footer from {} for split `missing`",
+                storage.uri()
+            )
+        );
+        assert_eq!(
+            error.downcast_ref::<StorageError>().unwrap().kind(),
+            StorageErrorKind::NotFound
+        );
+    }
 
     #[test]
     fn test_split_search_state_guard_records_errors_by_kind() {
@@ -3165,12 +3177,46 @@ mod tests {
                     expected.min(
                         searcher_context
                             .searcher_config
-                            .warmup_memory_budget
+                            .effective_warmup_single_split_max_allocation()
                             .as_u64()
                     )
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn test_schedule_search_tasks_clamps_to_split_max_allocation() {
+        let mut config = SearcherConfig::default();
+        config.warmup_single_split_initial_allocation = ByteSize::mb(50);
+        config.warmup_single_split_max_allocation = Some(ByteSize::mb(50));
+        config.validate().unwrap();
+        let searcher_context = SearcherContext::new(config, None, None::<DummyInvoker>);
+        // A large split with a leading wildcard asks for 10 x 300MB: it gets the per-split limit.
+        let split = SplitIdAndFooterOffsets {
+            num_docs: 10_000_000,
+            split_footer_start: 1_000_000_000,
+            ..Default::default()
+        };
+        let request = SearchRequest {
+            query_ast: serde_json::json!({
+                "type": "wildcard", "field": "message", "value": "*error",
+                "lenient": false, "case_insensitive": false
+            })
+            .to_string(),
+            ..Default::default()
+        };
+        let cost = compute_query_cost(&request).unwrap();
+        let result = super::schedule_search_tasks(
+            vec![(split, request)],
+            &searcher_context,
+            cost.complexity_factor,
+            cost.warmup_memory_factor,
+        )
+        .await;
+        let task = result.local_search_tasks.into_iter().next().unwrap();
+        let permit = task.search_permit_future.await;
+        assert_eq!(permit.memory_allocation(), ByteSize::mb(50));
     }
 
     struct DummyInvoker;

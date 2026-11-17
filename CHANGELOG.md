@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Azure Blob Storage: support custom endpoints via `endpoint` and `endpoint_suffix` configuration options for sovereign clouds (#6624)
+- `searcher.warmup_single_split_max_allocation`: maximum warmup memory a single split search can reserve, `max(warmup_single_split_initial_allocation, warmup_memory_budget / 4)` by default. A split search that would need more memory fails
 
 ### Fixed
 - (Jaeger) Query resource attributes when Jaeger request carries tags
@@ -16,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Ingest V2 flushes every WAL write to the OS before acknowledging it, instead of keeping the tail of the last write buffered in the process, so acknowledged documents survive an indexer process crash
+- Upgrade VRL to 0.38. `to_unix_timestamp` with `unit: "nanoseconds"` is now fallible, so a source transform that calls it without handling the error no longer compiles: creating or updating such a source is rejected, and the indexing pipelines of an existing one fail to start until the source is updated. Before upgrading, change these calls to `to_unix_timestamp!(...)`, which earlier versions accept with a warning. `http_request` now verifies HTTPS certificates with the platform verifier
 - The `quickwit_search_leaf_search_warmup_ongoing_num_bytes` gauge now reports the warmup memory reserved by split searches, including the initial allocation of granted permits, instead of the bytes held in warmup caches once the warmup is done
 - **Breaking**: ingest requests whose body decompresses to more than `ingest_api.max_decompressed_body_size` (default 256 MiB) are now rejected with HTTP 413 `Payload Too Large`. Previously only the *compressed* request size was bounded, so a small highly-compressible payload could inflate to many gigabytes. Affects the Elasticsearch `_bulk`, OpenTelemetry (OTLP), and native ingest endpoints. Split large batches into smaller requests, or raise the limit.
 - **Breaking**: OTLP REST endpoints (`/otlp/v1/logs`, `/otlp/v1/traces`, and their `/{index}/...` variants) now enforce request-size limits (previously unbounded): requests whose body exceeds `ingest_api.max_body_size` (default 10 MiB) on the wire, or `ingest_api.max_decompressed_body_size` (default 256 MiB) after decompression, are rejected with HTTP 413 `Payload Too Large`. Exporters sending large uncompressed batches should enable compression (e.g. gzip or zstd), reduce their batch size, or raise the limits.
@@ -23,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed `ingest_api.content_length_limit` to `ingest_api.max_body_size`; the former name is still accepted as a config alias.
 - **Breaking**: `ingest_api.max_decompressed_body_size` must be between `ingest_api.max_body_size` and 4 GiB; node configs outside this range now fail validation at startup. Configs that set `content_length_limit` (or `max_body_size`) above 256 MiB must also raise `max_decompressed_body_size`.
 - **Breaking**: the `metastore` section of the node config is now validated at startup. Node configs with `metastore.postgres.min_connections` greater than `max_connections`, which were previously accepted, now fail to load; set `min_connections` to at most `max_connections`. Invalid PostgreSQL metastore durations (`acquire_connection_timeout`, `idle_connection_timeout`, `max_connection_lifetime`) are now reported as config errors instead of crashing the metastore during initialization.
+- `searcher.warmup_memory_budget` is now a hard limit: split searches reserve memory before downloading their warmup data, and fail instead of going over the budget
+- `searcher.warmup_single_split_initial_allocation` above `searcher.warmup_memory_budget` is now rejected at startup, even without a split cache
+- Leaf searches no longer retry, on another searcher, the splits that failed because their warmup would have gone over `searcher.warmup_memory_budget`
 
 ### Deprecated
 

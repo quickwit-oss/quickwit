@@ -42,8 +42,11 @@ pub(crate) mod top_k_collector;
 
 mod metrics;
 mod search_permit_provider;
+mod split_warmup_memory;
 mod warmup_memory;
 
+#[cfg(test)]
+mod storage_cache_layer_tests;
 #[cfg(test)]
 mod tests;
 

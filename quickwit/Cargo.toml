@@ -76,6 +76,7 @@ coarsetime = "0.1"
 colored = "3.1"
 console-subscriber = "0.5"
 const_format = "0.2"
+cpu-time = "1.0"
 criterion = { version = "0.8", features = ["async_tokio"] }
 cron = "0.17"
 dashmap = "6.2"
@@ -87,6 +88,7 @@ env_logger = { version = "0.11", default-features = false, features = ["auto-col
 fail = "0.5"
 flate2 = "1.1"
 flume = "0.12"
+feuer = { git = "https://github.com/PSeitz/feuer", rev = "cff661183a34a0522350e1928da862d32b41a87c" }
 fnv = "1"
 futures = "0.3"
 futures-util = { version = "0.3", default-features = false }
@@ -133,6 +135,7 @@ metrics-exporter-prometheus = { version = "0.18", default-features = false }
 metrics-util = "0.20"
 mime_guess = "2.0"
 mini-moka = "0.10"
+mixtrics = "=0.2.5"
 mockall = "0.15"
 mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "3b3562ef" }
 new_string_template = "1.5"
@@ -296,7 +299,7 @@ username = "0.2"
 utoipa = { version = "4.2", features = ["time", "ulid"] }
 unicode-segmentation = "1.13"
 uuid = { version = "1.28", features = ["v4", "serde"] }
-vrl = { version = "0.37", default-features = false, features = [
+vrl = { version = "0.38", default-features = false, features = [
   "compiler",
   "stdlib",
   "value",
