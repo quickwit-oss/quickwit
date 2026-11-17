@@ -27,7 +27,7 @@ use http::HeaderMap;
 use quickwit_common::net::HostAddr;
 use quickwit_common::shared_consts::{
     DEFAULT_SHARD_BURST_LIMIT, DEFAULT_SHARD_SCALE_DOWN_BURST, DEFAULT_SHARD_SCALE_DOWN_RATIO,
-    DEFAULT_SHARD_SCALE_UP_BURST, DEFAULT_SHARD_SCALE_UP_FACTOR,
+    DEFAULT_SHARD_SCALE_DOWN_STEP, DEFAULT_SHARD_SCALE_UP_BURST, DEFAULT_SHARD_SCALE_UP_FACTOR,
     DEFAULT_SHARD_SCALE_UP_LONG_TERM_RATIO, DEFAULT_SHARD_SCALE_UP_SHORT_TERM_RATIO,
     DEFAULT_SHARD_THROUGHPUT_LIMIT,
 };
@@ -945,6 +945,8 @@ pub struct IngestApiConfig {
     pub shard_scale_down_interval: HumanDuration,
     /// (hidden) Maximum number of scale down operations a source can perform back to back
     pub shard_scale_down_burst: NonZeroU64,
+    /// (hidden) Maximum number of shards closed by a single scale down operation
+    pub shard_scale_down_step: NonZeroUsize,
     #[serde(default)]
     pub grpc_compression_algorithm: Option<CompressionAlgorithm>,
     /// Maximum amount of time to wait for the ingester to finish decommissioning gracefully
@@ -973,6 +975,7 @@ impl Default for IngestApiConfig {
             shard_scale_down_interval: HumanDuration::try_from("60s".to_string())
                 .expect("`60s` should be a valid human duration"),
             shard_scale_down_burst: DEFAULT_SHARD_SCALE_DOWN_BURST,
+            shard_scale_down_step: DEFAULT_SHARD_SCALE_DOWN_STEP,
             grpc_compression_algorithm: None,
             decommission_timeout: HumanDuration::try_from("300s".to_string())
                 .expect("`300s` should be a valid human duration"),
@@ -2005,6 +2008,26 @@ mod tests {
         for burst_yaml in ["shard_scale_up_burst: 0", "shard_scale_down_burst: 0"] {
             serde_yaml::from_str::<IngestApiConfig>(burst_yaml).unwrap_err();
         }
+    }
+
+    #[test]
+    fn test_ingest_api_shard_scale_down_step() {
+        let default_config = IngestApiConfig::default();
+        assert_eq!(default_config.shard_scale_down_step, NonZeroUsize::MIN);
+
+        let ingest_api_config: IngestApiConfig = serde_yaml::from_str(
+            r#"
+                shard_scale_down_step: 5
+            "#,
+        )
+        .unwrap();
+        assert!(ingest_api_config.validate().is_ok());
+        assert_eq!(
+            ingest_api_config.shard_scale_down_step,
+            NonZeroUsize::new(5).unwrap()
+        );
+
+        serde_yaml::from_str::<IngestApiConfig>("shard_scale_down_step: 0").unwrap_err();
     }
 
     #[test]

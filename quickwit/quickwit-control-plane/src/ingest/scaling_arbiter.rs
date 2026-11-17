@@ -23,14 +23,13 @@ use crate::model::ShardStats;
 pub(crate) enum ScalingMode {
     /// Scale up by adding this number of shards
     Up(usize),
-    /// Scale down by removing one shard
-    Down,
+    /// Scale down by removing this number of shards
+    Down(usize),
 }
 
 pub(crate) struct ScalingArbiter {
     // Threshold in MiB/s below which we decrease the number of shards.
     scale_down_shards_threshold_mib_per_sec: f32,
-
     // Per shard threshold in MiB/s above which we increase the number of shards.
     //
     // We want scaling up to be reactive, so we first inspect the short
@@ -45,6 +44,8 @@ pub(crate) struct ScalingArbiter {
     scale_up_shards_long_term_threshold_mib_per_sec: f32,
     // The max increase factor of the number of shards in one scale up operation
     shard_scale_up_factor: f32,
+    // The max number of shards that can be closed in one scale down operation.
+    shard_scale_down_step: NonZeroUsize,
 }
 
 impl ScalingArbiter {
@@ -58,6 +59,7 @@ impl ScalingArbiter {
                 * ingest_api_config.shard_scale_up_long_term_ratio,
             scale_down_shards_threshold_mib_per_sec: max_shard_throughput_mib_per_sec
                 * ingest_api_config.shard_scale_down_ratio,
+            shard_scale_down_step: ingest_api_config.shard_scale_down_step,
             shard_scale_up_factor: ingest_api_config.shard_scale_up_factor,
         }
     }
@@ -73,6 +75,19 @@ impl ScalingArbiter {
     /// Computes the next number of shards we should have according the scaling factor
     fn scale_up_factor_target_shards(&self, shard_stats: ShardStats) -> usize {
         (shard_stats.num_open_shards as f32 * self.shard_scale_up_factor).ceil() as usize
+    }
+
+    /// Computes how many shards to close to get back to the long term scale up threshold, without
+    /// going below min_shards and closing at most shard_scale_down_step shards
+    fn num_shards_to_close(&self, shard_stats: ShardStats, min_shards: NonZeroUsize) -> usize {
+        let target_num_shards = usize::max(
+            min_shards.get(),
+            self.long_term_scale_up_threshold_max_shards(shard_stats),
+        );
+        let num_shards_above_target = shard_stats
+            .num_open_shards
+            .saturating_sub(target_num_shards);
+        usize::min(num_shards_above_target, self.shard_scale_down_step.get())
     }
 
     /// Scale based on the "per shard average" metric
@@ -115,9 +130,13 @@ impl ScalingArbiter {
         // On the other hand, scale down only based on the long term metric value to avoid
         // being sensitive to very short drops in ingestion
         if shard_stats.avg_long_term_ingestion_rate <= self.scale_down_shards_threshold_mib_per_sec
-            && shard_stats.num_open_shards > min_shards.get()
         {
-            return Some(ScalingMode::Down);
+            let num_shards_to_close = self.num_shards_to_close(shard_stats, min_shards);
+
+            if num_shards_to_close > 0 {
+                let scaling_mode = ScalingMode::Down(num_shards_to_close);
+                return Some(scaling_mode);
+            }
         }
         None
     }
@@ -203,7 +222,7 @@ mod tests {
                 },
                 NonZeroUsize::MIN
             ),
-            Some(ScalingMode::Down)
+            Some(ScalingMode::Down(1))
         );
         assert_eq!(
             scaling_arbiter.should_scale(
@@ -293,7 +312,7 @@ mod tests {
                 },
                 NonZeroUsize::MIN
             ),
-            Some(ScalingMode::Down)
+            Some(ScalingMode::Down(1))
         );
         assert_eq!(
             scaling_arbiter.should_scale(
@@ -496,7 +515,69 @@ mod tests {
         );
         assert_eq!(
             default_scaling_arbiter.should_scale(quiet_shard_stats, min_shards),
-            Some(ScalingMode::Down)
+            Some(ScalingMode::Down(1))
         );
+    }
+
+    #[test]
+    fn test_scaling_arbiter_num_shards_to_close() {
+        // use shard throughput 10MiB to simplify calculations: the long term scale up threshold is
+        // 3MiB/s and the scale down threshold is 2MiB/s
+        let mut ingest_api_config = IngestApiConfig::default();
+        ingest_api_config.shard_throughput_limit = ByteSize::mib(10);
+        ingest_api_config.shard_scale_down_step = NonZeroUsize::new(3).unwrap();
+        let scaling_arbiter = ScalingArbiter::new(&ingest_api_config);
+
+        let shard_stats = ShardStats {
+            num_open_shards: 10,
+            num_closed_shards: 0,
+            avg_short_term_ingestion_rate: 0.3,
+            avg_long_term_ingestion_rate: 0.3,
+        };
+        // Bounded by the scale down step.
+        assert_eq!(
+            scaling_arbiter.num_shards_to_close(shard_stats, NonZeroUsize::MIN),
+            3
+        );
+        assert_eq!(
+            scaling_arbiter.should_scale(shard_stats, NonZeroUsize::MIN),
+            Some(ScalingMode::Down(3))
+        );
+        // Bounded by `min_shards`.
+        assert_eq!(
+            scaling_arbiter.num_shards_to_close(shard_stats, NonZeroUsize::new(8).unwrap()),
+            2
+        );
+        // Bounded by the default scale down step.
+        assert_eq!(
+            scaling_arbiter_for_test(1.5).num_shards_to_close(shard_stats, NonZeroUsize::MIN),
+            1
+        );
+
+        // Bounded by the long term scale up threshold: 4 shards at 1.5MiB/s can go down to 2.
+        let shard_stats = ShardStats {
+            num_open_shards: 4,
+            num_closed_shards: 0,
+            avg_short_term_ingestion_rate: 1.5,
+            avg_long_term_ingestion_rate: 1.5,
+        };
+        assert_eq!(
+            scaling_arbiter.num_shards_to_close(shard_stats, NonZeroUsize::MIN),
+            2
+        );
+
+        // Already at `min_shards`.
+        let shard_stats = ShardStats {
+            num_open_shards: 2,
+            num_closed_shards: 0,
+            avg_short_term_ingestion_rate: 0.3,
+            avg_long_term_ingestion_rate: 0.3,
+        };
+        let min_shards = NonZeroUsize::new(2).unwrap();
+        assert_eq!(
+            scaling_arbiter.num_shards_to_close(shard_stats, min_shards),
+            0
+        );
+        assert_eq!(scaling_arbiter.should_scale(shard_stats, min_shards), None);
     }
 }

@@ -27,6 +27,18 @@ struct ScalingRateLimiters {
     scaling_down: RateLimiter,
 }
 
+impl ScalingRateLimiters {
+    fn new(
+        scaling_up_rate_limiter_settings: RateLimiterSettings,
+        scaling_down_rate_limiter_settings: RateLimiterSettings,
+    ) -> Self {
+        Self {
+            scaling_up: RateLimiter::from_settings(scaling_up_rate_limiter_settings),
+            scaling_down: RateLimiter::from_settings(scaling_down_rate_limiter_settings),
+        }
+    }
+}
+
 /// Rate limits the scale up and scale down operations of each source. Each direction allows a
 /// burst of operations back to back, then one operation per interval.
 pub(crate) struct ScalingPermits {
@@ -65,7 +77,7 @@ impl ScalingPermits {
 
     /// Prevents the source from scaling down for one scale down interval.
     pub fn drain_scale_down_permits(&mut self, source_uid: &SourceUid) {
-        self.rate_limiter(source_uid, ScalingMode::Down).drain();
+        self.rate_limiters(source_uid).scaling_down.drain();
     }
 
     fn rate_limiter(
@@ -73,19 +85,23 @@ impl ScalingPermits {
         source_uid: &SourceUid,
         scaling_mode: ScalingMode,
     ) -> &mut RateLimiter {
-        let scaling_up_rate_limiter_settings = self.scaling_up_rate_limiter_settings;
-        let scaling_down_rate_limiter_settings = self.scaling_down_rate_limiter_settings;
-        let scaling_rate_limiters = self
-            .scaling_rate_limiters
-            .entry(source_uid.clone())
-            .or_insert_with(|| ScalingRateLimiters {
-                scaling_up: RateLimiter::from_settings(scaling_up_rate_limiter_settings),
-                scaling_down: RateLimiter::from_settings(scaling_down_rate_limiter_settings),
-            });
+        let scaling_rate_limiters = self.rate_limiters(source_uid);
+
         match scaling_mode {
             ScalingMode::Up(_) => &mut scaling_rate_limiters.scaling_up,
-            ScalingMode::Down => &mut scaling_rate_limiters.scaling_down,
+            ScalingMode::Down(_) => &mut scaling_rate_limiters.scaling_down,
         }
+    }
+
+    fn rate_limiters(&mut self, source_uid: &SourceUid) -> &mut ScalingRateLimiters {
+        self.scaling_rate_limiters
+            .entry(source_uid.clone())
+            .or_insert_with(|| {
+                ScalingRateLimiters::new(
+                    self.scaling_up_rate_limiter_settings,
+                    self.scaling_down_rate_limiter_settings,
+                )
+            })
     }
 }
 
@@ -147,8 +163,8 @@ mod tests {
         let mut scaling_permits = ScalingPermits::new(&IngestApiConfig::default());
         let source_uid = source_uid_for_test("test-index", "test-source");
 
-        assert!(scaling_permits.acquire(&source_uid, ScalingMode::Down));
-        assert!(!scaling_permits.acquire(&source_uid, ScalingMode::Down));
+        assert!(scaling_permits.acquire(&source_uid, ScalingMode::Down(1)));
+        assert!(!scaling_permits.acquire(&source_uid, ScalingMode::Down(1)));
 
         // Scaling up and scaling down have independent permits.
         assert!(scaling_permits.acquire(&source_uid, ScalingMode::Up(1)));
@@ -168,9 +184,9 @@ mod tests {
         assert!(!scaling_permits.acquire(&source_uid, ScalingMode::Up(1)));
 
         for _ in 0..3 {
-            assert!(scaling_permits.acquire(&source_uid, ScalingMode::Down));
+            assert!(scaling_permits.acquire(&source_uid, ScalingMode::Down(1)));
         }
-        assert!(!scaling_permits.acquire(&source_uid, ScalingMode::Down));
+        assert!(!scaling_permits.acquire(&source_uid, ScalingMode::Down(1)));
     }
 
     #[test]
@@ -178,9 +194,9 @@ mod tests {
         let mut scaling_permits = ScalingPermits::new(&IngestApiConfig::default());
         let source_uid = source_uid_for_test("test-index", "test-source");
 
-        assert!(scaling_permits.acquire(&source_uid, ScalingMode::Down));
-        scaling_permits.release(&source_uid, ScalingMode::Down);
-        assert!(scaling_permits.acquire(&source_uid, ScalingMode::Down));
+        assert!(scaling_permits.acquire(&source_uid, ScalingMode::Down(1)));
+        scaling_permits.release(&source_uid, ScalingMode::Down(1));
+        assert!(scaling_permits.acquire(&source_uid, ScalingMode::Down(1)));
 
         for _ in 0..5 {
             assert!(scaling_permits.acquire(&source_uid, ScalingMode::Up(1)));
@@ -195,7 +211,7 @@ mod tests {
         let source_uid = source_uid_for_test("test-index", "test-source");
 
         scaling_permits.drain_scale_down_permits(&source_uid);
-        assert!(!scaling_permits.acquire(&source_uid, ScalingMode::Down));
+        assert!(!scaling_permits.acquire(&source_uid, ScalingMode::Down(1)));
         assert!(scaling_permits.acquire(&source_uid, ScalingMode::Up(1)));
     }
 }
