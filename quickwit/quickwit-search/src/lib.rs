@@ -75,8 +75,8 @@ use quickwit_metastore::{
 };
 use quickwit_proto::metastore::MetastoreService;
 use quickwit_proto::search::{
-    LeafResourceStats, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
-    SplitResourceStats,
+    DownloadBytesByComponent, LeafResourceStats, PartialHit, SearchRequest, SearchResponse,
+    SplitIdAndFooterOffsets, SplitResourceStats,
 };
 use quickwit_proto::types::{IndexUid, NodeId};
 use quickwit_storage::StorageResolver;
@@ -407,6 +407,20 @@ pub(crate) fn split_phase_sum_microsecs(stats: &SplitResourceStats) -> u64 {
     stats.warmup_microsecs + stats.cpu_search_microsecs
 }
 
+/// Field-wise sum of two `DownloadBytesByComponent`.
+fn add_download_bytes_by_component(
+    acc: &mut DownloadBytesByComponent,
+    other: &DownloadBytesByComponent,
+) {
+    acc.term_dict_num_bytes += other.term_dict_num_bytes;
+    acc.postings_num_bytes += other.postings_num_bytes;
+    acc.positions_num_bytes += other.positions_num_bytes;
+    acc.fast_fields_num_bytes += other.fast_fields_num_bytes;
+    acc.fieldnorms_num_bytes += other.fieldnorms_num_bytes;
+    acc.footer_num_bytes += other.footer_num_bytes;
+    acc.other_num_bytes += other.other_num_bytes;
+}
+
 /// Field-wise sum of two `SplitResourceStats` (every field is extensive).
 pub(crate) fn add_split_stats(acc: &mut SplitResourceStats, other: &SplitResourceStats) {
     acc.split_num_docs += other.split_num_docs;
@@ -418,6 +432,12 @@ pub(crate) fn add_split_stats(acc: &mut SplitResourceStats, other: &SplitResourc
     acc.warmup_microsecs += other.warmup_microsecs;
     acc.wait_for_cpu_pool_microsecs += other.wait_for_cpu_pool_microsecs;
     acc.cpu_search_microsecs += other.cpu_search_microsecs;
+    if let Some(other_breakdown) = &other.download_bytes_by_component {
+        add_download_bytes_by_component(
+            acc.download_bytes_by_component.get_or_insert_default(),
+            other_breakdown,
+        );
+    }
 }
 
 /// Min of two `Option<u64>`, treating `None` as "no contribution":
@@ -530,6 +550,7 @@ mod stats_merge_tests {
             warmup_microsecs: 1_000_000,
             wait_for_cpu_pool_microsecs: 10_000_000,
             cpu_search_microsecs: 100_000_000,
+            download_bytes_by_component: None,
         };
         let other = SplitResourceStats {
             split_num_docs: 2,
@@ -541,6 +562,15 @@ mod stats_merge_tests {
             warmup_microsecs: 2_000_000,
             wait_for_cpu_pool_microsecs: 20_000_000,
             cpu_search_microsecs: 200_000_000,
+            download_bytes_by_component: Some(DownloadBytesByComponent {
+                term_dict_num_bytes: 1,
+                postings_num_bytes: 2,
+                positions_num_bytes: 3,
+                fast_fields_num_bytes: 4,
+                fieldnorms_num_bytes: 5,
+                footer_num_bytes: 6,
+                other_num_bytes: 7,
+            }),
         };
         // Destructure on the proto type itself so a newly-added field forces
         // an update to this test (otherwise the assertion below would silently
@@ -555,9 +585,14 @@ mod stats_merge_tests {
             warmup_microsecs: _,
             wait_for_cpu_pool_microsecs: _,
             cpu_search_microsecs: _,
+            download_bytes_by_component: _,
         } = other;
 
         add_split_stats(&mut acc, &other);
+        assert_eq!(
+            acc.download_bytes_by_component,
+            other.download_bytes_by_component
+        );
 
         assert_eq!(acc.split_num_docs, 3);
         assert_eq!(acc.input_memory_bytes, 30);

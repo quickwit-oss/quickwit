@@ -775,6 +775,8 @@ fn log_root_resource_stats(resource_log: &RootSearchResourceLog) {
     let leaf_worst_split_sum = leaf_worst.and_then(|lw| lw.split_resources_sum.as_ref());
     let leaf_sum_split_worst = leaf_sum.and_then(|ls| ls.split_resources_worst.as_ref());
     let leaf_sum_split_sum = leaf_sum.and_then(|ls| ls.split_resources_sum.as_ref());
+    let wleaf_ssplit_dl = leaf_worst_split_sum.and_then(|lwss| lwss.download_bytes_by_component);
+    let sleaf_ssplit_dl = leaf_sum_split_sum.and_then(|lsss| lsss.download_bytes_by_component);
     let features = &resource_log.query_features;
     info!(
         query_features.bool_count = features.bool_count,
@@ -895,6 +897,20 @@ fn log_root_resource_stats(resource_log: &RootSearchResourceLog) {
             leaf_sum_split_sum.map(|lsss| lsss.wait_for_cpu_pool_microsecs),
         sleaf_ssplit_cpu_search_microsecs =
             leaf_sum_split_sum.map(|lsss| lsss.cpu_search_microsecs),
+        wleaf_ssplit_download_type_bytes.term_dict = wleaf_ssplit_dl.map(|dl| dl.term_dict_num_bytes),
+        wleaf_ssplit_download_type_bytes.postings = wleaf_ssplit_dl.map(|dl| dl.postings_num_bytes),
+        wleaf_ssplit_download_type_bytes.positions = wleaf_ssplit_dl.map(|dl| dl.positions_num_bytes),
+        wleaf_ssplit_download_type_bytes.fast_fields = wleaf_ssplit_dl.map(|dl| dl.fast_fields_num_bytes),
+        wleaf_ssplit_download_type_bytes.fieldnorms = wleaf_ssplit_dl.map(|dl| dl.fieldnorms_num_bytes),
+        wleaf_ssplit_download_type_bytes.footer = wleaf_ssplit_dl.map(|dl| dl.footer_num_bytes),
+        wleaf_ssplit_download_type_bytes.other = wleaf_ssplit_dl.map(|dl| dl.other_num_bytes),
+        sleaf_ssplit_download_type_bytes.term_dict = sleaf_ssplit_dl.map(|dl| dl.term_dict_num_bytes),
+        sleaf_ssplit_download_type_bytes.postings = sleaf_ssplit_dl.map(|dl| dl.postings_num_bytes),
+        sleaf_ssplit_download_type_bytes.positions = sleaf_ssplit_dl.map(|dl| dl.positions_num_bytes),
+        sleaf_ssplit_download_type_bytes.fast_fields = sleaf_ssplit_dl.map(|dl| dl.fast_fields_num_bytes),
+        sleaf_ssplit_download_type_bytes.fieldnorms = sleaf_ssplit_dl.map(|dl| dl.fieldnorms_num_bytes),
+        sleaf_ssplit_download_type_bytes.footer = sleaf_ssplit_dl.map(|dl| dl.footer_num_bytes),
+        sleaf_ssplit_download_type_bytes.other = sleaf_ssplit_dl.map(|dl| dl.other_num_bytes),
         "root_resource_stats"
     );
 }

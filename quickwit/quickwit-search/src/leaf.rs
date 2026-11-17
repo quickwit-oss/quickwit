@@ -46,8 +46,8 @@ use quickwit_query::query_ast::{
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
-    BundleStorage, ByteRangeCache, CountingStorage, OwnedBytes, SearchSplitCache, Storage,
-    StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_storage_cache,
+    BundleStorage, ByteRangeCache, CountingStorage, DownloadCounters, OwnedBytes, SearchSplitCache,
+    Storage, StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_storage_cache,
 };
 use tantivy::aggregation::AggContextParams;
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
@@ -215,6 +215,7 @@ pub(crate) async fn open_index_with_caches(
     tokenizer_manager: Option<&TokenizerManager>,
     ephemeral_unbounded_cache: Option<ByteRangeCache>,
     warmup_memory: Option<Arc<SplitWarmupMemory>>,
+    download_counters: Option<&DownloadCounters>,
 ) -> crate::Result<(Index, HotDirectory)> {
     let index_storage_with_retry_on_timeout =
         configure_storage_retries(searcher_context, index_storage);
@@ -225,6 +226,10 @@ pub(crate) async fn open_index_with_caches(
         split_and_footer_offsets,
     )
     .await?;
+    // Body reads can only be attributed to a split component once the bundle metadata is known.
+    if let Some(download_counters) = download_counters {
+        download_counters.set_split_bundle_ranges(bundle_storage.file_ranges());
+    }
 
     let directory = StorageDirectory::new(Arc::new(bundle_storage));
 
@@ -690,7 +695,13 @@ async fn leaf_search_single_split(
     // Cache layers (`storage_cache`, `split_cache`, hotcache, short-lived cache) live
     // ABOVE this wrapper, so reads served from cache do not contribute to the
     // counters — that is the desired "downloaded from object storage" semantics.
-    let (storage, download_counters) = CountingStorage::instrument_storage(storage);
+    // Each counted read is also attributed to the split data type (term dictionary,
+    // postings, ...) it belongs to.
+    let (storage, download_counters) = CountingStorage::instrument_storage(
+        storage,
+        PathBuf::from(format!("{}.split", split.split_id)),
+        split.split_footer_start..split.split_footer_end,
+    );
     let (index, hot_directory) = open_index_with_caches(
         &ctx.searcher_context,
         storage,
@@ -698,6 +709,7 @@ async fn leaf_search_single_split(
         Some(ctx.doc_mapper.tokenizer_manager()),
         Some(byte_range_cache.clone()),
         Some(search_permit.warmup_memory()),
+        Some(&download_counters),
     )
     .await
     .inspect_err(|_| {
@@ -752,7 +764,7 @@ async fn leaf_search_single_split(
     // counted storage when `storage_cache` is cold. The short-lived cache is usually
     // still empty at this point, since index-open reads are served by the hotcache above it.
     let cache_bytes_before_warmup = byte_range_cache.get_num_bytes();
-    let downloaded_bytes_before_warmup = download_counters.snapshot().0;
+    let downloaded_bytes_before_warmup = download_counters.snapshot().num_bytes;
     leaf_search_state_guard.set_state(SplitSearchState::WarmUp);
     // Negative cache: a split is provably empty for this query if any required term has
     // previously been proven absent here. Absence is an immutable, query- and
@@ -818,7 +830,7 @@ async fn leaf_search_single_split(
             "downloaded_mb",
             download_counters
                 .snapshot()
-                .0
+                .num_bytes
                 .saturating_sub(downloaded_bytes_before_warmup) as f64
                 / BYTES_PER_MB,
         );
@@ -853,18 +865,19 @@ async fn leaf_search_single_split(
         // We still report the bytes pulled during the (aborted) warmup and the
         // time spent queued for the search permit, so resource stats stay
         // accurate; only the CPU-queue and CPU phases never happened.
-        let (download_num_bytes, download_num_requests) = download_counters.snapshot();
+        let download_snapshot = download_counters.snapshot();
         let split_stats = SplitResourceStats {
             split_num_docs: split.num_docs,
             matched_num_docs: 0,
             input_memory_bytes: warmup_size.as_u64(),
-            download_num_bytes,
-            download_num_requests,
+            download_num_bytes: download_snapshot.num_bytes,
+            download_num_requests: download_snapshot.num_requests,
             wait_for_search_permit_microsecs: search_permit.wait_for_acquisition().as_micros()
                 as u64,
             warmup_microsecs: warmup_duration.as_micros() as u64,
             wait_for_cpu_pool_microsecs: 0,
             cpu_search_microsecs: 0,
+            download_bytes_by_component: Some(download_snapshot.bytes_by_component),
         };
         let mut leaf_search_response = get_leaf_resp_from_count(0);
         leaf_search_response.resource_stats = Some(leaf_resource_stats_for_split(split_stats));
@@ -936,18 +949,18 @@ async fn leaf_search_single_split(
                             ))
                         })?
                     };
-                let (download_num_bytes, download_num_requests) =
-                    download_counters_clone.snapshot();
+                let download_snapshot = download_counters_clone.snapshot();
                 let split_stats = SplitResourceStats {
                     split_num_docs,
                     matched_num_docs: leaf_search_response.num_hits,
                     input_memory_bytes: warmup_size.as_u64(),
-                    download_num_bytes,
-                    download_num_requests,
+                    download_num_bytes: download_snapshot.num_bytes,
+                    download_num_requests: download_snapshot.num_requests,
                     wait_for_search_permit_microsecs: wait_for_search_permit.as_micros() as u64,
                     warmup_microsecs: warmup_duration.as_micros() as u64,
                     wait_for_cpu_pool_microsecs: cpu_thread_pool_wait_microsecs.as_micros() as u64,
                     cpu_search_microsecs: cpu_start.elapsed().as_micros() as u64,
+                    download_bytes_by_component: Some(download_snapshot.bytes_by_component),
                 };
                 leaf_search_response.resource_stats =
                     Some(leaf_resource_stats_for_split(split_stats));
