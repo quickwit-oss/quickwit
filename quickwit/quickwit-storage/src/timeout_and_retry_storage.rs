@@ -535,39 +535,44 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn test_get_slice_into_times_out_body_and_reuses_buffer_on_retry() {
+    async fn test_read_timeouts_and_retries() {
         let timeout_policy = StorageTimeoutPolicy {
             min_throughtput_bytes_per_secs: 100_000,
             timeout_millis: 2_000,
             max_num_retries: 1,
         };
-        for (second_delay, succeeds) in [(1, true), (5, false)] {
-            // Different bytes ensure the retry overwrites the first attempt's partial write.
-            let retry_byte = b'b';
-            let lower = Arc::new(StorageWithDelay::new(vec![
-                (Duration::from_secs(5), b'a'),
-                (Duration::from_secs(second_delay), retry_byte),
-            ]));
-            let storage = TimeoutAndRetryStorage::new(lower.clone(), timeout_policy.clone());
-            let mut buffer = [99; 90];
-            let address = buffer.as_ptr();
-            let start = Instant::now();
-            let result = storage
-                .get_slice_into(Path::new("foo/bar"), 10..100, &mut buffer)
-                .await;
-            assert!(
-                lower.attempts.lock().unwrap().is_empty(),
-                "both attempts must run"
-            );
-            assert_eq!(buffer.as_ptr(), address);
-            if succeeds {
-                result.unwrap();
-                assert_eq!(buffer, [retry_byte; 90]);
-                // Tokio timers round deadlines to millisecond ticks.
-                assert!(start.elapsed().as_millis().abs_diff(3_000) < 10);
-            } else {
-                assert_eq!(result.unwrap_err().kind(), StorageErrorKind::Timeout);
-                assert!(start.elapsed().as_millis().abs_diff(4_000) < 10);
+        for into_buffer in [false, true] {
+            for (second_delay, succeeds) in [(1, true), (5, false)] {
+                // Different bytes ensure the retry overwrites the first attempt's partial write.
+                let retry_byte = b'b';
+                let lower = Arc::new(StorageWithDelay::new(vec![
+                    (Duration::from_secs(5), b'a'),
+                    (Duration::from_secs(second_delay), retry_byte),
+                ]));
+                let storage = TimeoutAndRetryStorage::new(lower.clone(), timeout_policy.clone());
+                let mut buffer = [99; 90];
+                let address = buffer.as_ptr();
+                let start = Instant::now();
+                let path = Path::new("foo/bar");
+                let result = if into_buffer {
+                    let result = storage.get_slice_into(path, 10..100, &mut buffer).await;
+                    assert_eq!(buffer.as_ptr(), address);
+                    result.map(|()| OwnedBytes::new(buffer.to_vec()))
+                } else {
+                    storage.get_slice(path, 10..100).await
+                };
+                assert!(
+                    lower.attempts.lock().unwrap().is_empty(),
+                    "both attempts must run"
+                );
+                if succeeds {
+                    assert_eq!(result.unwrap().as_slice(), &[retry_byte; 90]);
+                    // Tokio timers round deadlines to millisecond ticks.
+                    assert!(start.elapsed().as_millis().abs_diff(3_000) < 10);
+                } else {
+                    assert_eq!(result.unwrap_err().kind(), StorageErrorKind::Timeout);
+                    assert!(start.elapsed().as_millis().abs_diff(4_000) < 10);
+                }
             }
         }
     }
@@ -600,42 +605,5 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(error.kind(), StorageErrorKind::NotFound);
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn test_timeout_and_retry_storage() {
-        let timeout_policy = StorageTimeoutPolicy {
-            min_throughtput_bytes_per_secs: 100_000,
-            timeout_millis: 2_000,
-            max_num_retries: 1,
-        };
-        let path = Path::new("foo/bar");
-
-        {
-            let now = Instant::now();
-            let storage_with_delay = StorageWithDelay::new(vec![
-                (Duration::from_secs(5), 0),
-                (Duration::from_secs(3), 0),
-            ]);
-            let storage =
-                TimeoutAndRetryStorage::new(Arc::new(storage_with_delay), timeout_policy.clone());
-            assert_eq!(
-                storage.get_slice(path, 10..100).await.unwrap_err().kind,
-                StorageErrorKind::Timeout
-            );
-            let elapsed = now.elapsed().as_millis();
-            assert!(elapsed.abs_diff(2 * 2_000) < 100);
-        }
-        {
-            let now = Instant::now();
-            let storage_with_delay = StorageWithDelay::new(vec![
-                (Duration::from_secs(5), 0),
-                (Duration::from_secs(1), 0),
-            ]);
-            let storage = TimeoutAndRetryStorage::new(Arc::new(storage_with_delay), timeout_policy);
-            assert!(storage.get_slice(path, 10..100).await.is_ok(),);
-            let elapsed = now.elapsed().as_millis();
-            assert!(elapsed.abs_diff(2_000 + 1_000) < 100);
-        }
     }
 }

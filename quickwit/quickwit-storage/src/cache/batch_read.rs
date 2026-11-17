@@ -166,15 +166,25 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_cache_lookup_limit() {
-        for async_cache in [false, true] {
-            for num_ranges in [100, 101] {
-                let mut requested_ranges: Vec<_> = (0..num_ranges - 2)
-                    .rev()
-                    .map(|index| index % 7..index % 7 + 1)
-                    .collect();
-                requested_ranges.insert(0, 0..0);
-                requested_ranges.insert(50, 2..2);
+    async fn test_cache_hits_empty_ranges_and_lookup_limit() {
+        let boundary_ranges = |num_ranges: usize| {
+            let mut ranges: Vec<_> = (0..num_ranges - 2)
+                .rev()
+                .map(|index| index % 7..index % 7 + 1)
+                .collect();
+            ranges.insert(0, 0..0);
+            ranges.insert(50, 2..2);
+            ranges
+        };
+        for (requested_ranges, expected_lookups) in [
+            (vec![], 0),
+            (vec![0..0, usize::MAX..usize::MAX], 0),
+            (vec![0..0; 101], 0),
+            (vec![4..6, 0..0, 0..2, 4..6], 3),
+            (boundary_ranges(100), 98),
+            (boundary_ranges(101), 0),
+        ] {
+            for async_cache in [false, true] {
                 let expected_ranges: Vec<_> = requested_ranges
                     .iter()
                     .filter(|range| !range.is_empty())
@@ -182,16 +192,20 @@ mod tests {
                     .collect();
                 let mut lookups = 0;
                 let mut get_cached = |range: Range<usize>| {
+                    assert!(!range.is_empty());
                     lookups += 1;
-                    Some(OwnedBytes::new(vec![range.start as u8]))
+                    Some(OwnedBytes::new(vec![range.start as u8; range.len()]))
                 };
-                let read_missing_ranges = |ranges: Vec<Range<usize>>| {
-                    assert_eq!(num_ranges, 101);
+                let mut fetched = false;
+                let fetch_ranges = |ranges: Vec<Range<usize>>| {
+                    assert_eq!(requested_ranges.len(), 101);
+                    assert!(!ranges.is_empty());
                     assert_eq!(ranges, expected_ranges);
+                    fetched = true;
                     ready(Ok::<_, ()>(
                         ranges
                             .iter()
-                            .map(|range| OwnedBytes::new(vec![range.start as u8]))
+                            .map(|range| OwnedBytes::new(vec![range.start as u8; range.len()]))
                             .collect(),
                     ))
                 };
@@ -199,15 +213,18 @@ mod tests {
                     read_batch_with_async_cache(
                         requested_ranges.clone(),
                         |range| ready(get_cached(range)),
-                        read_missing_ranges,
+                        fetch_ranges,
                     )
                     .await
                 } else {
-                    read_batch_with_cache(requested_ranges.clone(), get_cached, read_missing_ranges)
-                        .await
+                    read_batch_with_cache(requested_ranges.clone(), get_cached, fetch_ranges).await
                 }
                 .unwrap();
-                assert_eq!(lookups, if num_ranges == 100 { 98 } else { 0 });
+                assert_eq!(lookups, expected_lookups);
+                assert_eq!(
+                    fetched,
+                    requested_ranges.len() == 101 && !expected_ranges.is_empty()
+                );
                 assert_eq!(results.len(), requested_ranges.len());
                 for (range, bytes) in requested_ranges.iter().zip(results) {
                     assert_eq!(bytes.as_slice(), vec![range.start as u8; range.len()]);
@@ -217,100 +234,49 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_large_batch_propagates_read_error() {
-        for async_cache in [false, true] {
-            let ranges = vec![0..1; 101];
-            let read_missing_ranges = |ranges: Vec<Range<usize>>| {
-                assert_eq!(ranges.len(), 101);
-                ready(Err::<Vec<OwnedBytes>, _>("read failed"))
-            };
-            let result = if async_cache {
-                read_batch_with_async_cache(
-                    ranges,
-                    |_| async { panic!("cache lookup must be skipped") },
-                    read_missing_ranges,
-                )
-                .await
-            } else {
-                read_batch_with_cache(
-                    ranges,
-                    |_| panic!("cache lookup must be skipped"),
-                    read_missing_ranges,
-                )
-                .await
-            };
-            assert_eq!(result.unwrap_err(), "read failed");
-        }
-    }
-
-    #[tokio::test]
-    async fn test_all_misses_forward_original_vector() {
-        for async_cache in [false, true] {
-            let requested_ranges = vec![4..6, 0..2, 4..6];
-            let address = requested_ranges.as_ptr() as usize;
-            let read_missing_ranges = |missing_ranges: Vec<Range<usize>>| async move {
-                assert_eq!(missing_ranges.as_ptr() as usize, address);
-                assert_eq!(missing_ranges, vec![4..6, 0..2, 4..6]);
-                Ok::<_, ()>(
-                    missing_ranges
-                        .into_iter()
-                        .map(|missing_range| {
-                            OwnedBytes::new(vec![missing_range.start as u8; missing_range.len()])
-                        })
-                        .collect(),
-                )
-            };
-            let results = if async_cache {
-                read_batch_with_async_cache(requested_ranges, |_| ready(None), read_missing_ranges)
-                    .await
-            } else {
-                read_batch_with_cache(requested_ranges, |_| None, read_missing_ranges).await
-            }
-            .unwrap();
-            assert_eq!(
-                results.iter().map(OwnedBytes::as_slice).collect::<Vec<_>>(),
-                vec![&[4, 4][..], &[0, 0], &[4, 4]]
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn test_hits_and_empty_ranges_need_no_read() {
-        for requested_ranges in [
-            vec![],
-            vec![0..0, usize::MAX..usize::MAX],
-            vec![0..0; 101],
-            vec![4..6, 0..0, 0..2, 4..6],
-        ] {
-            let expected: Vec<_> = requested_ranges
-                .iter()
-                .map(|requested_range| vec![requested_range.start as u8; requested_range.len()])
-                .collect();
-            for async_cache in [false, true] {
-                let get_cached = |requested_range: Range<usize>| {
-                    assert!(!requested_range.is_empty());
-                    Some(OwnedBytes::new(vec![
-                        requested_range.start as u8;
-                        requested_range.len()
-                    ]))
+    async fn test_cache_misses_forward_original_vector_and_read_result() {
+        for ranges in [vec![4..6, 0..2, 4..6], vec![0..1; 101]] {
+            for (async_cache, fail) in [(false, false), (false, true), (true, false), (true, true)]
+            {
+                let requested_ranges = ranges.clone();
+                let address = requested_ranges.as_ptr();
+                let mut lookups = 0;
+                let mut get_cached = |_| {
+                    lookups += 1;
+                    None
                 };
-                let read_missing_ranges = |_| ready(Err::<Vec<OwnedBytes>, ()>(()));
-                let results = if async_cache {
+                let fetch_ranges = |missing_ranges: Vec<Range<usize>>| {
+                    assert_eq!(missing_ranges.as_ptr(), address);
+                    assert_eq!(missing_ranges, ranges);
+                    ready(if fail {
+                        Err("read failed")
+                    } else {
+                        Ok(missing_ranges
+                            .iter()
+                            .map(|range| OwnedBytes::new(vec![range.start as u8; range.len()]))
+                            .collect())
+                    })
+                };
+                let result = if async_cache {
                     read_batch_with_async_cache(
-                        requested_ranges.clone(),
-                        |requested_range| ready(get_cached(requested_range)),
-                        read_missing_ranges,
+                        requested_ranges,
+                        |range| ready(get_cached(range)),
+                        fetch_ranges,
                     )
                     .await
                 } else {
-                    read_batch_with_cache(requested_ranges.clone(), get_cached, read_missing_ranges)
-                        .await
+                    read_batch_with_cache(requested_ranges, get_cached, fetch_ranges).await
+                };
+                assert_eq!(lookups, if ranges.len() == 101 { 0 } else { ranges.len() });
+                if fail {
+                    assert_eq!(result.unwrap_err(), "read failed");
+                } else {
+                    let buffers = result.unwrap();
+                    assert_eq!(buffers.len(), ranges.len());
+                    for (buffer, range) in buffers.iter().zip(&ranges) {
+                        assert_eq!(buffer.as_slice(), vec![range.start as u8; range.len()]);
+                    }
                 }
-                .unwrap();
-                assert_eq!(
-                    results.iter().map(OwnedBytes::as_slice).collect::<Vec<_>>(),
-                    expected
-                );
             }
         }
     }
