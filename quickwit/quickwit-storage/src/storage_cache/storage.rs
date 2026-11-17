@@ -133,7 +133,7 @@ impl Storage for FeuerStorage {
         path: &Path,
         requested_ranges: Vec<Range<usize>>,
     ) -> StorageResult<Vec<OwnedBytes>> {
-        let skip_cache = requested_ranges.len() > crate::cache::MAX_CACHE_RANGES;
+        let skip_cache = requested_ranges.len() > crate::cache::MAX_NUM_RANGES_FOR_CACHE_LOOKUP;
         let object_uri = self
             .inner
             .uri()

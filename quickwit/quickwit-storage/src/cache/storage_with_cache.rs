@@ -88,7 +88,8 @@ impl Storage for StorageWithCache {
         path: &Path,
         requested_ranges: Vec<Range<usize>>,
     ) -> StorageResult<Vec<OwnedBytes>> {
-        let skip_cache = requested_ranges.len() > super::batch_read::MAX_CACHE_RANGES;
+        let skip_cache =
+            requested_ranges.len() > super::batch_read::MAX_NUM_RANGES_FOR_CACHE_LOOKUP;
         super::read_batch_with_async_cache(
             requested_ranges,
             |requested_range| self.cache.get(path, requested_range),

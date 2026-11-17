@@ -19,7 +19,7 @@ use futures::{StreamExt, stream};
 
 use crate::OwnedBytes;
 
-pub(crate) const MAX_CACHE_RANGES: usize = 100;
+pub(crate) const MAX_NUM_RANGES_FOR_CACHE_LOOKUP: usize = 100;
 
 /// Checks a synchronous cache, then reads all misses as one batch.
 /// Preserves input order and duplicates. Empty ranges bypass cache and storage.
@@ -36,7 +36,7 @@ pub async fn read_batch_with_cache<FetchRangesFuture, Error>(
 where
     FetchRangesFuture: Future<Output = Result<Vec<OwnedBytes>, Error>>,
 {
-    let mut batch = BatchReadBuffers::new(requested_ranges.len());
+    let mut batch = CachedAndFetchedBytes::new(requested_ranges.len());
     if batch.skip_cache_lookups(&requested_ranges) {
         return batch.fetch_ranges(requested_ranges, fetch_ranges).await;
     }
@@ -61,7 +61,7 @@ where
     CacheLookupFuture: Future<Output = Option<OwnedBytes>>,
     FetchRangesFuture: Future<Output = Result<Vec<OwnedBytes>, Error>>,
 {
-    let mut batch = BatchReadBuffers::new(requested_ranges.len());
+    let mut batch = CachedAndFetchedBytes::new(requested_ranges.len());
     if batch.skip_cache_lookups(&requested_ranges) {
         return batch.fetch_ranges(requested_ranges, fetch_ranges).await;
     }
@@ -84,27 +84,27 @@ where
     batch.fetch_ranges(requested_ranges, fetch_ranges).await
 }
 
-/// Buffers for a batch read, in input order, and indices of ranges missing from the cache.
+/// Combines cached and fetched bytes in request order.
 /// Empty ranges and unread ranges initially contain empty bytes.
-struct BatchReadBuffers {
-    results: Vec<OwnedBytes>,
-    missing_range_indices: Vec<usize>,
+struct CachedAndFetchedBytes {
+    bytes_by_request: Vec<OwnedBytes>,
+    request_indices_to_fetch: Vec<usize>,
 }
 
-impl BatchReadBuffers {
+impl CachedAndFetchedBytes {
     fn new(num_ranges: usize) -> Self {
         Self {
-            results: vec![OwnedBytes::empty(); num_ranges],
-            missing_range_indices: Vec::new(),
+            bytes_by_request: vec![OwnedBytes::empty(); num_ranges],
+            request_indices_to_fetch: Vec::new(),
         }
     }
 
     /// Treats every nonempty range as a miss when the batch exceeds the lookup limit.
     fn skip_cache_lookups(&mut self, requested_ranges: &[Range<usize>]) -> bool {
-        if requested_ranges.len() <= MAX_CACHE_RANGES {
+        if requested_ranges.len() <= MAX_NUM_RANGES_FOR_CACHE_LOOKUP {
             return false;
         }
-        self.missing_range_indices = requested_ranges
+        self.request_indices_to_fetch = requested_ranges
             .iter()
             .enumerate()
             .filter(|(_, range)| !range.is_empty())
@@ -113,12 +113,12 @@ impl BatchReadBuffers {
         true
     }
 
-    /// Stores a cache hit or saves the range index for reading on a miss.
-    fn record_cache_lookup(&mut self, range_index: usize, cached_bytes: Option<OwnedBytes>) {
+    /// Stores cached bytes or saves the request index for fetching on a miss.
+    fn record_cache_lookup(&mut self, request_index: usize, cached_bytes: Option<OwnedBytes>) {
         if let Some(bytes) = cached_bytes {
-            self.results[range_index] = bytes;
+            self.bytes_by_request[request_index] = bytes;
         } else {
-            self.missing_range_indices.push(range_index);
+            self.request_indices_to_fetch.push(request_index);
         }
     }
 
@@ -134,22 +134,22 @@ impl BatchReadBuffers {
     where
         FetchRangesFuture: Future<Output = Result<Vec<OwnedBytes>, Error>>,
     {
-        if self.missing_range_indices.is_empty() {
-            return Ok(self.results);
+        if self.request_indices_to_fetch.is_empty() {
+            return Ok(self.bytes_by_request);
         }
-        if self.missing_range_indices.len() == requested_ranges.len() {
+        if self.request_indices_to_fetch.len() == requested_ranges.len() {
             return fetch_ranges(requested_ranges).await;
         }
         let missing_ranges = self
-            .missing_range_indices
+            .request_indices_to_fetch
             .iter()
-            .map(|&range_index| requested_ranges[range_index].clone())
+            .map(|&request_index| requested_ranges[request_index].clone())
             .collect();
         let downloaded = fetch_ranges(missing_ranges).await?;
-        for (range_index, bytes) in self.missing_range_indices.into_iter().zip(downloaded) {
-            self.results[range_index] = bytes;
+        for (request_index, bytes) in self.request_indices_to_fetch.into_iter().zip(downloaded) {
+            self.bytes_by_request[request_index] = bytes;
         }
-        Ok(self.results)
+        Ok(self.bytes_by_request)
     }
 }
 
