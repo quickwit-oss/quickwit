@@ -228,8 +228,20 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_batch_cache_limit() {
-        for num_ranges in [100, 101] {
+    async fn test_batch_cache_hits_misses_and_lookup_limit() {
+        let boundary_ranges = |count: usize| {
+            (0..count - 1)
+                .map(|index| index..index + 1)
+                .chain([0..0])
+                .collect()
+        };
+        for (ranges, fail) in [
+            (vec![4..6, 0..0, 2..4, 4..6], false),
+            (vec![4..6, 0..0, 2..4, 4..6], true),
+            (boundary_ranges(100), false),
+            (boundary_ranges(101), false),
+        ] {
+            let skip_cache = ranges.len() > 100;
             let cache = feuer::Cache::builder()
                 .memory_capacity(1024 * 1024)
                 .open()
@@ -240,6 +252,11 @@ mod tests {
                 &split_slice_key(&object_uri, &(0..1)),
                 bytes::Bytes::from_static(&[99]),
             );
+            let expected_misses: Vec<_> = ranges
+                .iter()
+                .filter(|range| !range.is_empty() && (skip_cache || **range != (0..1)))
+                .cloned()
+                .collect();
             let mut backend = crate::MockStorage::default();
             backend.expect_uri().return_const(uri);
             backend
@@ -247,57 +264,7 @@ mod tests {
                 .times(1)
                 .returning(move |path, ranges| {
                     assert_eq!(path, Path::new("split"));
-                    let start = if num_ranges == 100 { 1 } else { 0 };
-                    assert_eq!(
-                        ranges,
-                        (start..num_ranges - 1)
-                            .map(|index| index..index + 1)
-                            .collect::<Vec<_>>()
-                    );
-                    Ok(ranges
-                        .into_iter()
-                        .map(|range| OwnedBytes::new(vec![range.start as u8]))
-                        .collect())
-                });
-            let storage = wrap_storage_with_storage_cache(cache.clone(), Arc::new(backend));
-            let mut ranges: Vec<_> = (0..num_ranges - 1).map(|index| index..index + 1).collect();
-            ranges.push(0..0);
-            let buffers = storage
-                .get_slices(Path::new("split"), ranges)
-                .await
-                .unwrap();
-            assert_eq!(buffers.len(), num_ranges);
-            assert_eq!(
-                buffers[0].as_slice(),
-                &[if num_ranges == 100 { 99 } else { 0 }]
-            );
-            for (index, buffer) in buffers.iter().enumerate().take(num_ranges - 1).skip(1) {
-                assert_eq!(buffer.as_slice(), &[index as u8]);
-                let cached = cache
-                    .get(&split_slice_key(&object_uri, &(index..index + 1)))
-                    .await;
-                assert_eq!(cached.is_some(), num_ranges == 100);
-            }
-            assert!(buffers.last().unwrap().is_empty());
-        }
-    }
-
-    #[tokio::test]
-    async fn test_batch_preserves_duplicates_and_caches_only_successful_reads() {
-        for fail in [false, true] {
-            let cache = feuer::Cache::builder()
-                .memory_capacity(1024 * 1024)
-                .open()
-                .unwrap();
-            let uri = Uri::for_test("ram://test");
-            let object_uri = uri.join("split").unwrap().into_string();
-            let mut backend = crate::MockStorage::default();
-            backend.expect_uri().return_const(uri);
-            backend
-                .expect_get_slices()
-                .times(1)
-                .returning(move |_, ranges| {
-                    assert_eq!(ranges, vec![4..6, 2..4, 4..6]);
+                    assert_eq!(ranges, expected_misses);
                     if fail {
                         return Err(
                             StorageErrorKind::NotFound.with_error(anyhow::anyhow!("missing"))
@@ -311,35 +278,37 @@ mod tests {
                         .collect())
                 });
             let storage = wrap_storage_with_storage_cache(cache.clone(), Arc::new(backend));
-            let ranges = vec![4..6, 0..0, 2..4, 4..6];
             let result = storage.get_slices(Path::new("split"), ranges.clone()).await;
             if fail {
                 assert_eq!(result.unwrap_err().kind(), StorageErrorKind::NotFound);
             } else {
                 let buffers = result.unwrap();
                 assert_eq!(buffers.len(), ranges.len());
-                for (range, buffer) in ranges.iter().zip(buffers) {
+                for (range, buffer) in ranges.iter().zip(&buffers) {
+                    let expected = if !skip_cache && *range == (0..1) {
+                        vec![99]
+                    } else {
+                        range.clone().map(|index| index as u8).collect()
+                    };
+                    assert_eq!(buffer.as_slice(), expected);
+                }
+                if !skip_cache {
                     assert_eq!(
-                        buffer.as_slice(),
-                        range.clone().map(|index| index as u8).collect::<Vec<_>>()
+                        storage
+                            .get_slice(Path::new("split"), ranges[0].clone())
+                            .await
+                            .unwrap(),
+                        buffers[0]
                     );
                 }
-                assert_eq!(
-                    storage
-                        .get_slice(Path::new("split"), 4..6)
-                        .await
-                        .unwrap()
-                        .as_slice(),
-                    &[4, 5]
-                );
             }
-            for range in [4..6, 2..4] {
+            for range in ranges.into_iter().filter(|range| !range.is_empty()) {
                 assert_eq!(
                     cache
                         .get(&split_slice_key(&object_uri, &range))
                         .await
                         .is_some(),
-                    !fail
+                    range == (0..1) || (!skip_cache && !fail)
                 );
             }
         }

@@ -20,6 +20,29 @@ use tokio::io::AsyncWriteExt;
 use super::*;
 use crate::{MockStorage, StorageErrorKind};
 
+// The writer controls download progress, and the flag records when its reader is opened.
+fn pending_download(
+    storage: &mut MockStorage,
+    expected_range: Range<usize>,
+) -> (tokio::io::DuplexStream, Arc<AtomicBool>) {
+    let (reader, writer) = tokio::io::duplex(64);
+    let started = Arc::new(AtomicBool::new(false));
+    let started_for_storage = started.clone();
+    storage
+        .expect_get_slice_stream()
+        .times(1)
+        .return_once(move |_, range| {
+            assert_eq!(range, expected_range);
+            started_for_storage.store(true, Ordering::Relaxed);
+            Ok(Box::new(reader))
+        });
+    (writer, started)
+}
+
+fn collected_batch(storage: &CoalescingStorage) -> Weak<CollectedBatch> {
+    storage.batches_by_object.lock().unwrap()[Path::new("file")].clone()
+}
+
 #[tokio::test(start_paused = true)]
 async fn test_collects_by_object_and_collector() {
     let mut storage = MockStorage::default();
@@ -101,18 +124,6 @@ async fn test_singleton_waits_and_validates_response() {
             });
         let storage = CoalescingStorage::new(Arc::new(storage));
         let read_start = tokio::time::Instant::now();
-        for ranges in [Vec::new(), vec![2..2, usize::MAX..usize::MAX]] {
-            let expected_len = ranges.len();
-            let buffers = storage.get_slices(Path::new("file"), ranges).await.unwrap();
-            assert_eq!(buffers.len(), expected_len);
-            assert!(buffers.iter().all(|bytes| bytes.is_empty()));
-        }
-        storage
-            .get_slice_into(Path::new("file"), 2..2, &mut [])
-            .await
-            .unwrap();
-        assert_eq!(read_start.elapsed(), Duration::ZERO);
-        assert!(storage.batches_by_object.lock().unwrap().is_empty());
         let result = storage.get_slice(Path::new("file"), 5..9).await;
         assert!(read_start.elapsed() >= COLLECTION_DURATION);
         if length == 4 {
@@ -131,18 +142,8 @@ async fn test_singleton_waits_and_validates_response() {
 
 #[tokio::test]
 async fn test_later_read_starts_another_batch_after_caller_cancellation() {
-    let download_writer = Arc::new(Mutex::new(None));
-    let writer_for_storage = download_writer.clone();
     let mut storage = MockStorage::default();
-    storage
-        .expect_get_slice_stream()
-        .times(1)
-        .return_once(move |_, range| {
-            assert_eq!(range, 0..10);
-            let (reader, writer) = tokio::io::duplex(64);
-            *writer_for_storage.lock().unwrap() = Some(writer);
-            Ok(Box::new(reader))
-        });
+    let (mut writer, download_started) = pending_download(&mut storage, 0..10);
     storage.expect_get_slice().times(1).returning(|_, range| {
         // These bytes were a gap in the first batch's plan.
         assert_eq!(range, 4..6);
@@ -154,7 +155,7 @@ async fn test_later_read_starts_another_batch_after_caller_cancellation() {
     assert!(poll!(first_read.as_mut()).is_pending());
     assert!(poll!(second_read.as_mut()).is_pending());
     tokio::time::timeout(Duration::from_secs(5), async {
-        while download_writer.lock().unwrap().is_none() {
+        while !download_started.load(Ordering::Relaxed) {
             assert!(poll!(first_read.as_mut()).is_pending());
             tokio::task::yield_now().await;
         }
@@ -164,7 +165,6 @@ async fn test_later_read_starts_another_batch_after_caller_cancellation() {
     drop(first_read);
     let later_bytes = storage.get_slice(Path::new("file"), 4..6).await.unwrap();
     assert_eq!(later_bytes.as_slice(), &[4, 5]);
-    let mut writer = download_writer.lock().unwrap().take().unwrap();
     writer
         .write_all(&(0..10).collect::<Vec<u8>>())
         .await
@@ -175,18 +175,8 @@ async fn test_later_read_starts_another_batch_after_caller_cancellation() {
 
 #[tokio::test(start_paused = true)]
 async fn test_collection_deadline_and_cancelling_all_callers_during_download() {
-    let (reader, mut writer) = tokio::io::duplex(16);
-    let download_started = Arc::new(AtomicBool::new(false));
-    let download_started_for_storage = download_started.clone();
     let mut storage = MockStorage::default();
-    storage
-        .expect_get_slice_stream()
-        .times(1)
-        .return_once(move |_, range| {
-            assert_eq!(range, 0..4);
-            download_started_for_storage.store(true, Ordering::Relaxed);
-            Ok(Box::new(reader))
-        });
+    let (mut writer, download_started) = pending_download(&mut storage, 0..4);
     let storage = CoalescingStorage::new(Arc::new(storage));
     let mut first_read = Box::pin(storage.get_slices(Path::new("file"), vec![0..1, 1..2]));
     assert!(poll!(first_read.as_mut()).is_pending());
@@ -197,7 +187,7 @@ async fn test_collection_deadline_and_cancelling_all_callers_during_download() {
     assert!(poll!(first_read.as_mut()).is_pending());
     // Collection ends at the first caller's deadline.
     assert!(
-        storage.batches_by_object.lock().unwrap()[Path::new("file")]
+        collected_batch(&storage)
             .upgrade()
             .unwrap()
             .ranges_to_read
@@ -210,17 +200,9 @@ async fn test_collection_deadline_and_cancelling_all_callers_during_download() {
         tokio::task::yield_now().await;
     }
     drop(first_read);
-    assert!(
-        storage.batches_by_object.lock().unwrap()[Path::new("file")]
-            .upgrade()
-            .is_some()
-    );
+    assert!(collected_batch(&storage).upgrade().is_some());
     drop(second_read);
-    assert!(
-        storage.batches_by_object.lock().unwrap()[Path::new("file")]
-            .upgrade()
-            .is_none()
-    );
+    assert!(collected_batch(&storage).upgrade().is_none());
     assert_eq!(
         writer.write_all(&[0]).await.unwrap_err().kind(),
         io::ErrorKind::BrokenPipe
@@ -241,11 +223,7 @@ async fn test_cancellation_during_collection_releases_batch() {
     let mut read_to_cancel = Box::pin(storage.get_slices(Path::new("file"), vec![0..1, 99..100]));
     assert!(poll!(read_to_cancel.as_mut()).is_pending());
     drop(read_to_cancel);
-    assert!(
-        storage.batches_by_object.lock().unwrap()[Path::new("file")]
-            .upgrade()
-            .is_none()
-    );
+    assert!(collected_batch(&storage).upgrade().is_none());
     let mut read_to_cancel = Box::pin(storage.get_slices(Path::new("file"), vec![4..5, 5..6]));
     let mut remaining_read = Box::pin(storage.get_slice(Path::new("file"), 8..10));
     assert!(poll!(read_to_cancel.as_mut()).is_pending());

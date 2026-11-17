@@ -51,42 +51,38 @@ mod tests {
     }
 
     #[test]
-    fn test_coalesce_ranges_empty_single_overlap_and_order() {
-        assert!(coalesce_ranges(Vec::new()).is_empty());
-        let range = 10..20;
-        assert_eq!(coalesce_ranges(vec![range.clone()]), vec![range]);
-        assert!(coalesce_ranges(vec![7..7, 0..0]).is_empty());
-        let ranges = vec![
-            4 * MIB..5 * MIB,
-            0..MIB,
-            0..MIB,
-            10..20,
-            MIB..2 * MIB,
-            2 * MIB + 512 * KIB..3 * MIB,
+    fn test_coalesce_ranges_boundaries() {
+        let cases: &[(&[Range<usize>], &[Range<usize>])] = &[
+            (&[], &[]),
+            (&[10..20], &[10..20]),
+            (&[7..7, 0..0], &[]),
+            // Unsorted, duplicate, nested, adjacent, and separated ranges.
+            (
+                &[
+                    4 * MIB..5 * MIB,
+                    0..MIB,
+                    0..MIB,
+                    10..20,
+                    MIB..2 * MIB,
+                    2 * MIB + 512 * KIB..3 * MIB,
+                ],
+                &[0..5 * MIB],
+            ),
+            (&[0..20 * MIB, 24 * MIB..44 * MIB], &[0..44 * MIB]),
+            // Even large downloads cannot bridge a gap greater than 4 MiB.
+            (
+                &[0..20 * MIB, 24 * MIB + 1..44 * MIB + 1],
+                &[0..20 * MIB, 24 * MIB + 1..44 * MIB + 1],
+            ),
+            (
+                &[usize::MAX - 10..usize::MAX, 0..10],
+                &[0..10, usize::MAX - 10..usize::MAX],
+            ),
+            (&[0..usize::MAX, 1..2], &[0..usize::MAX]),
         ];
-        assert_eq!(coalesce_ranges(ranges), vec![0..5 * MIB]);
-    }
-
-    #[test]
-    fn test_coalesce_ranges_uses_fixed_gap_threshold() {
-        let ranges = vec![0..20 * MIB, 24 * MIB..44 * MIB];
-        assert_eq!(coalesce_ranges(ranges), vec![0..44 * MIB]);
-        // Even large downloads cannot bridge a gap greater than 4 MiB.
-        let ranges = vec![0..20 * MIB, 24 * MIB + 1..44 * MIB + 1];
-        assert_eq!(coalesce_ranges(ranges.clone()), ranges);
-    }
-
-    #[test]
-    fn test_coalesce_ranges_near_address_limit() {
-        let ranges = vec![usize::MAX - 10..usize::MAX, 0..10];
-        assert_eq!(
-            coalesce_ranges(ranges),
-            vec![0..10, usize::MAX - 10..usize::MAX]
-        );
-        assert_eq!(
-            coalesce_ranges(vec![0..usize::MAX, 1..2]),
-            vec![0..usize::MAX]
-        );
+        for (ranges, expected) in cases {
+            assert_eq!(coalesce_ranges(ranges.to_vec()), *expected, "{ranges:?}");
+        }
     }
 
     #[derive(serde::Deserialize)]

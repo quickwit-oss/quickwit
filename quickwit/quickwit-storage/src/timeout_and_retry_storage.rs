@@ -459,23 +459,11 @@ mod tests {
         async fn put(&self, _path: &Path, _payload: Box<dyn PutPayload>) -> StorageResult<()> {
             todo!();
         }
-        fn copy_to<'life0, 'life1, 'life2, 'async_trait>(
-            &'life0 self,
-            _path: &'life1 Path,
-            _output: &'life2 mut dyn SendableAsync,
-        ) -> ::core::pin::Pin<
-            Box<
-                dyn ::core::future::Future<Output = StorageResult<()>>
-                    + ::core::marker::Send
-                    + 'async_trait,
-            >,
-        >
-        where
-            'life0: 'async_trait,
-            'life1: 'async_trait,
-            'life2: 'async_trait,
-            Self: 'async_trait,
-        {
+        async fn copy_to(
+            &self,
+            _path: &Path,
+            _output: &mut dyn SendableAsync,
+        ) -> StorageResult<()> {
             todo!();
         }
 
