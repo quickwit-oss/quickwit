@@ -55,10 +55,9 @@ impl DownloadCounters {
 /// Storage proxy that counts the bytes and number of read requests it serves.
 ///
 /// Wrap a base `Storage` with this proxy at the entry point of a request to
-/// observe the per-request download volume. Cached layers (split cache, footer
-/// cache, hotcache, byte-range cache) live BELOW this wrapper, so reads served
-/// from cache do NOT contribute to the counters — that is the desired behavior
-/// for a "downloaded from object storage" measurement.
+/// observe the per-request download volume. Cache hits (`storage_cache`, `split_cache`,
+/// hotcache, short-lived cache) return before reaching this wrapper, so the counters
+/// measure downloads from object storage.
 ///
 /// Write methods (`put`, `delete`, `bulk_delete`) and metadata methods
 /// (`exists`, `file_num_bytes`, `check_connectivity`) are passed through
@@ -112,6 +111,17 @@ impl Storage for CountingStorage {
         let bytes = self.inner.get_slice(path, range).await?;
         self.counters.record_read(bytes.len() as u64);
         Ok(bytes)
+    }
+
+    async fn get_slice_into(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        buffer: &mut [u8],
+    ) -> StorageResult<()> {
+        self.inner.get_slice_into(path, range, buffer).await?;
+        self.counters.record_read(buffer.len() as u64);
+        Ok(())
     }
 
     async fn get_slice_stream(
@@ -180,6 +190,32 @@ mod tests {
         let (download_num_bytes, download_num_requests) = counters.snapshot();
         assert_eq!(download_num_bytes, 10);
         assert_eq!(download_num_requests, 2);
+    }
+
+    #[tokio::test]
+    async fn test_counting_storage_counts_get_slice_into() {
+        let inner = RamStorageBuilder::default()
+            .put("foo", b"hello world")
+            .build();
+        let (storage, counters) = CountingStorage::instrument_storage(Arc::new(inner));
+        let mut buffer = [0; 5];
+        storage
+            .get_slice_into(Path::new("foo"), 6..11, &mut buffer)
+            .await
+            .unwrap();
+        assert_eq!(&buffer, b"world");
+        assert_eq!(counters.snapshot(), (5, 1));
+        assert!(
+            storage
+                .get_slice_into(Path::new("missing"), 0..5, &mut buffer)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            counters.snapshot(),
+            (5, 1),
+            "failed reads must not count as downloads"
+        );
     }
 
     #[tokio::test]

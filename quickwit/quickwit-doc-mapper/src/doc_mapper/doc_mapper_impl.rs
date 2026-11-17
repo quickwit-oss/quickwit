@@ -14,7 +14,6 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
-use std::sync::Arc;
 
 use anyhow::{Context, bail};
 use fnv::FnvHashSet;
@@ -634,12 +633,12 @@ impl DocMapper {
     ///
     /// Considering schema evolution, splits within an index can have different schema
     /// over time. So `split_schema` is the schema of the split the query is targeting.
+    /// Resolve predicate-cache nodes asynchronously before calling this method to enable caching.
     pub fn query(
         &self,
         split_schema: Schema,
         query_ast: QueryAst,
         with_validation: bool,
-        cache_context: Option<(Arc<dyn quickwit_query::query_ast::PredicateCache>, String)>,
     ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
         build_query(
             query_ast,
@@ -649,7 +648,6 @@ impl DocMapper {
                 search_fields: &self.default_search_field_names[..],
                 with_validation,
             },
-            cache_context,
         )
     }
 
@@ -2109,7 +2107,7 @@ mod tests {
             .parse_user_query(doc_mapper.default_search_fields())
             .map_err(|err| err.to_string())?;
         let (query, _) = doc_mapper
-            .query(doc_mapper.schema(), query_ast, true, None)
+            .query(doc_mapper.schema(), query_ast, true)
             .map_err(|err| err.to_string())?;
         Ok(format!("{query:?}"))
     }

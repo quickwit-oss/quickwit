@@ -36,10 +36,11 @@ pub use debouncer::AsyncDebouncer;
 pub(crate) use debouncer::DebouncedStorage;
 
 pub use self::payload::PutPayload;
-pub use self::storage::{ListObjectsStream, ObjectMetadata, Storage};
+pub use self::storage::{ListObjectsStream, ObjectMetadata, Storage, default_get_slice_into};
 
 mod bundle_storage;
 mod error;
+mod feuer_cache;
 
 mod local_file_storage;
 mod object_storage;
@@ -51,12 +52,17 @@ mod ram_storage;
 mod split;
 mod split_cache;
 mod stable_deref_bytes;
+mod storage_cache;
 mod storage_factory;
 mod storage_resolver;
 mod versioned_component;
 
+pub use feuer_cache::{FeuerCache, FeuerIoQueues};
 use quickwit_common::uri::Uri;
 pub use split_cache::SearchSplitCache;
+pub use storage_cache::{
+    attach_storage_cache_access_trace, open_storage_cache, wrap_storage_with_storage_cache,
+};
 pub use tantivy::directory::OwnedBytes;
 pub use versioned_component::VersionedComponent;
 
@@ -66,8 +72,7 @@ pub use self::bundle_storage::{
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::cache::MockStorageCache;
 pub use self::cache::{
-    ByteRangeCache, FileByteRangeCache, MemorySizedCache, QuickwitCache, StorageCache,
-    wrap_storage_with_cache,
+    ByteRangeCache, FileByteRangeCache, MemorySizedCache, StorageCache, wrap_storage_with_cache,
 };
 pub use self::counting_storage::{CountingStorage, DownloadCounters};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
@@ -193,6 +198,9 @@ pub(crate) mod test_suite {
             .await?;
         let payload = storage.get_slice(test_path, 3..6).await?;
         assert_eq!(&payload[..], b"def");
+        let mut buffer = [0; 3];
+        storage.get_slice_into(test_path, 3..6, &mut buffer).await?;
+        assert_eq!(&buffer, b"def");
         Ok(())
     }
 
