@@ -100,6 +100,10 @@ impl BatchReadBuffers {
         }
     }
 
+    /// Reads all recorded cache misses in one callback and combines them with cached hits in
+    /// the original request order. Empty ranges keep their empty buffers. Skips the callback
+    /// when there are no misses and forwards the original ranges directly when every range misses.
+    /// The callback must return one buffer per missing range, in the order supplied.
     async fn read_missing_ranges<ReadFuture, Error>(
         mut self,
         requested_ranges: Vec<Range<usize>>,

@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Mutex;
-
 use quickwit_storage::{
     BundleStorage, CoalescingStorage, MockStorage, MockStorageCache, PutPayload,
     SplitPayloadBuilder, wrap_storage_with_cache,
@@ -50,8 +48,6 @@ async fn test_batch_through_directory_caches_and_bundle() {
     let bytes = payload.read_all().await.unwrap();
     let footer =
         bytes.slice(payload.footer_range.start as usize..payload.footer_range.end as usize);
-    let reads = Arc::new(Mutex::new(Vec::new()));
-    let recorded_reads = reads.clone();
     let mut storage = MockStorage::default();
     let streamed_bytes = bytes.clone();
     storage
@@ -59,16 +55,15 @@ async fn test_batch_through_directory_caches_and_bundle() {
         .times(1)
         .returning(move |path, range| {
             assert_eq!(path, Path::new("split.split"));
-            recorded_reads.lock().unwrap().push(range.clone());
+            assert_eq!(range, 10..80_012);
             Ok(Box::new(std::io::Cursor::new(streamed_bytes.slice(range))))
         });
-    let recorded_reads = reads.clone();
     storage
         .expect_get_slice()
         .times(1)
         .returning(move |path, range| {
             assert_eq!(path, Path::new("split.split"));
-            recorded_reads.lock().unwrap().push(range.clone());
+            assert_eq!(range, 5..7); // Bundled file starts after "pad".
             Ok(bytes.slice(range))
         });
     let storage = Arc::new(CoalescingStorage::new(Arc::new(storage)));
@@ -103,8 +98,6 @@ async fn test_batch_through_directory_caches_and_bundle() {
     // Populate the dynamic cache separately from the static hotcache.
     let initial = handle.read_bytes_async(2..4).await.unwrap();
     assert_eq!(initial.as_slice(), b"23");
-    assert_eq!(*reads.lock().unwrap(), vec![5..7]); // Bundled file starts after "pad".
-    reads.lock().unwrap().clear();
 
     // FileSlice translates offsets before the caches remove hits and storage collects misses.
     let file = FileSlice::new(handle).slice(2..content.len());
@@ -120,7 +113,6 @@ async fn test_batch_through_directory_caches_and_bundle() {
         bytes.iter().map(OwnedBytes::as_slice).collect::<Vec<_>>(),
         expected
     );
-    assert_eq!(*reads.lock().unwrap(), vec![10..80_012]);
 
     for (range, expected_bytes) in ranges.iter().zip(&expected) {
         assert_eq!(
@@ -129,13 +121,7 @@ async fn test_batch_through_directory_caches_and_bundle() {
         );
     }
     let repeated = file.read_bytes_batch_async(ranges).await.unwrap();
-    assert_eq!(
-        repeated
-            .iter()
-            .map(OwnedBytes::as_slice)
-            .collect::<Vec<_>>(),
-        expected
-    );
+    assert_eq!(repeated, bytes);
 
     // Hotcache-only reads and empty batches bypass storage.
     let hot_handle = hot_directory.get_file_handle(path).unwrap();
@@ -158,5 +144,4 @@ async fn test_batch_through_directory_caches_and_bundle() {
                 .is_empty()
         );
     }
-    assert_eq!(reads.lock().unwrap().len(), 1);
 }
