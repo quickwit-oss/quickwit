@@ -714,6 +714,10 @@ quickwit_search_leaf_search_targeted_splits:
   module: quickwit_search::metrics
   kind: histogram
   description: Number of splits targeted per leaf search GRPC request.
+quickwit_search_leaf_search_warmup_budget_num_bytes:
+  module: quickwit_search::metrics
+  kind: gauge
+  description: Node-wide warmup memory budget in bytes, configured by `searcher.warmup_memory_budget`.
 quickwit_search_leaf_search_warmup_ongoing_num_bytes:
   module: quickwit_search::metrics
   kind: gauge

@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use bytesize::ByteSize;
 use quickwit_directories::OutOfMemoryError;
 
-use crate::metrics::LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES;
+use crate::metrics::{LEAF_SEARCH_WARMUP_BUDGET_NUM_BYTES, LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES};
 
 /// Called after memory is freed.
 type OnMemoryFreed = Box<dyn Fn() + Send + Sync>;
@@ -57,6 +57,7 @@ impl GlobalWarmupMemory {
             limit: limit.as_u64(),
             on_memory_freed: Box::new(on_memory_freed),
         };
+        LEAF_SEARCH_WARMUP_BUDGET_NUM_BYTES.set(inner.limit as f64);
         GlobalWarmupMemory {
             inner: Arc::new(inner),
         }

@@ -167,6 +167,8 @@ rate(quickwit_runtime_tokio_task_scheduled_duration_microseconds_total[5m])
 | `quickwit_search` | `split_search_outcome` | Number of local leaf split search outcomes by `category` (`success`, operational `error`, cache/pruning, or cancellation phase). Operational errors are classified by `error` (`create_reader`, `warmup`, `tantivy_search`, or `panic`). Retries are counted separately | `counter` |
 | `quickwit_search` | `leaf_search_split_duration_secs` | Number of seconds required to run a leaf search over a single split. The timer starts after the semaphore is obtained | `histogram` |
 | `quickwit_search` | `active_search_threads_count` | Number of threads in use in the CPU thread pool | `gauge` |
+| `quickwit_search` | `leaf_search_warmup_budget_num_bytes` | Node-wide warmup memory budget in bytes, configured by `searcher.warmup_memory_budget` | `gauge` |
+| `quickwit_search` | `leaf_search_warmup_ongoing_num_bytes` | Warmup memory currently reserved by split searches on the node, in bytes, including initial permit allocations | `gauge` |
 
 ## Storage Metrics
 
