@@ -178,15 +178,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_empty_stream_skips_storage() {
-        let directory = StorageDirectory::new(Arc::new(MockStorage::default()));
-        let handle = directory.get_file_handle(Path::new("file")).unwrap();
-        let mut stream = handle.read_bytes_stream(7..7).await.unwrap();
-        assert_eq!(stream.read(&mut [0; 1]).await.unwrap(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_stream_propagates_open_and_read_errors() {
+    async fn test_empty_stream_and_errors() {
         let mut storage = MockStorage::default();
         storage
             .expect_get_slice_stream()
@@ -201,6 +193,8 @@ mod tests {
             });
         let directory = StorageDirectory::new(Arc::new(storage));
         let handle = directory.get_file_handle(Path::new("file")).unwrap();
+        let mut empty = handle.read_bytes_stream(7..7).await.unwrap();
+        assert_eq!(empty.read(&mut [0]).await.unwrap(), 0);
         let error = handle.read_bytes_stream(0..1).await.err().unwrap();
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
         let mut stream = handle.read_bytes_stream(5..20).await.unwrap();

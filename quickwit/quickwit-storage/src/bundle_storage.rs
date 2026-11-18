@@ -93,6 +93,13 @@ impl BundleStorage {
         self.file_ranges.files.keys()
     }
 
+    fn file_range(&self, path: &Path) -> StorageResult<Range<u64>> {
+        self.file_ranges.get(path).ok_or_else(|| {
+            crate::StorageErrorKind::NotFound
+                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
+        })
+    }
+
     /// Fetches a bundled file from a split.
     ///
     /// Use this only when retrieving a single file from the split. To retrieve multiple files,
@@ -508,10 +515,7 @@ impl Storage for BundleStorage {
         path: &Path,
         range: Range<usize>,
     ) -> crate::StorageResult<OwnedBytes> {
-        let file_range = self.file_ranges.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })?;
+        let file_range = self.file_range(path)?;
         let new_range =
             file_range.start as usize + range.start..file_range.start as usize + range.end;
         self.storage
@@ -528,10 +532,7 @@ impl Storage for BundleStorage {
         if buffer.is_empty() {
             return Ok(());
         }
-        let file_range = self.file_ranges.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })?;
+        let file_range = self.file_range(path)?;
         let new_range =
             file_range.start as usize + range.start..file_range.start as usize + range.end;
         self.storage
@@ -544,10 +545,7 @@ impl Storage for BundleStorage {
         path: &Path,
         range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        let file_range = self.file_ranges.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })?;
+        let file_range = self.file_range(path)?;
         if range.start > range.end || range.end as u64 > file_range.end - file_range.start {
             return Err(
                 io::Error::new(io::ErrorKind::InvalidInput, "range exceeds bundled file").into(),
@@ -560,10 +558,7 @@ impl Storage for BundleStorage {
     }
 
     async fn get_all(&self, path: &Path) -> crate::StorageResult<OwnedBytes> {
-        let file_range = self.file_ranges.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })?;
+        let file_range = self.file_range(path)?;
         self.storage
             .get_slice(
                 &self.bundle_filepath,
@@ -589,10 +584,7 @@ impl Storage for BundleStorage {
     }
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
-        let file_range = self.file_ranges.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })?;
+        let file_range = self.file_range(path)?;
         Ok(file_range.end - file_range.start)
     }
 
