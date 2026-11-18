@@ -557,10 +557,11 @@ pub fn write_hotcache<D: Directory>(
 }
 
 #[cfg(test)]
-mod batch_tests;
-
-#[cfg(test)]
 mod tests {
+    use quickwit_storage::{
+        BundleStorage, CoalescingStorage, MockStorage, MockStorageCache, PutPayload,
+        SplitPayloadBuilder, wrap_storage_with_cache,
+    };
     use rand::RngExt;
     use tantivy::directory::RamDirectory;
     use tantivy::schema::{
@@ -569,6 +570,149 @@ mod tests {
     use tantivy::{Index, TantivyDocument};
 
     use super::*;
+    use crate::StorageDirectory;
+
+    #[tokio::test]
+    async fn test_batch_through_directory_caches_and_bundle() {
+        check_batch_through_directory_caches_and_bundle(false).await;
+    }
+
+    #[tokio::test]
+    async fn test_large_batch_bypasses_cache_and_populates_warmup() {
+        check_batch_through_directory_caches_and_bundle(true).await;
+    }
+
+    async fn check_batch_through_directory_caches_and_bundle(large_batch: bool) {
+        let path = Path::new("test.file");
+        let content: Vec<u8> = b"0123456789abcdef"
+            .iter()
+            .copied()
+            .chain((0..80_000).map(|position| (position % 251) as u8))
+            .collect();
+        let mut builder = SplitPayloadBuilder::default();
+        builder.add_payload("prefix".into(), Box::new(b"pad".to_vec()));
+        builder.add_payload("test.file".into(), Box::new(content.clone()));
+        let payload = builder.finalize(&[]).unwrap();
+        let bytes = payload.read_all().await.unwrap();
+        let footer =
+            bytes.slice(payload.footer_range.start as usize..payload.footer_range.end as usize);
+        let mut storage = MockStorage::default();
+        let streamed_bytes = bytes.clone();
+        storage
+            .expect_get_slice_stream()
+            .times(if large_batch { 2 } else { 1 })
+            .returning(move |path, range| {
+                assert_eq!(path, Path::new("split.split"));
+                assert_eq!(range, if large_batch { 5..80_012 } else { 10..15 });
+                Ok(Box::new(std::io::Cursor::new(streamed_bytes.slice(range))))
+            });
+        storage
+            .expect_get_slice()
+            .times(1)
+            .returning(move |path, range| {
+                assert_eq!(path, Path::new("split.split"));
+                assert_eq!(range, 5..7); // Bundled file starts after "pad".
+                Ok(bytes.slice(range))
+            });
+        let storage = Arc::new(CoalescingStorage::new(Arc::new(storage)));
+        let (bundle, _) =
+            BundleStorage::open_from_split_bytes(storage, "split.split".into(), footer).unwrap();
+        let mut cache = MockStorageCache::default();
+        // Large batches skip shared-cache access. The initial scalar read still uses it.
+        cache
+            .expect_get()
+            .times(if large_batch { 1 } else { 5 })
+            .returning(move |cache_path, range| {
+                assert_eq!(cache_path, path);
+                assert!(
+                    [2..4, 10..12, 7..9].contains(&range)
+                        || (range.start >= 16
+                            && (range.start - 16).is_multiple_of(8)
+                            && range.len() == 1)
+                );
+                (range == (800..801)).then(|| OwnedBytes::new(vec![((800 - 16) % 251) as u8]))
+            });
+        let cached_content = content.clone();
+        cache
+            .expect_put()
+            .times(if large_batch { 1 } else { 4 })
+            .returning(move |cache_path, range, bytes| {
+                assert_eq!(cache_path, path);
+                assert_ne!(range, 800..801);
+                assert_eq!(bytes.as_slice(), &cached_content[range]);
+            });
+        let storage = wrap_storage_with_cache(Arc::new(cache), Arc::new(bundle));
+        let storage_directory = StorageDirectory::new(storage);
+        let caching_directory =
+            CachingDirectory::new_unbounded(Arc::new(storage_directory.clone()));
+        let mut hotcache = StaticDirectoryCacheBuilder::default();
+        hotcache
+            .add_file(path, content.len() as u64)
+            .add_bytes(b"45", 4);
+        let mut hotcache_bytes = Vec::new();
+        hotcache.write(&mut hotcache_bytes).unwrap();
+        let hot_directory =
+            HotDirectory::open(caching_directory.clone(), OwnedBytes::new(hotcache_bytes)).unwrap();
+        let handle = hot_directory.get_file_handle(path).unwrap();
+
+        // Populate the dynamic cache separately from the static hotcache.
+        assert_eq!(
+            handle.read_bytes_async(2..4).await.unwrap().as_slice(),
+            b"23"
+        );
+
+        // FileSlice translates offsets before cache lookups (small batches) or bypass (large
+        // batches).
+        let file = FileSlice::new(handle).slice(2..content.len());
+        let mut ranges = vec![8..10, 2..4, 0..2, 5..7, 8..10, 798..799];
+        // A 10k-range batch must reach the coalescer intact, rather than five ranges at a time.
+        if large_batch {
+            ranges.extend(
+                (16..content.len())
+                    .step_by(8)
+                    .map(|start| start - 2..start - 1),
+            );
+        }
+        let expected: Vec<&[u8]> = ranges
+            .iter()
+            .map(|range| &content[range.start + 2..range.end + 2])
+            .collect();
+        let bytes = file.read_bytes_batch_async(ranges.clone()).await.unwrap();
+        assert_eq!(
+            bytes.iter().map(OwnedBytes::as_slice).collect::<Vec<_>>(),
+            expected
+        );
+        for (range, expected_bytes) in ranges.iter().zip(&expected) {
+            assert_eq!(
+                file.read_bytes_slice(range.clone()).unwrap().as_slice(),
+                *expected_bytes
+            );
+        }
+        // Small batches reuse cached data. Large batches bypass lookups and download again.
+        assert_eq!(file.read_bytes_batch_async(ranges).await.unwrap(), bytes);
+
+        // Hotcache-only reads and empty batches bypass storage.
+        let hot_handle = hot_directory.get_file_handle(path).unwrap();
+        let hot_bytes = hot_handle
+            .read_bytes_batch_async(vec![4..5, 5..6])
+            .await
+            .unwrap();
+        assert_eq!(hot_bytes[0].as_slice(), b"4");
+        assert_eq!(hot_bytes[1].as_slice(), b"5");
+        for handle in [
+            caching_directory.get_file_handle(path).unwrap(),
+            hot_handle,
+            storage_directory.get_file_handle(path).unwrap(),
+        ] {
+            assert!(
+                handle
+                    .read_bytes_batch_async(Vec::new())
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+    }
 
     #[test]
     fn test_empty_slice_cache_index() -> tantivy::Result<()> {

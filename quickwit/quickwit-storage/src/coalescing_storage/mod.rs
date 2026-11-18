@@ -21,7 +21,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::{BoxFuture, Shared};
-use futures::{FutureExt, StreamExt, TryStreamExt, stream};
+use futures::{FutureExt, StreamExt, stream};
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -208,31 +208,36 @@ async fn download_chunks_in_parallel(
 ) -> StorageResult<Vec<OwnedBytes>> {
     let mut buffers = vec![OwnedBytes::empty(); requested_ranges.len()];
     // Merge the collected ranges into download chunks, then download at most five concurrently.
-    let (requests, download_chunks) = run_cpu_intensive(move || {
-        let mut requests: Vec<_> = requested_ranges.into_iter().enumerate().collect();
-        requests.sort_unstable_by_key(|(_, requested_range)| requested_range.start);
-        let download_chunks = coalesce_ranges(
-            requests
-                .iter()
-                .map(|(_, requested_range)| requested_range.clone()),
-        );
-        (requests, download_chunks)
+    let (original_indices, ranges, download_chunks) = run_cpu_intensive(move || {
+        let mut indices_and_ranges: Vec<_> = requested_ranges.into_iter().enumerate().collect();
+        indices_and_ranges.sort_unstable_by_key(|(_, range)| range.start);
+        let (original_indices, ranges): (Vec<_>, Vec<_>) = indices_and_ranges.into_iter().unzip();
+        let download_chunks = coalesce_ranges(ranges.iter().cloned(), MAX_GAP);
+        (original_indices, ranges, download_chunks)
     })
     .await
     .map_err(io::Error::other)?;
     // Sorted, disjoint download chunks contain consecutive groups of requested ranges.
-    let mut remaining_requests = requests.as_slice();
+    let mut remaining_ranges = ranges.as_slice();
+    let mut remaining_indices = original_indices.as_slice();
     let mut downloads = stream::iter(download_chunks)
         .map(|download_chunk| {
-            let end = remaining_requests
-                .partition_point(|(_, requested_range)| requested_range.start < download_chunk.end);
-            let (requests, remaining) = remaining_requests.split_at(end);
-            remaining_requests = remaining;
-            download_chunk_and_extract_slices(storage, path, download_chunk, requests)
+            let num_ranges =
+                remaining_ranges.partition_point(|range| range.start < download_chunk.end);
+            let (ranges, rest) = remaining_ranges.split_at(num_ranges);
+            remaining_ranges = rest;
+            let (original_indices, rest) = remaining_indices.split_at(num_ranges);
+            remaining_indices = rest;
+            async move {
+                let downloaded_bytes =
+                    download_chunk_and_extract_slices(storage, path, download_chunk, ranges).await;
+                (original_indices, downloaded_bytes)
+            }
         })
         .buffer_unordered(5);
-    while let Some(downloaded) = downloads.try_next().await? {
-        for (index, bytes) in downloaded {
+    while let Some((original_indices, downloaded_bytes)) = downloads.next().await {
+        let downloaded_bytes = downloaded_bytes?;
+        for (&index, bytes) in original_indices.iter().zip(downloaded_bytes) {
             buffers[index] = bytes;
         }
     }
@@ -240,14 +245,17 @@ async fn download_chunks_in_parallel(
 }
 
 /// Ranges must have `start < end` and be sorted by start offset.
-/// Merges overlaps and gaps up to 4 MiB. This limits each gap, not the total download size
+/// Merges overlaps and gaps up to `max_gap`. This limits each gap, not the total download size
 /// or the total number of gap bytes downloaded.
-fn coalesce_ranges(requested_ranges: impl Iterator<Item = Range<usize>>) -> Vec<Range<usize>> {
+fn coalesce_ranges(
+    requested_ranges: impl Iterator<Item = Range<usize>>,
+    max_gap: usize,
+) -> Vec<Range<usize>> {
     let mut merged_ranges: Vec<Range<usize>> = Vec::new();
     for requested_range in requested_ranges {
         debug_assert!(requested_range.start < requested_range.end);
         if let Some(previous) = merged_ranges.last_mut()
-            && requested_range.start.saturating_sub(previous.end) <= MAX_GAP
+            && requested_range.start.saturating_sub(previous.end) <= max_gap
         {
             previous.end = previous.end.max(requested_range.end);
         } else {
@@ -257,51 +265,53 @@ fn coalesce_ranges(requested_ranges: impl Iterator<Item = Range<usize>>) -> Vec<
     merged_ranges
 }
 
-// Requests are sorted, nonempty, and contained in the download chunk.
+// Ranges are sorted, nonempty, and contained in the download chunk.
+// Returns one buffer per range, in the same order.
 async fn download_chunk_and_extract_slices(
     storage: &dyn Storage,
     path: &Path,
     download_chunk: Range<usize>,
-    mut requests: &[(usize, Range<usize>)],
-) -> StorageResult<Vec<(usize, OwnedBytes)>> {
-    if let [(index, _)] = requests {
+    mut ranges: &[Range<usize>],
+) -> StorageResult<Vec<OwnedBytes>> {
+    if ranges.len() == 1 {
         let bytes = storage.get_slice(path, download_chunk).await?;
-        return Ok(vec![(*index, bytes)]);
+        return Ok(vec![bytes]);
     }
     let reader = storage
         .get_slice_stream(path, download_chunk.clone())
         .await?;
     let mut reader = tokio::io::BufReader::new(reader);
-    let mut buffers = Vec::with_capacity(requests.len());
+    let mut buffers = Vec::with_capacity(ranges.len());
+    // Merge only contiguous requested bytes, leaving gaps to be discarded from the stream.
+    let read_ranges = coalesce_ranges(ranges.iter().cloned(), 0);
     let mut position = download_chunk.start;
-    while !requests.is_empty() {
-        // Read overlapping requests together so the stream never needs to seek backwards.
-        let mut useful = requests[0].1.clone();
-        let mut count = 1;
-        while count < requests.len() && requests[count].1.start < useful.end {
-            useful.end = useful.end.max(requests[count].1.end);
-            count += 1;
-        }
-        let gap = (useful.start - position) as u64;
+    for read_range in read_ranges {
+        // Discard the gap before the requested data.
+        let gap = (read_range.start - position) as u64;
         tokio::io::copy_buf(&mut (&mut reader).take(gap), &mut tokio::io::sink()).await?;
-        let mut bytes = vec![0; useful.len()];
+
+        // Read the requested data into its buffer.
+        let mut bytes = vec![0; read_range.len()];
         reader.read_exact(&mut bytes).await?;
         let bytes = OwnedBytes::new(bytes);
-        for (index, requested_range) in &requests[..count] {
-            let result = if *requested_range == useful {
+        let num_requested_ranges_in_buffer =
+            ranges.partition_point(|range| range.start < read_range.end);
+        let (included, remaining) = ranges.split_at(num_requested_ranges_in_buffer);
+        for range in included {
+            // Give proper subranges their own allocation so caches retain only requested bytes.
+            let requested_bytes = if *range == read_range {
                 bytes.clone()
             } else {
-                // Copy proper subranges so cached results don't retain the entire
-                // overlapping-request buffer.
+                // We may want to share the underlying buffer in some cases, but memory attribution
+                // is simpler and safer for now.
                 OwnedBytes::new(
-                    bytes[requested_range.start - useful.start..requested_range.end - useful.start]
-                        .to_vec(),
+                    bytes[range.start - read_range.start..range.end - read_range.start].to_vec(),
                 )
             };
-            buffers.push((*index, result));
+            buffers.push(requested_bytes);
         }
-        position = useful.end;
-        requests = &requests[count..];
+        position = read_range.end;
+        ranges = remaining;
     }
     debug_assert_eq!(position, download_chunk.end);
     Ok(buffers)
@@ -316,7 +326,7 @@ mod plan_tests {
 
     fn coalesce_ranges(mut ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
         ranges.sort_unstable_by_key(|range| range.start);
-        super::coalesce_ranges(ranges.into_iter())
+        super::coalesce_ranges(ranges.into_iter(), MAX_GAP)
     }
 
     #[test]
