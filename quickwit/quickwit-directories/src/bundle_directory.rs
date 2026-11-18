@@ -247,6 +247,7 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap();
+        assert_eq!(directory.drain_read_operations().count(), 0);
         drop(file);
         drop(directory);
         for byte in b"67" {

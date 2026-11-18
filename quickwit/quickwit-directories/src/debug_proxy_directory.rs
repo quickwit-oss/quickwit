@@ -54,11 +54,11 @@ pub struct ReadOperation {
     pub path: PathBuf,
     /// If fetching a range of data, the start offset, else 0.
     pub offset: usize,
-    /// The number of bytes fetched, or requested when opening a stream.
+    /// The number of bytes fetched.
     pub num_bytes: usize,
     /// The date at which the operation was performed (UTC timezone).
     pub start_date: OffsetDateTime,
-    /// The elapsed time to read the bytes or open the stream.
+    /// The elapsed time to read the bytes.
     pub duration: Duration,
 }
 
@@ -103,7 +103,7 @@ impl ReadOperationBuilder {
 }
 
 /// The debug proxy wraps another directory and simply acts as a proxy
-/// recording all of its read operations.
+/// recording its buffered read operations. Streaming reads pass through without recording.
 ///
 /// It has two purpose
 /// - It is used when building our hotcache, to identify the file sections that should be in the
@@ -125,7 +125,7 @@ impl<D: Directory> Clone for DebugProxyDirectory<D> {
 }
 
 impl<D: Directory> DebugProxyDirectory<D> {
-    /// Wraps another directory to log all of its read operations.
+    /// Wraps another directory to log its buffered read operations.
     pub fn wrap(directory: D) -> Self {
         DebugProxyDirectory {
             underlying: Arc::new(directory),
@@ -181,14 +181,7 @@ impl<D: Directory> FileHandle for DebugProxyFileHandle<D> {
         &self,
         byte_range: Range<usize>,
     ) -> io::Result<Box<dyn tokio::io::AsyncRead + Send + Unpin>> {
-        let read_operation_builder =
-            ReadOperationBuilder::new(&self.path).with_offset(byte_range.start);
-        let num_bytes = byte_range.len();
-        let stream = self.underlying.read_bytes_stream(byte_range).await?;
-        // Record the request when opened. Consumption and cancellation remain with the caller.
-        self.directory
-            .register(read_operation_builder.terminate(num_bytes));
-        Ok(stream)
+        self.underlying.read_bytes_stream(byte_range).await
     }
 }
 

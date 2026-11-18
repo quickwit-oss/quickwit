@@ -626,7 +626,7 @@ mod tests {
     const DEFAULT_SPLIT_TAIL_WINDOW_NUM_BYTES: u64 = 1024 * 1024;
 
     #[tokio::test]
-    async fn test_stream_maps_bundle_range_and_bypasses_cache() {
+    async fn test_stream_maps_bundle_range_and_uses_cache_hits() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         let (reader, mut writer) = tokio::io::duplex(1);
@@ -639,11 +639,18 @@ mod tests {
                 assert_eq!(range, 102..105);
                 Ok(Box::new(reader))
             });
+        let mut cache = crate::MockStorageCache::default();
+        let mut cached_bytes = Some(OwnedBytes::new(&b"abc"[..]));
+        cache.expect_get().times(2).returning(move |path, range| {
+            assert_eq!(path, Path::new("split"));
+            assert_eq!(range, 102..105);
+            // Hit on the first read, miss on the second. Any insertion fails the test.
+            cached_bytes.take()
+        });
         let storage = BundleStorage {
             storage: Arc::new(crate::cache::StorageWithCache {
                 storage: Arc::new(backend),
-                // Any cache lookup or insertion fails the test.
-                cache: Arc::new(crate::MockStorageCache::default()),
+                cache: Arc::new(cache),
             }),
             bundle_filepath: PathBuf::from("split"),
             file_ranges: BundleFileRanges {
@@ -670,6 +677,14 @@ mod tests {
             .err()
             .unwrap();
         assert_eq!(io::Error::from(error).kind(), io::ErrorKind::NotFound);
+        let mut cached = storage
+            .get_slice_stream(Path::new("file"), 2..5)
+            .await
+            .unwrap();
+        let mut bytes = Vec::new();
+        cached.read_to_end(&mut bytes).await.unwrap();
+        assert_eq!(bytes, b"abc");
+
         let mut stream = storage
             .get_slice_stream(Path::new("file"), 2..5)
             .await
