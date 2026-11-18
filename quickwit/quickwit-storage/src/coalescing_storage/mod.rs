@@ -32,6 +32,7 @@ use crate::{BulkDeleteError, ListObjectsStream, OwnedBytes, PutPayload, Storage,
 // Collection ends after this duration, measured from the first caller.
 const COLLECTION_DURATION: Duration = Duration::from_millis(1);
 const MAX_GAP: usize = 4 * 1024 * 1024;
+const MAX_DOWNLOAD_CHUNK_BYTES: usize = 100 * 1024 * 1024;
 
 struct CollectedBatch {
     // Taking these ranges ends collection. Later callers start another batch because
@@ -70,8 +71,9 @@ impl CollectedBatch {
 
 /// Collects concurrent `get_slice`, `get_slice_into`, and `get_slices` calls for the same immutable
 /// object for 1 ms, including singletons. Batch reads submit all ranges together, with one shared
-/// read future per caller. Merges overlaps and gaps up to 4 MiB and runs at most five downloads per
-/// collected group. Streams merged downloads, retaining requested slices and discarding gaps.
+/// read future per caller. Merges overlaps and gaps up to 4 MiB into chunks up to 100 MiB.
+/// Individual larger ranges stay intact. Runs at most five downloads per collected group.
+/// Streams merged downloads, retaining requested slices and discarding gaps.
 /// Batch ranges must have `start < end`; ranges may be in any order. Empty batches return no
 /// buffers.
 ///
@@ -212,18 +214,18 @@ async fn download_chunks_in_parallel(
         let mut indices_and_ranges: Vec<_> = requested_ranges.into_iter().enumerate().collect();
         indices_and_ranges.sort_unstable_by_key(|(_, range)| range.start);
         let (original_indices, ranges): (Vec<_>, Vec<_>) = indices_and_ranges.into_iter().unzip();
-        let download_chunks = coalesce_ranges(ranges.iter().cloned(), MAX_GAP);
+        let download_chunks =
+            coalesce_ranges(ranges.iter().cloned(), MAX_GAP, MAX_DOWNLOAD_CHUNK_BYTES);
         (original_indices, ranges, download_chunks)
     })
     .await
     .map_err(io::Error::other)?;
-    // Sorted, disjoint download chunks contain consecutive groups of requested ranges.
+    // Each chunk contains consecutive requests. Size-limited chunks may overlap, so use
+    // request counts rather than byte offsets to assign requests to downloads.
     let mut remaining_ranges = ranges.as_slice();
     let mut remaining_indices = original_indices.as_slice();
     let mut downloads = stream::iter(download_chunks)
-        .map(|download_chunk| {
-            let num_ranges =
-                remaining_ranges.partition_point(|range| range.start < download_chunk.end);
+        .map(|(download_chunk, num_ranges)| {
             let (ranges, rest) = remaining_ranges.split_at(num_ranges);
             remaining_ranges = rest;
             let (original_indices, rest) = remaining_indices.split_at(num_ranges);
@@ -245,21 +247,26 @@ async fn download_chunks_in_parallel(
 }
 
 /// Ranges must have `start < end` and be sorted by start offset.
-/// Merges overlaps and gaps up to `max_gap`. This limits each gap, not the total download size
-/// or the total number of gap bytes downloaded.
+/// Merges overlaps and gaps up to `max_gap`, without extending a range beyond `max_bytes`.
+/// Individual larger ranges stay intact and may absorb contained requests.
+/// Returns each merged range and its request count. Merged ranges may overlap.
 fn coalesce_ranges(
     requested_ranges: impl Iterator<Item = Range<usize>>,
     max_gap: usize,
-) -> Vec<Range<usize>> {
-    let mut merged_ranges: Vec<Range<usize>> = Vec::new();
+    max_bytes: usize,
+) -> Vec<(Range<usize>, usize)> {
+    let mut merged_ranges: Vec<(Range<usize>, usize)> = Vec::new();
     for requested_range in requested_ranges {
         debug_assert!(requested_range.start < requested_range.end);
-        if let Some(previous) = merged_ranges.last_mut()
+        if let Some((previous, num_ranges)) = merged_ranges.last_mut()
             && requested_range.start.saturating_sub(previous.end) <= max_gap
+            && (requested_range.end <= previous.end
+                || requested_range.end - previous.start <= max_bytes)
         {
             previous.end = previous.end.max(requested_range.end);
+            *num_ranges += 1;
         } else {
-            merged_ranges.push(requested_range);
+            merged_ranges.push((requested_range, 1));
         }
     }
     merged_ranges
@@ -283,9 +290,9 @@ async fn download_chunk_and_extract_slices(
     let mut reader = tokio::io::BufReader::new(reader);
     let mut buffers = Vec::with_capacity(ranges.len());
     // Merge only contiguous requested bytes, leaving gaps to be discarded from the stream.
-    let read_ranges = coalesce_ranges(ranges.iter().cloned(), 0);
+    let read_ranges = coalesce_ranges(ranges.iter().cloned(), 0, usize::MAX);
     let mut position = download_chunk.start;
-    for read_range in read_ranges {
+    for (read_range, num_requested_ranges_in_buffer) in read_ranges {
         // Discard the gap before the requested data.
         let gap = (read_range.start - position) as u64;
         tokio::io::copy_buf(&mut (&mut reader).take(gap), &mut tokio::io::sink()).await?;
@@ -294,8 +301,6 @@ async fn download_chunk_and_extract_slices(
         let mut bytes = vec![0; read_range.len()];
         reader.read_exact(&mut bytes).await?;
         let bytes = OwnedBytes::new(bytes);
-        let num_requested_ranges_in_buffer =
-            ranges.partition_point(|range| range.start < read_range.end);
         let (included, remaining) = ranges.split_at(num_requested_ranges_in_buffer);
         for range in included {
             // Give proper subranges their own allocation so caches retain only requested bytes.
@@ -326,7 +331,10 @@ mod plan_tests {
 
     fn coalesce_ranges(mut ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
         ranges.sort_unstable_by_key(|range| range.start);
-        super::coalesce_ranges(ranges.into_iter(), MAX_GAP)
+        super::coalesce_ranges(ranges.into_iter(), MAX_GAP, MAX_DOWNLOAD_CHUNK_BYTES)
+            .into_iter()
+            .map(|(range, _)| range)
+            .collect()
     }
 
     #[test]
@@ -359,10 +367,38 @@ mod plan_tests {
                 &[0..10, usize::MAX - 10..usize::MAX],
             ),
             (&[0..usize::MAX, 1..2], &[0..usize::MAX]),
+            // Adjacent requests merge up to exactly 100 MiB, even without gaps.
+            (
+                &[0..50 * MIB, 50 * MIB..100 * MIB, 100 * MIB..150 * MIB],
+                &[0..100 * MIB, 100 * MIB..150 * MIB],
+            ),
+            // The limit includes gap bytes.
+            (&[0..96 * MIB, 99 * MIB..100 * MIB], &[0..100 * MIB]),
+            (
+                &[0..96 * MIB, 99 * MIB..100 * MIB + 1],
+                &[0..96 * MIB, 99 * MIB..100 * MIB + 1],
+            ),
+            // Overlapping requests can require separate downloads.
+            (
+                &[0..75 * MIB, 50 * MIB..125 * MIB],
+                &[0..75 * MIB, 50 * MIB..125 * MIB],
+            ),
+            // An oversized request stays intact, but cannot absorb an adjacent request.
+            (
+                &[0..150 * MIB, MIB..2 * MIB, 150 * MIB..151 * MIB],
+                &[0..150 * MIB, 150 * MIB..151 * MIB],
+            ),
         ];
         for (ranges, expected) in cases {
             assert_eq!(coalesce_ranges(ranges.to_vec()), *expected, "{ranges:?}");
         }
+    }
+
+    #[test]
+    fn test_coalesce_ranges_counts_requests_in_overlapping_chunks() {
+        let ranges = [0..75, 50..125, 60..70, 60..70, 125..150];
+        let chunks = super::coalesce_ranges(ranges.into_iter(), 4, 100);
+        assert_eq!(chunks, vec![(0..75, 1), (50..150, 4)]);
     }
 
     #[derive(serde::Deserialize)]
@@ -373,7 +409,7 @@ mod plan_tests {
 
     #[test]
     fn test_coalesce_ranges_from_postings() {
-        // Reference plans independently calculated with a 4 MiB gap threshold.
+        // Reference plans calculated with a 4 MiB gap threshold and 100 MiB chunk limit.
         // Pattern, requested ranges/bytes, download chunks/bytes.
         for (fixture, json, expected) in [
             (
@@ -394,11 +430,11 @@ mod plan_tests {
                 include_str!("../../test-data/coalescing/requested_ranges_no_inline.json"),
                 [
                     ("*ab*", 16_384, 82_276, 2, 107_392_855),
-                    ("*aba*", 2_817, 157_561, 4, 237_355_128),
+                    ("*aba*", 2_817, 157_561, 5, 237_276_315),
                     ("*traaa*", 2, 10, 2, 10),
                     ("traaa*", 0, 0, 0, 0),
                     ("*player*", 21, 4_221_761, 6, 17_345_872),
-                    ("*ms*", 16_384, 200_211, 2, 159_383_608),
+                    ("*ms*", 16_384, 200_211, 3, 159_209_175),
                 ],
             ),
         ] {
@@ -430,6 +466,11 @@ mod plan_tests {
                 assert_eq!(downloads.len(), download_count, "{pattern}");
                 assert_eq!(fetched_bytes, download_bytes, "{pattern}");
                 assert!(downloads.windows(2).all(|pair| pair[0].end < pair[1].start));
+                assert!(
+                    downloads
+                        .iter()
+                        .all(|chunk| chunk.len() <= MAX_DOWNLOAD_CHUNK_BYTES)
+                );
                 for range in ranges {
                     assert!(downloads.iter().any(|download| {
                         download.start <= range.start && range.end <= download.end
