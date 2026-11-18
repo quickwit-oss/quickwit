@@ -364,6 +364,7 @@ mod tests {
             status: IngesterStatus::Ready,
             availability_zone: availability_zone.map(AvailabilityZone::from),
             generation_id: GenerationId::from(1u64),
+            num_cpus: 0,
         }
     }
 

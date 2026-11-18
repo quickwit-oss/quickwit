@@ -68,6 +68,8 @@ pub struct IngesterPoolEntry {
     pub status: IngesterStatus,
     pub availability_zone: Option<AvailabilityZone>,
     pub generation_id: GenerationId,
+    // used by the control plane to control shard placements.
+    pub num_cpus: usize,
 }
 
 impl IngesterPoolEntry {
@@ -78,6 +80,7 @@ impl IngesterPoolEntry {
             status: IngesterStatus::Ready,
             availability_zone: None,
             generation_id: GenerationId::from(1u64),
+            num_cpus: 0,
         }
     }
 
@@ -88,6 +91,7 @@ impl IngesterPoolEntry {
             status: IngesterStatus::Ready,
             availability_zone: None,
             generation_id: GenerationId::from(1u64),
+            num_cpus: 0,
         }
     }
 }

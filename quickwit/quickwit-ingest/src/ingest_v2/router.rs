@@ -1368,6 +1368,7 @@ mod tests {
                 status: IngesterStatus::Ready,
                 availability_zone: None,
                 generation_id: GenerationId::from(1u64),
+                num_cpus: 0,
             },
         );
 
@@ -1405,6 +1406,7 @@ mod tests {
                 availability_zone: None,
                 status: IngesterStatus::Ready,
                 generation_id: GenerationId::from(1u64),
+                num_cpus: 0,
             },
         );
 
@@ -1531,6 +1533,7 @@ mod tests {
                 status: IngesterStatus::Ready,
                 availability_zone: None,
                 generation_id: GenerationId::from(1u64),
+                num_cpus: 0,
             },
         );
 
@@ -1692,6 +1695,7 @@ mod tests {
                 availability_zone: None,
                 status: IngesterStatus::Ready,
                 generation_id: GenerationId::from(1u64),
+                num_cpus: 0,
             },
         );
 

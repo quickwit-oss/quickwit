@@ -1273,6 +1273,7 @@ fn build_ingester_insert_change(
         status: node.ingester_status,
         availability_zone: node.availability_zone(),
         generation_id: node.generation_id,
+        num_cpus: node.indexing_cpu_capacity.cpu_millis().div_ceil(1000) as usize,
     };
     Change::Insert(node_id, pool_entry)
 }
