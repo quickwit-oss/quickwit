@@ -17,7 +17,15 @@ use std::num::NonZeroUsize;
 use quickwit_common::shared_consts;
 use quickwit_config::IngestApiConfig;
 
-use crate::model::{ScalingMode, ShardStats};
+use crate::model::ShardStats;
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub(crate) enum ScalingMode {
+    /// Scale up by adding this number of shards
+    Up(usize),
+    /// Scale down by removing one shard
+    Down,
+}
 
 pub(crate) struct ScalingArbiter {
     // Threshold in MiB/s below which we decrease the number of shards.
@@ -122,8 +130,8 @@ mod tests {
     use bytesize::ByteSize;
     use quickwit_config::IngestApiConfig;
 
-    use super::ScalingArbiter;
-    use crate::model::{ScalingMode, ShardStats};
+    use super::{ScalingArbiter, ScalingMode};
+    use crate::model::ShardStats;
 
     fn scaling_arbiter_for_test(shard_scale_up_factor: f32) -> ScalingArbiter {
         let mut ingest_api_config = IngestApiConfig::default();

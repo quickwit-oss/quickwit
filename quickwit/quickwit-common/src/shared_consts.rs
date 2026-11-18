@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::num::NonZeroU64;
 use std::sync::LazyLock;
 use std::time::Duration;
 
@@ -93,6 +94,10 @@ pub const DEFAULT_SHARD_SCALE_UP_SHORT_TERM_RATIO: f32 = 0.8;
 pub const DEFAULT_SHARD_SCALE_UP_LONG_TERM_RATIO: f32 = 0.3;
 
 pub const DEFAULT_SHARD_SCALE_DOWN_RATIO: f32 = 0.2;
+
+pub const DEFAULT_SHARD_SCALE_UP_BURST: NonZeroU64 = NonZeroU64::new(5).unwrap();
+
+pub const DEFAULT_SHARD_SCALE_DOWN_BURST: NonZeroU64 = NonZeroU64::MIN;
 
 // (Just a reexport).
 pub use bytesize::MIB;

@@ -26,7 +26,8 @@ use bytesize::ByteSize;
 use http::HeaderMap;
 use quickwit_common::net::HostAddr;
 use quickwit_common::shared_consts::{
-    DEFAULT_SHARD_BURST_LIMIT, DEFAULT_SHARD_SCALE_DOWN_RATIO, DEFAULT_SHARD_SCALE_UP_FACTOR,
+    DEFAULT_SHARD_BURST_LIMIT, DEFAULT_SHARD_SCALE_DOWN_BURST, DEFAULT_SHARD_SCALE_DOWN_RATIO,
+    DEFAULT_SHARD_SCALE_UP_BURST, DEFAULT_SHARD_SCALE_UP_FACTOR,
     DEFAULT_SHARD_SCALE_UP_LONG_TERM_RATIO, DEFAULT_SHARD_SCALE_UP_SHORT_TERM_RATIO,
     DEFAULT_SHARD_THROUGHPUT_LIMIT,
 };
@@ -934,6 +935,16 @@ pub struct IngestApiConfig {
     /// (hidden) Scale down when the average long-term ingestion rate per shard falls to this
     /// fraction of `shard_throughput_limit`
     pub shard_scale_down_ratio: f32,
+    /// (hidden) Minimum time between two scale up operations of a source, once its burst of
+    /// `shard_scale_up_burst` operations is used up
+    pub shard_scale_up_interval: HumanDuration,
+    /// (hidden) Maximum number of scale up operations a source can perform back to back
+    pub shard_scale_up_burst: NonZeroU64,
+    /// (hidden) Minimum time between two scale down operations of a source, once its burst of
+    /// `shard_scale_down_burst` operations is used up
+    pub shard_scale_down_interval: HumanDuration,
+    /// (hidden) Maximum number of scale down operations a source can perform back to back
+    pub shard_scale_down_burst: NonZeroU64,
     #[serde(default)]
     pub grpc_compression_algorithm: Option<CompressionAlgorithm>,
     /// Maximum amount of time to wait for the ingester to finish decommissioning gracefully
@@ -956,6 +967,12 @@ impl Default for IngestApiConfig {
             shard_scale_up_short_term_ratio: DEFAULT_SHARD_SCALE_UP_SHORT_TERM_RATIO,
             shard_scale_up_long_term_ratio: DEFAULT_SHARD_SCALE_UP_LONG_TERM_RATIO,
             shard_scale_down_ratio: DEFAULT_SHARD_SCALE_DOWN_RATIO,
+            shard_scale_up_interval: HumanDuration::try_from("12s".to_string())
+                .expect("`12s` should be a valid human duration"),
+            shard_scale_up_burst: DEFAULT_SHARD_SCALE_UP_BURST,
+            shard_scale_down_interval: HumanDuration::try_from("60s".to_string())
+                .expect("`60s` should be a valid human duration"),
+            shard_scale_down_burst: DEFAULT_SHARD_SCALE_DOWN_BURST,
             grpc_compression_algorithm: None,
             decommission_timeout: HumanDuration::try_from("300s".to_string())
                 .expect("`300s` should be a valid human duration"),
@@ -1059,6 +1076,14 @@ impl IngestApiConfig {
              ({}), which must be at most 1",
             self.shard_scale_up_long_term_ratio,
             self.shard_scale_up_short_term_ratio,
+        );
+        ensure!(
+            !Duration::from(self.shard_scale_up_interval.clone()).is_zero(),
+            "shard_scale_up_interval must be greater than 0"
+        );
+        ensure!(
+            !Duration::from(self.shard_scale_down_interval.clone()).is_zero(),
+            "shard_scale_down_interval must be greater than 0"
         );
         Ok(())
     }
@@ -1857,10 +1882,9 @@ mod tests {
             );
         }
         for shard_throughput_limit in ["1MiB", "100MiB"] {
-            let ingest_api_config: IngestApiConfig = serde_yaml::from_str(&format!(
-                "shard_throughput_limit: {shard_throughput_limit}"
-            ))
-            .unwrap();
+            let ingest_api_config: IngestApiConfig =
+                serde_yaml::from_str(&format!("shard_throughput_limit: {shard_throughput_limit}"))
+                    .unwrap();
             assert!(ingest_api_config.validate().is_ok());
         }
     }
@@ -1923,6 +1947,63 @@ mod tests {
                 expected_error,
                 "{ratios_yaml}"
             );
+        }
+    }
+
+    #[test]
+    fn test_ingest_api_shard_scaling_rate_limits() {
+        let default_config = IngestApiConfig::default();
+        assert_eq!(
+            Duration::from(default_config.shard_scale_up_interval.clone()),
+            Duration::from_secs(12)
+        );
+        assert_eq!(default_config.shard_scale_up_burst.get(), 5);
+        assert_eq!(
+            Duration::from(default_config.shard_scale_down_interval.clone()),
+            Duration::from_mins(1)
+        );
+        assert_eq!(default_config.shard_scale_down_burst.get(), 1);
+
+        let ingest_api_config: IngestApiConfig = serde_yaml::from_str(
+            r#"
+                shard_scale_up_interval: 6s
+                shard_scale_up_burst: 10
+                shard_scale_down_interval: 30s
+                shard_scale_down_burst: 2
+            "#,
+        )
+        .unwrap();
+        assert!(ingest_api_config.validate().is_ok());
+        assert_eq!(
+            Duration::from(ingest_api_config.shard_scale_up_interval.clone()),
+            Duration::from_secs(6)
+        );
+        assert_eq!(ingest_api_config.shard_scale_up_burst.get(), 10);
+        assert_eq!(
+            Duration::from(ingest_api_config.shard_scale_down_interval.clone()),
+            Duration::from_secs(30)
+        );
+        assert_eq!(ingest_api_config.shard_scale_down_burst.get(), 2);
+
+        for (interval_yaml, expected_error) in [
+            (
+                "shard_scale_up_interval: 0s",
+                "shard_scale_up_interval must be greater than 0",
+            ),
+            (
+                "shard_scale_down_interval: 0s",
+                "shard_scale_down_interval must be greater than 0",
+            ),
+        ] {
+            let ingest_api_config: IngestApiConfig = serde_yaml::from_str(interval_yaml).unwrap();
+            assert_eq!(
+                ingest_api_config.validate().unwrap_err().to_string(),
+                expected_error,
+                "{interval_yaml}"
+            );
+        }
+        for burst_yaml in ["shard_scale_up_burst: 0", "shard_scale_down_burst: 0"] {
+            serde_yaml::from_str::<IngestApiConfig>(burst_yaml).unwrap_err();
         }
     }
 
