@@ -20,8 +20,8 @@ use std::time::SystemTime;
 
 use async_trait::async_trait;
 use bytesize::ByteSize;
-use futures::StreamExt;
 use futures::stream::{self, BoxStream};
+use futures::{StreamExt, TryStreamExt};
 use quickwit_common::uri::Uri;
 use tempfile::TempPath;
 use tokio::fs::File;
@@ -130,6 +130,26 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
         buffer: &mut [u8],
     ) -> StorageResult<()>;
 
+    /// Reads ranges in one batch, returning one buffer per range in input order.
+    /// Overlaps and duplicates are preserved. Empty batches return no buffers without reads.
+    /// Callers must supply ranges with `start < end`. An error returns no partial result.
+    ///
+    /// The default runs five scalar reads at a time. Wrappers above a coalescer must forward
+    /// batches (after removing cache hits or translating offsets) so it can plan all misses
+    /// before limiting downloads, without creating a live read future per input range.
+    async fn get_slices(
+        &self,
+        path: &Path,
+        requested_ranges: Vec<Range<usize>>,
+    ) -> StorageResult<Vec<OwnedBytes>> {
+        debug_assert!(requested_ranges.iter().all(|range| range.start < range.end));
+        stream::iter(requested_ranges)
+            .map(|requested_range| self.get_slice(path, requested_range))
+            .buffered(5)
+            .try_collect()
+            .await
+    }
+
     /// Opens a stream handle on the file from the storage.
     ///
     /// Might panic, return an error or an empty stream if the range is empty.
@@ -186,7 +206,7 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
 /// Implements [`Storage::get_slice_into`] by reading [`Storage::get_slice_stream`] directly into
 /// the supplied buffer. Use this only when streaming reads preserve the storage's behavior.
 ///
-/// Returns an error if the stream contains fewer or more bytes than requested.
+/// Fills the buffer, returning an error if the stream ends before it is filled.
 /// Empty ranges succeed without opening a stream.
 pub async fn default_get_slice_into<S: Storage + ?Sized>(
     storage: &S,
@@ -199,12 +219,6 @@ pub async fn default_get_slice_into<S: Storage + ?Sized>(
     }
     let mut stream = storage.get_slice_stream(path, range).await?;
     stream.read_exact(buffer).await?;
-    if stream.read(&mut [0]).await? != 0 {
-        return Err(StorageErrorKind::Internal.with_error(anyhow::anyhow!(
-            "range download returned more than {} bytes",
-            buffer.len()
-        )));
-    }
     Ok(())
 }
 
@@ -288,7 +302,7 @@ mod tests {
     const CONTENT: &[u8] = b"hello world";
 
     #[tokio::test]
-    async fn test_get_slice_into_requires_the_exact_stream_length() {
+    async fn test_get_slice_into_fills_buffer() {
         for payload in [b"abc".as_slice(), b"abcd", b"abcde"] {
             let mut storage = MockStorage::new();
             storage.expect_get_slice().never();
@@ -302,9 +316,9 @@ mod tests {
             let mut buffer = [99; 4];
             let result =
                 default_get_slice_into(&storage, Path::new("object"), 10..14, &mut buffer).await;
-            if payload.len() == 4 {
+            if payload.len() >= buffer.len() {
                 result.unwrap();
-                assert_eq!(&buffer, payload);
+                assert_eq!(&buffer, &payload[..buffer.len()]);
             } else {
                 assert!(result.is_err());
             }
@@ -313,6 +327,35 @@ mod tests {
         default_get_slice_into(&storage, Path::new("object"), 4..4, &mut [])
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_default_batch_reads() {
+        let storage = crate::RamStorageBuilder::default()
+            .put("file", CONTENT)
+            .build();
+        let missing = Path::new("missing");
+        assert!(
+            storage
+                .get_slices(missing, Vec::new())
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        let ranges = vec![5..8, 0..2, 6..8, 5..8];
+        let buffers = storage
+            .get_slices(Path::new("file"), ranges.clone())
+            .await
+            .unwrap();
+        assert_eq!(buffers.len(), ranges.len());
+        for (range, buffer) in ranges.into_iter().zip(buffers) {
+            assert_eq!(buffer.as_slice(), &CONTENT[range]);
+        }
+        let error = storage
+            .get_slices(missing, vec![0..1, 2..3])
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), StorageErrorKind::NotFound);
     }
 
     #[tokio::test]

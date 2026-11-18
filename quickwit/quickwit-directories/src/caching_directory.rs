@@ -227,6 +227,42 @@ impl FileHandle for CachingFileHandle {
         read_reservation.keep(num_added_bytes);
         Ok(read_bytes)
     }
+
+    async fn read_bytes_batch_async(
+        &self,
+        requested_ranges: Vec<Range<usize>>,
+    ) -> io::Result<Vec<OwnedBytes>> {
+        quickwit_storage::read_batch_with_cache(
+            requested_ranges,
+            |requested_range| self.cache.get_slice(requested_range),
+            |ranges_to_fetch| async move {
+                // Reserve every miss before starting I/O. Dropping these guards releases all
+                // reservations if any reservation or the download fails, or the future is dropped.
+                let mut read_reservations = Vec::with_capacity(ranges_to_fetch.len());
+                for missing_range in &ranges_to_fetch {
+                    read_reservations.push(
+                        self.memory_reserver
+                            .try_reserve_memory(missing_range.len() as u64)?,
+                    );
+                }
+                let downloaded = self
+                    .underlying_filehandle
+                    .read_bytes_batch_async(ranges_to_fetch.clone())
+                    .await?;
+                assert_eq!(downloaded.len(), ranges_to_fetch.len());
+                for ((missing_range, bytes), read_reservation) in ranges_to_fetch
+                    .into_iter()
+                    .zip(&downloaded)
+                    .zip(read_reservations)
+                {
+                    let num_added_bytes = self.cache.put_slice(missing_range, bytes.clone());
+                    read_reservation.keep(num_added_bytes);
+                }
+                Ok(downloaded)
+            },
+        )
+        .await
+    }
 }
 
 impl HasLen for CachingFileHandle {
@@ -274,7 +310,6 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::Duration;
 
     use async_trait::async_trait;
     use quickwit_storage::ByteRangeCache;
@@ -371,12 +406,48 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_caching_file_handle_releases_memory_on_read_error() {
-        let memory_reserver = LimitedMemoryReserver::new(100);
-        let file_handle = failing_caching_file_handle(ReadFailure::Error, memory_reserver.clone());
-        assert!(file_handle.read_bytes(0..5).is_err());
-        assert_eq!(memory_reserver.reserved(), 0);
+    /// Exercises the three read APIs with the same cache and reservation assertions.
+    #[derive(Clone, Copy, Debug)]
+    enum ReadMode {
+        Sync,
+        Async,
+        Batch,
+    }
+
+    impl ReadMode {
+        async fn read(
+            self,
+            file_handle: &dyn FileHandle,
+            ranges: Vec<Range<usize>>,
+        ) -> io::Result<Vec<OwnedBytes>> {
+            match self {
+                Self::Sync => ranges
+                    .into_iter()
+                    .map(|range| file_handle.read_bytes(range))
+                    .collect(),
+                Self::Async => {
+                    let mut buffers = Vec::new();
+                    for range in ranges {
+                        buffers.push(file_handle.read_bytes_async(range).await?);
+                    }
+                    Ok(buffers)
+                }
+                Self::Batch => file_handle.read_bytes_batch_async(ranges).await,
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_caching_file_handle_releases_memory_on_read_error() {
+        for mode in [ReadMode::Sync, ReadMode::Async, ReadMode::Batch] {
+            let memory_reserver = LimitedMemoryReserver::new(100);
+            let file_handle =
+                failing_caching_file_handle(ReadFailure::Error, memory_reserver.clone());
+            assert!(mode.read(&file_handle, vec![0..5, 5..10]).await.is_err());
+            assert_eq!(memory_reserver.reserved(), 0, "{mode:?}");
+            assert!(file_handle.cache.get_slice(0..5).is_none());
+            assert!(file_handle.cache.get_slice(5..10).is_none());
+        }
     }
 
     #[test]
@@ -392,31 +463,65 @@ mod tests {
 
     #[tokio::test]
     async fn test_caching_file_handle_releases_memory_when_read_future_is_dropped() {
-        let memory_reserver = LimitedMemoryReserver::new(100);
-        let file_handle =
-            failing_caching_file_handle(ReadFailure::Pending, memory_reserver.clone());
-        let read_future = file_handle.read_bytes_async(0..5);
-        let timeout_res = tokio::time::timeout(Duration::from_millis(10), read_future).await;
-        assert!(timeout_res.is_err());
-        // The timeout dropped the read future.
-        assert_eq!(memory_reserver.reserved(), 0);
+        for (mode, reserved) in [(ReadMode::Async, 5), (ReadMode::Batch, 10)] {
+            let memory_reserver = LimitedMemoryReserver::new(100);
+            let file_handle =
+                failing_caching_file_handle(ReadFailure::Pending, memory_reserver.clone());
+            let mut read_future = Box::pin(mode.read(&file_handle, vec![0..5, 5..10]));
+            let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+            assert!(read_future.as_mut().poll(&mut context).is_pending());
+            assert_eq!(memory_reserver.reserved(), reserved, "{mode:?}");
+            drop(read_future);
+            assert_eq!(memory_reserver.reserved(), 0, "{mode:?}");
+            assert!(file_handle.cache.get_slice(0..5).is_none());
+            assert!(file_handle.cache.get_slice(5..10).is_none());
+        }
     }
 
-    #[tokio::test]
-    async fn test_caching_file_handle_releases_memory_on_async_read_error() {
-        let memory_reserver = LimitedMemoryReserver::new(100);
-        let file_handle = failing_caching_file_handle(ReadFailure::Error, memory_reserver.clone());
-        assert!(file_handle.read_bytes_async(0..5).await.is_err());
-        assert_eq!(memory_reserver.reserved(), 0);
+    const CONTENT: &[u8] = b"hello world";
+
+    /// A cached file with observable reads, cache size, and reserved memory.
+    struct CachedFile {
+        handle: Arc<dyn FileHandle>,
+        directory: Arc<DebugProxyDirectory<RamDirectory>>,
+        cache: ByteRangeCache,
+        memory: Arc<LimitedMemoryReserver>,
     }
 
-    fn debug_proxy_directory_with_file(
-        path: &Path,
-        content: &[u8],
-    ) -> Arc<DebugProxyDirectory<RamDirectory>> {
-        let ram_directory = RamDirectory::default();
-        ram_directory.atomic_write(path, content).unwrap();
-        Arc::new(DebugProxyDirectory::wrap(ram_directory))
+    impl CachedFile {
+        fn new(budget: u64) -> Self {
+            let path = Path::new("test");
+            let ram = RamDirectory::default();
+            ram.atomic_write(path, CONTENT).unwrap();
+            let directory = Arc::new(DebugProxyDirectory::wrap(ram));
+            let cache = ByteRangeCache::with_infinite_capacity();
+            let memory = LimitedMemoryReserver::new(budget);
+            let caching = CachingDirectory::new(directory.clone(), cache.clone())
+                .with_memory_reserver(memory.clone());
+            Self {
+                handle: caching.get_file_handle(path).unwrap(),
+                directory,
+                cache,
+                memory,
+            }
+        }
+
+        fn assert_state(&self, reserved: u64, reads: usize) {
+            assert_eq!(self.memory.reserved(), reserved);
+            assert_eq!(self.cache.get_num_bytes(), reserved);
+            assert_eq!(self.directory.drain_read_operations().count(), reads);
+        }
+
+        async fn read(&self, mode: ReadMode, ranges: Vec<Range<usize>>) {
+            let bytes = mode
+                .read(self.handle.as_ref(), ranges.clone())
+                .await
+                .unwrap();
+            assert_eq!(bytes.len(), ranges.len(), "{mode:?}");
+            for (bytes, range) in bytes.iter().zip(ranges) {
+                assert_eq!(bytes.as_slice(), &CONTENT[range], "{mode:?}");
+            }
+        }
     }
 
     #[test]
@@ -432,76 +537,66 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_caching_directory_reserves_memory_on_cache_miss() {
-        let test_path = Path::new("test");
-        let debug_proxy_directory = debug_proxy_directory_with_file(test_path, b"hello world");
-        let memory_reserver = LimitedMemoryReserver::new(100);
-        let caching_directory = CachingDirectory::new_unbounded(debug_proxy_directory.clone())
-            .with_memory_reserver(memory_reserver.clone());
-        let file_handle = caching_directory.get_file_handle(test_path).unwrap();
-
-        file_handle.read_bytes(0..5).unwrap();
-        assert_eq!(memory_reserver.reserved(), 5);
-        // A cache hit does not reserve memory.
-        file_handle.read_bytes(0..5).unwrap();
-        assert_eq!(memory_reserver.reserved(), 5);
-        assert_eq!(debug_proxy_directory.drain_read_operations().count(), 1);
-    }
-
-    #[test]
-    fn test_caching_directory_reserves_overlapping_bytes_once() {
-        let test_path = Path::new("test");
-        let debug_proxy_directory = debug_proxy_directory_with_file(test_path, b"hello world");
-        let memory_reserver = LimitedMemoryReserver::new(100);
-        let byte_range_cache = ByteRangeCache::with_infinite_capacity();
-        let caching_directory =
-            CachingDirectory::new(debug_proxy_directory.clone(), byte_range_cache.clone())
-                .with_memory_reserver(memory_reserver.clone());
-        let file_handle = caching_directory.get_file_handle(test_path).unwrap();
-
-        file_handle.read_bytes(0..5).unwrap();
-        // A cache miss: 3..5 is cached, but not 5..8. Only 5..8 stays reserved.
-        file_handle.read_bytes(3..8).unwrap();
-        assert_eq!(debug_proxy_directory.drain_read_operations().count(), 2);
-        assert_eq!(byte_range_cache.get_num_bytes(), 8);
-        assert_eq!(memory_reserver.reserved(), 8);
+    #[tokio::test]
+    async fn test_caching_directory_reserves_cached_bytes_once() {
+        for mode in [ReadMode::Sync, ReadMode::Async, ReadMode::Batch] {
+            let file = CachedFile::new(100);
+            // Miss, hit, then an overlapping miss that retains only three more bytes.
+            for (range, reserved, reads) in [(0..5, 5, 1), (0..5, 5, 0), (3..8, 8, 1)] {
+                file.read(mode, vec![range]).await;
+                file.assert_state(reserved, reads);
+            }
+        }
     }
 
     #[tokio::test]
-    async fn test_caching_directory_reserves_memory_on_async_cache_miss() {
-        let test_path = Path::new("test");
-        let debug_proxy_directory = debug_proxy_directory_with_file(test_path, b"hello world");
-        let memory_reserver = LimitedMemoryReserver::new(100);
-        let caching_directory = CachingDirectory::new_unbounded(debug_proxy_directory.clone())
-            .with_memory_reserver(memory_reserver.clone());
-        let file_handle = caching_directory.get_file_handle(test_path).unwrap();
-
-        file_handle.read_bytes_async(0..5).await.unwrap();
-        assert_eq!(memory_reserver.reserved(), 5);
-        file_handle.read_bytes_async(0..5).await.unwrap();
-        assert_eq!(memory_reserver.reserved(), 5);
-        assert_eq!(debug_proxy_directory.drain_read_operations().count(), 1);
+    #[allow(clippy::single_range_in_vec_init)] // These reads request one byte range.
+    async fn test_caching_directory_batch_memory_accounting() {
+        for (budget, ranges, reserved, reads) in [
+            // Overlaps and duplicates count once. Hits need no reservation,
+            // even with only seven bytes left on the second read.
+            (17, vec![5..10, 0..2, 2..7, 5..10], 10, [3, 0]),
+            // Large batches bypass lookups, including when every range is already cached.
+            (510, vec![0..5; 101], 5, [101, 101]),
+        ] {
+            let file = CachedFile::new(budget);
+            file.read(ReadMode::Sync, vec![0..2]).await;
+            file.assert_state(2, 1);
+            for reads in reads {
+                file.read(ReadMode::Batch, ranges.clone()).await;
+                file.assert_state(reserved, reads);
+            }
+            file.read(ReadMode::Sync, vec![0..5]).await;
+            file.assert_state(reserved, 0);
+        }
     }
 
     #[tokio::test]
+    #[allow(clippy::single_range_in_vec_init)] // These reads request one byte range.
     async fn test_caching_directory_memory_reservation_failure() {
-        let test_path = Path::new("test");
-        let debug_proxy_directory = debug_proxy_directory_with_file(test_path, b"hello world");
-        let memory_reserver = LimitedMemoryReserver::new(4);
-        let caching_directory = CachingDirectory::new_unbounded(debug_proxy_directory.clone())
-            .with_memory_reserver(memory_reserver.clone());
-        let file_handle = caching_directory.get_file_handle(test_path).unwrap();
+        for (mode, budget, ranges) in [
+            (ReadMode::Sync, 4, vec![0..5]),
+            (ReadMode::Async, 4, vec![0..5]),
+            (ReadMode::Batch, 8, vec![0..2, 2..6, 6..10]),
+        ] {
+            let file = CachedFile::new(budget);
+            let cached_bytes = if matches!(mode, ReadMode::Batch) {
+                file.read(ReadMode::Sync, vec![0..2]).await;
+                file.assert_state(2, 1);
+                2
+            } else {
+                0
+            };
 
-        let io_error = file_handle.read_bytes_async(0..5).await.unwrap_err();
-        assert_eq!(io_error.kind(), io::ErrorKind::OutOfMemory);
-        assert_eq!(
-            io_error.to_string(),
-            "out of warmup memory: global budget exceeded"
-        );
-        assert!(file_handle.read_bytes(0..5).is_err());
-        // The underlying directory is never called and nothing is cached.
-        assert_eq!(debug_proxy_directory.drain_read_operations().count(), 0);
-        assert_eq!(memory_reserver.reserved(), 0);
+            // In the batch, the first miss fits but the second exceeds the budget.
+            // All APIs reject the read before I/O and retain only previously cached bytes.
+            let error = mode.read(file.handle.as_ref(), ranges).await.unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::OutOfMemory, "{mode:?}");
+            assert_eq!(
+                error.to_string(),
+                "out of warmup memory: global budget exceeded"
+            );
+            file.assert_state(cached_bytes, 0);
+        }
     }
 }

@@ -45,6 +45,25 @@ pub struct BundleStorage {
 }
 
 impl BundleStorage {
+    fn file_range(&self, path: &Path) -> StorageResult<Range<u64>> {
+        self.file_ranges.get(path).ok_or_else(|| {
+            crate::StorageErrorKind::NotFound
+                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
+        })
+    }
+
+    /// Translates file-relative offsets to byte offsets in the bundle.
+    fn bundle_range(file_range: &Range<u64>, range: Range<usize>) -> StorageResult<Range<usize>> {
+        // Underlying storage only sees the split object, not this file's boundaries.
+        if range.end as u64 > file_range.end - file_range.start {
+            return Err(
+                io::Error::new(io::ErrorKind::InvalidInput, "range outside bundled file").into(),
+            );
+        }
+        let offset = file_range.start as usize;
+        Ok(offset + range.start..offset + range.end)
+    }
+
     /// Opens a split bundle by locating its footer directly from object storage.
     ///
     /// New splits expose the footer start in a fixed-size trailer. Legacy splits are supported by
@@ -508,14 +527,25 @@ impl Storage for BundleStorage {
         path: &Path,
         range: Range<usize>,
     ) -> crate::StorageResult<OwnedBytes> {
-        let file_range = self.file_ranges.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })?;
-        let new_range =
-            file_range.start as usize + range.start..file_range.start as usize + range.end;
+        let range = Self::bundle_range(&self.file_range(path)?, range)?;
+        self.storage.get_slice(&self.bundle_filepath, range).await
+    }
+
+    async fn get_slices(
+        &self,
+        path: &Path,
+        mut requested_ranges: Vec<Range<usize>>,
+    ) -> StorageResult<Vec<OwnedBytes>> {
+        debug_assert!(requested_ranges.iter().all(|range| range.start < range.end));
+        if requested_ranges.is_empty() {
+            return Ok(Vec::new());
+        }
+        let file_range = self.file_range(path)?;
+        for requested_range in &mut requested_ranges {
+            *requested_range = Self::bundle_range(&file_range, requested_range.clone())?;
+        }
         self.storage
-            .get_slice(&self.bundle_filepath, new_range)
+            .get_slices(&self.bundle_filepath, requested_ranges)
             .await
     }
 
@@ -528,10 +558,7 @@ impl Storage for BundleStorage {
         if buffer.is_empty() {
             return Ok(());
         }
-        let file_range = self.file_ranges.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })?;
+        let file_range = self.file_range(path)?;
         let new_range =
             file_range.start as usize + range.start..file_range.start as usize + range.end;
         self.storage
@@ -548,10 +575,7 @@ impl Storage for BundleStorage {
     }
 
     async fn get_all(&self, path: &Path) -> crate::StorageResult<OwnedBytes> {
-        let file_range = self.file_ranges.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })?;
+        let file_range = self.file_range(path)?;
         self.storage
             .get_slice(
                 &self.bundle_filepath,
@@ -577,10 +601,7 @@ impl Storage for BundleStorage {
     }
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
-        let file_range = self.file_ranges.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })?;
+        let file_range = self.file_range(path)?;
         Ok(file_range.end - file_range.start)
     }
 
@@ -617,9 +638,58 @@ mod tests {
     use std::io::Write;
 
     use super::*;
-    use crate::{CountingStorage, PutPayload, RamStorageBuilder, SplitPayloadBuilder};
+    use crate::{
+        CountingStorage, PutPayload, RamStorageBuilder, SplitPayloadBuilder, StorageErrorKind,
+    };
 
     const DEFAULT_SPLIT_TAIL_WINDOW_NUM_BYTES: u64 = 1024 * 1024;
+
+    #[tokio::test]
+    async fn test_coalesces_ranges_from_different_bundled_files() {
+        let mut backend = crate::MockStorage::default();
+        backend
+            .expect_get_slice_stream()
+            .times(1)
+            .returning(|path, range| {
+                assert_eq!(path, Path::new("split"));
+                assert_eq!(range, 101..123);
+                Ok(Box::new(std::io::Cursor::new(
+                    (101u8..123).collect::<Vec<_>>(),
+                )))
+            });
+        let storage = BundleStorage {
+            storage: Arc::new(crate::CoalescingStorage::new(Arc::new(backend))),
+            bundle_filepath: PathBuf::from("split"),
+            file_ranges: BundleFileRanges {
+                files: HashMap::from([
+                    (PathBuf::from("first"), 100..110),
+                    (PathBuf::from("second"), 120..130),
+                ]),
+            },
+        };
+        assert!(
+            storage
+                .get_slices(Path::new("missing"), Vec::new())
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        let error = storage
+            .get_slices(Path::new("first"), vec![1..3, 9..11])
+            .await
+            .unwrap_err();
+        assert_eq!(io::Error::from(error).kind(), io::ErrorKind::InvalidInput);
+        let (first, second) = tokio::try_join!(
+            storage.get_slices(Path::new("first"), vec![8..10, 1..3, 8..10]),
+            storage.get_slice(Path::new("second"), 1..3),
+        )
+        .unwrap();
+        assert_eq!(
+            first.iter().map(OwnedBytes::as_slice).collect::<Vec<_>>(),
+            vec![&[108, 109][..], &[101, 102], &[108, 109]]
+        );
+        assert_eq!(second.as_slice(), &[121, 122]);
+    }
 
     #[tokio::test]
     async fn bundle_storage_locates_footer_from_object_storage() {
@@ -776,6 +846,29 @@ mod tests {
 
         let f2_data = bundle_storage.get_all(Path::new("f2")).await?;
         assert_eq!(&f2_data[..], &[99, 55, 44]);
+
+        for (path, range, kind) in [
+            ("missing", 0..1, StorageErrorKind::NotFound),
+            ("f2", 3..4, StorageErrorKind::Io),
+        ] {
+            let path = Path::new(path);
+            assert_eq!(
+                bundle_storage
+                    .get_slice(path, range.clone())
+                    .await
+                    .unwrap_err()
+                    .kind(),
+                kind
+            );
+            assert_eq!(
+                bundle_storage
+                    .get_slices(path, vec![0..1, range])
+                    .await
+                    .unwrap_err()
+                    .kind(),
+                kind
+            );
+        }
 
         let copy_to_file = temp_dir.path().join("copy_file");
         bundle_storage

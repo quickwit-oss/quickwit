@@ -50,6 +50,9 @@ struct FeuerStorage {
 
 /// Wrap `storage` with the supplied cache.
 /// Cache hits require matching object URIs and byte ranges.
+/// Batches above 100 ranges bypass cache lookups and insertion. Smaller batches check the cache
+/// before forwarding all misses together. Concurrent batch reads can download the same range
+/// independently. Disk cache hits wait for the disk read instead of downloading from storage.
 pub fn wrap_storage_with_storage_cache(
     cache: feuer::Cache,
     storage: Arc<dyn Storage>,
@@ -125,6 +128,45 @@ impl Storage for FeuerStorage {
             .map_err(|GetOrFetchError::Callback(error)| error)
     }
 
+    async fn get_slices(
+        &self,
+        path: &Path,
+        requested_ranges: Vec<Range<usize>>,
+    ) -> StorageResult<Vec<OwnedBytes>> {
+        let skip_cache = requested_ranges.len() > crate::cache::MAX_NUM_RANGES_FOR_CACHE_LOOKUP;
+        let object_uri = self
+            .inner
+            .uri()
+            .join(path)
+            .map_err(|error| StorageErrorKind::Internal.with_error(error))?
+            .into_string();
+        let object_uri = object_uri.as_str();
+        // Batch lookups wait for disk cache reads, then fetch all misses together.
+        // Concurrent calls can download the same missing range independently.
+        crate::read_batch_with_async_cache(
+            requested_ranges,
+            |range| {
+                let lookup = self.cache.get(&split_slice_key(object_uri, &range));
+                async move { lookup.await.map(into_owned_bytes) }
+            },
+            |ranges_to_fetch| async move {
+                if skip_cache {
+                    return self.inner.get_slices(path, ranges_to_fetch).await;
+                }
+                let downloaded = self.inner.get_slices(path, ranges_to_fetch.clone()).await?;
+                assert_eq!(downloaded.len(), ranges_to_fetch.len());
+                for (range, bytes) in ranges_to_fetch.into_iter().zip(&downloaded) {
+                    self.cache.insert(
+                        &split_slice_key(object_uri, &range),
+                        bytes::Bytes::from_owner(bytes.clone()),
+                    );
+                }
+                Ok(downloaded)
+            },
+        )
+        .await
+    }
+
     async fn get_slice_into(
         &self,
         path: &Path,
@@ -184,6 +226,88 @@ fn split_slice_key<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn test_batch_cache_hits_misses_and_lookup_limit() {
+        let boundary_ranges = |count: usize| (0..count).map(|index| index..index + 1).collect();
+        for (ranges, fail) in [
+            (vec![4..6, 2..4, 4..6], false),
+            (vec![4..6, 2..4, 4..6], true),
+            (boundary_ranges(100), false),
+            (boundary_ranges(101), false),
+        ] {
+            let skip_cache = ranges.len() > 100;
+            let cache = feuer::Cache::builder()
+                .memory_capacity(1024 * 1024)
+                .open()
+                .unwrap();
+            let uri = Uri::for_test("ram://test");
+            let object_uri = uri.join("split").unwrap().into_string();
+            cache.insert(
+                &split_slice_key(&object_uri, &(0..1)),
+                bytes::Bytes::from_static(&[99]),
+            );
+            let expected_misses: Vec<_> = ranges
+                .iter()
+                .filter(|range| skip_cache || **range != (0..1))
+                .cloned()
+                .collect();
+            let mut backend = crate::MockStorage::default();
+            backend.expect_uri().return_const(uri);
+            backend
+                .expect_get_slices()
+                .times(1)
+                .returning(move |path, ranges| {
+                    assert_eq!(path, Path::new("split"));
+                    assert_eq!(ranges, expected_misses);
+                    if fail {
+                        return Err(
+                            StorageErrorKind::NotFound.with_error(anyhow::anyhow!("missing"))
+                        );
+                    }
+                    Ok(ranges
+                        .into_iter()
+                        .map(|range| {
+                            OwnedBytes::new(range.map(|index| index as u8).collect::<Vec<_>>())
+                        })
+                        .collect())
+                });
+            let storage = wrap_storage_with_storage_cache(cache.clone(), Arc::new(backend));
+            let result = storage.get_slices(Path::new("split"), ranges.clone()).await;
+            if fail {
+                assert_eq!(result.unwrap_err().kind(), StorageErrorKind::NotFound);
+            } else {
+                let buffers = result.unwrap();
+                assert_eq!(buffers.len(), ranges.len());
+                for (range, buffer) in ranges.iter().zip(&buffers) {
+                    let expected = if !skip_cache && *range == (0..1) {
+                        vec![99]
+                    } else {
+                        range.clone().map(|index| index as u8).collect()
+                    };
+                    assert_eq!(buffer.as_slice(), expected);
+                }
+                if !skip_cache {
+                    assert_eq!(
+                        storage
+                            .get_slice(Path::new("split"), ranges[0].clone())
+                            .await
+                            .unwrap(),
+                        buffers[0]
+                    );
+                }
+            }
+            for range in ranges.into_iter().filter(|range| !range.is_empty()) {
+                assert_eq!(
+                    cache
+                        .get(&split_slice_key(&object_uri, &range))
+                        .await
+                        .is_some(),
+                    range == (0..1) || (!skip_cache && !fail)
+                );
+            }
+        }
+    }
 
     #[tokio::test]
     async fn test_cache_miss_does_not_wait_for_fallthrough_capacity() {
