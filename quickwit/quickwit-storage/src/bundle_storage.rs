@@ -88,6 +88,11 @@ impl BundleStorage {
         ))
     }
 
+    /// Returns the byte ranges of the bundled files within the bundle file.
+    pub fn file_ranges(&self) -> &BundleFileRanges {
+        &self.file_ranges
+    }
+
     /// Returns Iterator over files contained in the bundle.
     pub fn iter_files(&self) -> impl Iterator<Item = &PathBuf> {
         self.file_ranges.files.keys()
@@ -658,7 +663,11 @@ mod tests {
                 .put(&split_path.to_string_lossy(), &split_bytes)
                 .build(),
         );
-        let (storage, counters) = CountingStorage::instrument_storage(inner_storage);
+        let (storage, counters) = CountingStorage::instrument_storage(
+            inner_storage,
+            split_path.clone(),
+            expected_footer_range.clone(),
+        );
 
         let (_bundle_storage, hotcache, footer_range) =
             BundleStorage::open_from_storage(storage, split_path)
@@ -667,7 +676,7 @@ mod tests {
 
         assert_eq!(hotcache.as_ref(), b"hotcache");
         assert_eq!(footer_range, expected_footer_range);
-        assert_eq!(counters.snapshot().1, 2);
+        assert_eq!(counters.snapshot().num_requests, 2);
     }
 
     #[tokio::test]
@@ -683,7 +692,11 @@ mod tests {
                 .put(&split_path.to_string_lossy(), &split_bytes)
                 .build(),
         );
-        let (storage, counters) = CountingStorage::instrument_storage(inner_storage);
+        let (storage, counters) = CountingStorage::instrument_storage(
+            inner_storage,
+            split_path.clone(),
+            expected_footer_range.clone(),
+        );
 
         let (_bundle_storage, hotcache, footer_range) =
             BundleStorage::open_from_storage(storage, split_path)
@@ -692,7 +705,7 @@ mod tests {
 
         assert_eq!(hotcache.as_ref(), hotcache_bytes.as_slice());
         assert_eq!(footer_range, expected_footer_range);
-        assert_eq!(counters.snapshot().1, 3);
+        assert_eq!(counters.snapshot().num_requests, 3);
     }
 
     #[tokio::test]
@@ -828,7 +841,11 @@ mod tests {
                 .put("split", &split_bytes)
                 .build(),
         );
-        let (storage, counters) = CountingStorage::instrument_storage(inner_storage);
+        let (storage, counters) = CountingStorage::instrument_storage(
+            inner_storage,
+            PathBuf::from("split"),
+            expected_footer_range.clone(),
+        );
 
         let (target_bytes, footer_range) = BundleStorage::fetch_file_from_split(
             storage,
@@ -841,7 +858,7 @@ mod tests {
 
         assert_eq!(target_bytes.as_slice(), b"target-bytes");
         assert_eq!(footer_range, expected_footer_range);
-        assert_eq!(counters.snapshot().1, 1);
+        assert_eq!(counters.snapshot().num_requests, 1);
     }
 
     #[tokio::test]
@@ -859,7 +876,11 @@ mod tests {
                 .put("split", &split_bytes)
                 .build(),
         );
-        let (storage, counters) = CountingStorage::instrument_storage(inner_storage);
+        let (storage, counters) = CountingStorage::instrument_storage(
+            inner_storage,
+            PathBuf::from("split"),
+            expected_footer_range.clone(),
+        );
 
         let (target_bytes, footer_range) = BundleStorage::fetch_file_from_split(
             storage,
@@ -872,6 +893,6 @@ mod tests {
 
         assert_eq!(target_bytes.as_slice(), b"target-bytes");
         assert_eq!(footer_range, expected_footer_range);
-        assert_eq!(counters.snapshot().1, 4);
+        assert_eq!(counters.snapshot().num_requests, 4);
     }
 }

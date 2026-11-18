@@ -172,6 +172,7 @@ async fn fetch_docs_in_split(
         Some(doc_mapper.tokenizer_manager()),
         None,
         None,
+        None,
     )
     .await
     .context("open-index-for-split")?;

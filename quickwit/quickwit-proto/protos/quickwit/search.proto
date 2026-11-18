@@ -424,6 +424,31 @@ message SplitResourceStats {
     // Excludes any cross-split finalize work performed outside the single-split
     // search.
     uint64 cpu_search_microsecs = 9;
+    // `download_num_bytes` broken down by the type of index data downloaded.
+    DownloadBytesByComponent download_bytes_by_component = 10;
+}
+
+// Bytes downloaded from object storage, broken down by split data type.
+//
+// Each counted read is attributed as a whole to the bundled file (or footer)
+// containing it, at the same place `download_num_bytes` is counted: the fields
+// sum to `SplitResourceStats.download_num_bytes`. Reads served by a cache are
+// not downloads and are not counted.
+message DownloadBytesByComponent {
+    // Term dictionaries (`.term`).
+    uint64 term_dict_num_bytes = 1;
+    // Posting lists (`.idx`).
+    uint64 postings_num_bytes = 2;
+    // Term positions (`.pos`).
+    uint64 positions_num_bytes = 3;
+    // Fast fields (`.fast`).
+    uint64 fast_fields_num_bytes = 4;
+    // Field norms (`.fieldnorm`).
+    uint64 fieldnorms_num_bytes = 5;
+    // Split footer: bundle metadata, hotcache and trailer.
+    uint64 footer_num_bytes = 6;
+    // Everything else, expected to be zero on the leaf search path
+    uint64 other_num_bytes = 7;
 }
 
 // Resource statistics for a single leaf-search call (over one or more splits).

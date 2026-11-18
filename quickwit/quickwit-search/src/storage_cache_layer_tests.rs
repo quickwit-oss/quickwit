@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use quickwit_config::SearcherConfig;
@@ -56,18 +56,23 @@ fn split_file_name() -> String {
     format!("{SPLIT_ID}.split")
 }
 
-fn counted_split_storage(split_bytes: &OwnedBytes) -> (Arc<dyn Storage>, Arc<DownloadCounters>) {
+fn counted_split_storage(split: &SplitBundle) -> (Arc<dyn Storage>, Arc<DownloadCounters>) {
     let ram = RamStorageBuilder::default()
-        .put(&split_file_name(), split_bytes.as_slice())
+        .put(&split_file_name(), split.split_bytes.as_slice())
         .build();
-    CountingStorage::instrument_storage(Arc::new(ram))
+    let footer_offsets = &split.footer_offsets;
+    CountingStorage::instrument_storage(
+        Arc::new(ram),
+        PathBuf::from(split_file_name()),
+        footer_offsets.split_footer_start..footer_offsets.split_footer_end,
+    )
 }
 
 #[tokio::test]
 async fn test_legacy_budgets_cache_footer_and_body_without_disk() {
     let split = build_split().await;
     let offsets = &split.footer_offsets;
-    let (storage, counters) = counted_split_storage(&split.split_bytes);
+    let (storage, counters) = counted_split_storage(&split);
     for enabled in [false, true] {
         let config: SearcherConfig = serde_json::from_value(serde_json::json!({
             "fast_field_cache": 0,
@@ -83,22 +88,24 @@ async fn test_legacy_budgets_cache_footer_and_body_without_disk() {
                     .unwrap();
             }
             assert_eq!(context.storage_cache_opt.is_some(), enabled);
-            let reads_before = counters.snapshot().1;
+            let reads_before = counters.snapshot().num_requests;
             for num_reads in 1..=2 {
-                let (bytes_before_footer, reads_before_footer) = counters.snapshot();
+                let before_footer = counters.snapshot();
                 let (hotcache, bundle) = open_split_bundle(&context, storage.clone(), offsets)
                     .await
                     .unwrap();
                 assert_eq!(hotcache.as_slice(), HOTCACHE_BYTES);
                 let expected_footer_reads = u64::from(!enabled || num_reads == 1);
+                let after_footer = counters.snapshot();
                 assert_eq!(
-                    counters.snapshot(),
-                    (
-                        bytes_before_footer
-                            + (offsets.split_footer_end - offsets.split_footer_start)
-                                * expected_footer_reads,
-                        reads_before_footer + expected_footer_reads,
-                    )
+                    after_footer.num_bytes,
+                    before_footer.num_bytes
+                        + (offsets.split_footer_end - offsets.split_footer_start)
+                            * expected_footer_reads
+                );
+                assert_eq!(
+                    after_footer.num_requests,
+                    before_footer.num_requests + expected_footer_reads
                 );
                 assert_eq!(
                     bundle
@@ -109,7 +116,7 @@ async fn test_legacy_budgets_cache_footer_and_body_without_disk() {
                     BODY_BYTES
                 );
                 assert_eq!(
-                    counters.snapshot().1 - reads_before,
+                    counters.snapshot().num_requests - reads_before,
                     if enabled { 2 } else { 2 * num_reads }
                 );
             }
@@ -151,7 +158,7 @@ mod disk_tests {
         let cache_dir = tempfile::tempdir().unwrap();
         let cache = open_cache(cache_dir.path()).await;
         let context = context_with_storage_cache(cache.clone());
-        let (counted, counters) = counted_split_storage(&split.split_bytes);
+        let (counted, counters) = counted_split_storage(&split);
 
         let (hotcache, bundle) =
             open_split_bundle(&context, counted.clone(), &split.footer_offsets)
@@ -159,7 +166,7 @@ mod disk_tests {
                 .unwrap();
         assert_eq!(hotcache.as_slice(), HOTCACHE_BYTES);
         assert_eq!(
-            counters.snapshot().1,
+            counters.snapshot().num_requests,
             1,
             "uncached footer requires one storage read"
         );
@@ -174,7 +181,7 @@ mod disk_tests {
                 b"FAST"
             );
             assert_eq!(
-                counters.snapshot().1,
+                counters.snapshot().num_requests,
                 2,
                 "repeated body range uses the cache"
             );
@@ -186,7 +193,7 @@ mod disk_tests {
             .await
             .unwrap();
         assert_eq!(hotcache.as_slice(), HOTCACHE_BYTES);
-        assert_eq!(counters.snapshot().1, 2);
+        assert_eq!(counters.snapshot().num_requests, 2);
     }
 
     #[tokio::test]
@@ -215,19 +222,19 @@ mod disk_tests {
         let mut context =
             SearcherContext::new_without_invoker(SearcherConfig::default(), Some(split_cache));
         context.storage_cache_opt = Some(storage_cache);
-        let (counted, counters) = counted_split_storage(&split.split_bytes);
+        let (counted, counters) = counted_split_storage(&split);
         let (_hotcache, bundle) = open_split_bundle(&context, counted, &split.footer_offsets)
             .await
             .unwrap();
         assert_eq!(
-            counters.snapshot().1,
+            counters.snapshot().num_requests,
             0,
             "footer is served by the whole-split cache"
         );
 
         bundle.get_slice(Path::new(BODY_FILE), 0..4).await.unwrap();
         assert_eq!(
-            counters.snapshot().1,
+            counters.snapshot().num_requests,
             0,
             "body is served by the whole-split cache"
         );
@@ -238,13 +245,13 @@ mod disk_tests {
         let split = build_split().await;
         let cache_dir = tempfile::tempdir().unwrap();
         let cache = open_cache(cache_dir.path()).await;
-        let (counted, counters) = counted_split_storage(&split.split_bytes);
+        let (counted, counters) = counted_split_storage(&split);
         let cached_storage = wrap_storage_with_storage_cache(cache.clone(), counted.clone());
         cached_storage
             .get_slice(Path::new(&split_file_name()), 0..split.split_bytes.len())
             .await
             .unwrap();
-        assert_eq!(counters.snapshot().1, 1);
+        assert_eq!(counters.snapshot().num_requests, 1);
 
         let context = context_with_storage_cache(cache);
         let (_, bundle) = open_split_bundle(&context, counted, &split.footer_offsets)
@@ -259,7 +266,7 @@ mod disk_tests {
             b"FAST"
         );
         assert_eq!(
-            counters.snapshot().1,
+            counters.snapshot().num_requests,
             3,
             "footer and body require their own exact slices despite a covering cached slice"
         );
