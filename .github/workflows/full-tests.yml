@@ -96,6 +96,56 @@ jobs:
       - name: Run full test suite
         run: make test-all
 
+  ui-e2e:
+    name: UI e2e
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      CARGO_INCREMENTAL: 0
+      RUSTFLAGS: -Dwarnings --cfg tokio_unstable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      - name: Setup stable Rust Toolchain
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - name: Setup cache (read-only)
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: "./quickwit -> target"
+          shared-key: "quickwit-cargo"
+          save-if: "false"
+      - name: Install JS dependencies
+        run: yarn --cwd quickwit-ui install
+        working-directory: ./quickwit
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps --only-shell
+        working-directory: ./quickwit/quickwit-ui
+      - name: Build UI
+        run: CI=false yarn --cwd quickwit-ui build
+        working-directory: ./quickwit
+      - name: Build Quickwit
+        run: |
+          sudo apt-get update && sudo apt-get -y install protobuf-compiler
+          cargo build --features=postgres
+        working-directory: ./quickwit
+      - name: Run e2e tests
+        run: |
+          mkdir -p qwdata
+          cargo run --features=postgres -- run --config ../config/quickwit.yaml &
+          curl --retry 60 --retry-delay 1 --retry-connrefused --fail --silent --show-error http://127.0.0.1:7280/health/readyz
+          yarn --cwd quickwit-ui e2e-test
+        working-directory: ./quickwit
+
   coverage:
     name: Code coverage
     needs: prepare
@@ -107,7 +157,7 @@ jobs:
 
   report-full-tests:
     name: Report full test status
-    needs: [prepare, full-tests]
+    needs: [prepare, full-tests, ui-e2e]
     if: ${{ always() && needs.prepare.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 3
@@ -118,10 +168,11 @@ jobs:
         env:
           STATUS_SHA: ${{ github.event.workflow_run.head_sha }}
           TEST_RESULT: ${{ needs.full-tests.result }}
+          UI_E2E_RESULT: ${{ needs.ui-e2e.result }}
         with:
           retries: 3
           script: |
-            const passed = process.env.TEST_RESULT === 'success';
+            const passed = process.env.TEST_RESULT === 'success' && process.env.UI_E2E_RESULT === 'success';
             const state = passed ? 'success' : 'failure';
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
@@ -163,11 +214,11 @@ jobs:
 
   on-failure:
     name: Send failure notification
-    needs: [prepare, full-tests, coverage]
+    needs: [prepare, full-tests, ui-e2e, coverage]
     if: >-
       ${{ always() && github.repository_owner == 'quickwit-oss' &&
       needs.prepare.result == 'success' &&
-      (needs.full-tests.result == 'failure' || needs.coverage.result == 'failure') }}
+      (needs.full-tests.result == 'failure' || needs.ui-e2e.result == 'failure' || needs.coverage.result == 'failure') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
@@ -185,6 +236,6 @@ jobs:
           description: |
             ### ❌ Merge queue
 
-            The full test suite (`make test-all`) or code coverage failed.
+            The full test suite (`make test-all`), UI e2e tests or code coverage failed.
 
             **[View logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})**
