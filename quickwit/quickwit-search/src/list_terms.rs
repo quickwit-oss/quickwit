@@ -233,8 +233,7 @@ async fn leaf_list_terms_single_split(
         storage,
         &split,
         None,
-        Some(cache),
-        Some(warmup_memory),
+        Some((cache, warmup_memory)),
     )
     .await?;
     // Listing terms cannot download more than the index, so we do not need to reserve more.

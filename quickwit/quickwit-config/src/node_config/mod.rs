@@ -813,7 +813,8 @@ impl SearcherConfig {
                 warmup_single_split_max_allocation,
                 self.warmup_memory_budget
             );
-            // Otherwise, the initial allocation would be silently capped to the max.
+            // Otherwise, the configuration would be contradictory: the initial allocation of a
+            // split search is clamped to the max.
             anyhow::ensure!(
                 self.warmup_single_split_initial_allocation <= warmup_single_split_max_allocation,
                 "warmup_single_split_initial_allocation ({}) must be lower or equal to \

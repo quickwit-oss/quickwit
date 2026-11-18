@@ -71,7 +71,7 @@ use crate::metrics::{
 use crate::root::is_metadata_count_request_with_ast;
 use crate::search_permit_provider::{SearchPermit, SearchPermitFuture};
 use crate::service::{SearcherContext, deserialize_doc_mapper};
-use crate::split_warmup_memory::SplitWarmupMemory;
+use crate::warmup_memory::WarmupMemoryGuard;
 use crate::{QuickwitAggregations, SearchError};
 
 /// Distributes items across batches using a greedy LPT (Longest Processing Time)
@@ -202,18 +202,18 @@ fn configure_storage_retries(
 
 /// Opens a `tantivy::Index` for the given split with several cache layers:
 /// - The `storage_cache` given by `SearcherContext.storage_cache_opt`, including footer bytes.
-/// - An ephemeral unbounded cache directory (whose lifetime is tied to the returned `Index` if no
-///   `ByteRangeCache` is provided).
+/// - If `warmup_cache_opt` is provided, an ephemeral unbounded cache directory for the warmup data,
+///   whose memory is accounted in the given warmup memory.
 ///
-/// If `warmup_memory` is provided, every read that misses the hotcache and the ephemeral cache
-/// first reserves memory in it, and fails if the warmup memory limit would be exceeded.
+/// With a warmup cache, every read that misses the hotcache and the ephemeral cache first
+/// reserves memory in the warmup memory. It waits if the warmup memory is full, and fails if the
+/// split search would go over the per-split limit. Reads must then be async.
 pub(crate) async fn open_index_with_caches(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
     tokenizer_manager: Option<&TokenizerManager>,
-    ephemeral_unbounded_cache: Option<ByteRangeCache>,
-    warmup_memory: Option<Arc<SplitWarmupMemory>>,
+    warmup_cache_opt: Option<(ByteRangeCache, Arc<WarmupMemoryGuard>)>,
 ) -> crate::Result<(Index, HotDirectory)> {
     let index_storage_with_retry_on_timeout =
         configure_storage_retries(searcher_context, index_storage);
@@ -227,12 +227,10 @@ pub(crate) async fn open_index_with_caches(
 
     let directory = StorageDirectory::new(Arc::new(bundle_storage));
 
-    let hot_directory = if let Some(cache) = ephemeral_unbounded_cache {
-        let mut caching_directory = CachingDirectory::new(Arc::new(directory), cache);
+    let hot_directory = if let Some((cache, warmup_memory)) = warmup_cache_opt {
         // Storage cache hits are also kept in the ephemeral cache, so they count too.
-        if let Some(warmup_memory) = warmup_memory {
-            caching_directory = caching_directory.with_memory_reserver(warmup_memory);
-        }
+        let caching_directory =
+            CachingDirectory::new(Arc::new(directory), cache).with_memory_reserver(warmup_memory);
         HotDirectory::open(caching_directory, hotcache_bytes)?
     } else {
         HotDirectory::open(directory, hotcache_bytes)?
@@ -704,8 +702,7 @@ async fn leaf_search_single_split(
         storage,
         &split,
         Some(ctx.doc_mapper.tokenizer_manager()),
-        Some(byte_range_cache.clone()),
-        Some(warmup_memory),
+        Some((byte_range_cache.clone(), warmup_memory)),
     )
     .await
     .inspect_err(|_| {

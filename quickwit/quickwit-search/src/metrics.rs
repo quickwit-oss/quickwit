@@ -258,8 +258,8 @@ pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES: LazyHistogram = laz
 
 pub(crate) static LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES: LazyGauge = lazy_gauge!(
     name: "leaf_search_warmup_ongoing_num_bytes",
-    description: "Warmup memory currently reserved by split searches, including the initial \
-                  allocation of granted permits. It never goes over \
+    description: "Warmup memory currently reserved by split searches, including the memory they \
+                  reserve before their warmup. It never goes over \
                   `searcher.warmup_memory_budget`.",
     subsystem: "search",
 );

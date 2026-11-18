@@ -64,11 +64,8 @@ impl SearchError {
     /// can be retried after a backoff.
     pub fn is_retryable_on_another_searcher(&self) -> bool {
         match self {
-            // A split search that ran out of warmup memory would likely run out of memory again
-            // on another searcher, and make that searcher's other searches fail too.
-            //
-            // TODO In the future, we might want to consider making a difference between
-            // split/global errors. Right now the max split error is too conservative.
+            // A split search that went over the per-split warmup memory limit would go over it
+            // again on another searcher.
             SearchError::OutOfWarmupMemory(_) => false,
             // The request and the indexes are the same on every searcher, so these errors would
             // happen again.

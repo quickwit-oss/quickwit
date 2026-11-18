@@ -31,8 +31,7 @@ use crate::metrics::{
     LEAF_SEARCH_SINGLE_SPLIT_TASKS_ONGOING, LEAF_SEARCH_SINGLE_SPLIT_TASKS_PENDING,
     SEARCHER_NODE_LOAD,
 };
-use crate::split_warmup_memory::SplitWarmupMemory;
-use crate::warmup_memory::GlobalWarmupMemory;
+use crate::warmup_memory::{GlobalWarmupMemory, WarmupMemoryGuard};
 
 /// Distributor of permits to perform split search operation.
 ///
@@ -410,7 +409,7 @@ impl SearchPermitActor {
                 .send(SearchPermit {
                     _ongoing_gauge_guard: ongoing_gauge_guard,
                     msg_sender: self.msg_sender.clone(),
-                    warmup_memory: Arc::new(SplitWarmupMemory::new(memory_guard)),
+                    warmup_memory: Arc::new(memory_guard),
                     warmup_slot_freed: false,
                     job_cost: permit_request.job_cost,
                     total_job_cost: self.total_job_cost.clone(),
@@ -429,7 +428,7 @@ pub struct SearchPermit {
     _ongoing_gauge_guard: GaugeGuard,
     msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
     /// Shared with the split's `CachingDirectory`, see [`SearchPermit::warmup_memory`].
-    warmup_memory: Arc<SplitWarmupMemory>,
+    warmup_memory: Arc<WarmupMemoryGuard>,
     warmup_slot_freed: bool,
     job_cost: usize,
     /// Shared with the actor; decremented in `Drop`.
@@ -457,7 +456,7 @@ impl SearchPermit {
     pub async fn warmup_memory(
         &self,
         initial_memory_allocation: ByteSize,
-    ) -> Result<Arc<SplitWarmupMemory>, OutOfMemoryError> {
+    ) -> Result<Arc<WarmupMemoryGuard>, OutOfMemoryError> {
         self.warmup_memory
             .reserve_capacity(initial_memory_allocation.as_u64())
             .await?;
@@ -489,7 +488,7 @@ impl SearchPermit {
     /// Memory currently reserved by this permit.
     #[cfg(test)]
     pub fn memory_allocation(&self) -> ByteSize {
-        ByteSize(self.warmup_memory.reserved_num_bytes())
+        ByteSize(self.warmup_memory.num_bytes())
     }
 
     pub fn job_cost(&self) -> usize {
@@ -828,7 +827,7 @@ mod tests {
     /// Tries to reserve an initial warmup memory of 10MB for a permit.
     async fn try_reserve_initial_memory(
         permit: &SearchPermit,
-    ) -> anyhow::Result<Arc<SplitWarmupMemory>> {
+    ) -> anyhow::Result<Arc<WarmupMemoryGuard>> {
         // using a short timeout is a bit flaky, but it should be enough for these tests
         let warmup_memory_fut = permit.warmup_memory(ByteSize::mb(10));
         let warmup_memory =
