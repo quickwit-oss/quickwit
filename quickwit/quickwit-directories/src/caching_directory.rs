@@ -97,8 +97,10 @@ impl Drop for MemoryReservation<'_> {
 }
 
 /// Reserves memory for the data a [`CachingDirectory`] downloads and keeps in its cache.
+#[async_trait]
 pub trait MemoryReserver: Send + Sync + 'static {
-    /// Called on each cache miss, before reading `num_bytes` from the underlying directory.
+    /// Called on each cache miss of a sync read, before reading `num_bytes` from the underlying
+    /// directory. Never waits: fails if the memory is not available right away.
     ///
     /// On success, returns a [`MemoryReservation`], which gives the memory back through
     /// `release_memory` when dropped, except for the bytes the read added to the cache.
@@ -107,6 +109,21 @@ pub trait MemoryReserver: Send + Sync + 'static {
     /// is not called and nothing is cached.
     fn try_reserve_memory(&self, num_bytes: u64)
     -> Result<MemoryReservation<'_>, OutOfMemoryError>;
+
+    /// Same as `try_reserve_memory`, for a cache miss of an async read, except that it may wait
+    /// until the memory is available. It must still fail right away if the memory can never be
+    /// available.
+    ///
+    /// Contract: the memory is reserved before the read starts, so the caller must not hold
+    /// anything another read waits on.
+    ///
+    /// The default implementation never waits, for reservers that do not need to.
+    async fn reserve_memory(
+        &self,
+        num_bytes: u64,
+    ) -> Result<MemoryReservation<'_>, OutOfMemoryError> {
+        self.try_reserve_memory(num_bytes)
+    }
 
     /// Gives back `num_bytes` reserved by `try_reserve_memory` that a read did not add to the
     /// cache: the read failed, panicked, its future was dropped, or the bytes were already cached.
@@ -218,7 +235,8 @@ impl FileHandle for CachingFileHandle {
         }
         let read_reservation = self
             .memory_reserver
-            .try_reserve_memory(byte_range.len() as u64)?;
+            .reserve_memory(byte_range.len() as u64)
+            .await?;
         let read_bytes = self
             .underlying_filehandle
             .read_bytes_async(byte_range.clone())

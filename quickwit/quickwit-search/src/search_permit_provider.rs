@@ -38,10 +38,11 @@ use crate::warmup_memory::{GlobalWarmupMemory, WarmupMemoryGuard};
 ///
 /// Requests are served by priority, then by lowest estimated cost. Each permit initially
 /// reserves a slot for the warmup (limit concurrent downloads) and a pessimistic amount of
-/// memory. During the warmup, the permit grows its memory reservation as data is downloaded, and
-/// the split search fails if the warmup memory limit would be exceeded. Once the warmup is
-/// completed, the unused memory and the warmup slot are released. Once the search is completed and
-/// the permit is dropped, the remaining memory is also released.
+/// memory. During the warmup, the permit grows its memory reservation as data is downloaded. It
+/// waits if the warmup memory is full, and fails if the per-split limit would be exceeded (see
+/// [`GlobalWarmupMemory`] for why waiting cannot deadlock). Once the warmup is completed, the
+/// unused memory and the warmup slot are released. Once the search is completed and the permit is
+/// dropped, the remaining memory is also released.
 #[derive(Clone)]
 pub struct SearchPermitProvider {
     message_sender: mpsc::UnboundedSender<SearchPermitMessage>,
@@ -81,8 +82,8 @@ pub enum SearchPermitMessage {
         /// permits.
         permit_resp_tx: oneshot::Sender<Vec<SearchPermitFuture>>,
     },
-    /// Sent by the [`GlobalWarmupMemory`] callback each time memory is freed, so that pending
-    /// permits can be granted.
+    /// Sent by the [`GlobalWarmupMemory`] callback each time memory is freed or a split search
+    /// ends, so that pending permits can be granted.
     ///
     /// The memory is already freed when this message is sent.
     MemoryFreed,
@@ -121,18 +122,28 @@ pub fn compute_initial_memory_allocation(
 }
 
 impl SearchPermitProvider {
-    /// Creates a provider without a per-split limit other than `memory_budget`.
+    /// Creates a provider with a per-split limit of a quarter of `memory_budget`, like the default
+    /// searcher config.
     #[cfg(test)]
     pub fn new(num_download_slots: usize, memory_budget: ByteSize) -> Self {
-        Self::with_split_max_allocation(num_download_slots, memory_budget, memory_budget)
+        let split_max_allocation = ByteSize(memory_budget.as_u64() / 4);
+        Self::with_split_max_allocation(num_download_slots, memory_budget, split_max_allocation)
     }
 
     /// Creates a provider.
     ///
     /// - `memory_budget`: total warmup memory of the split searches of this node.
     /// - `split_max_allocation`: warmup memory a single split search can reserve at most. It is
-    ///   expected to be lower or equal to `memory_budget`. Callers are expected to clamp the permit
-    ///   sizes they request to it.
+    ///   also the part of `memory_budget` reserved for the oldest split search, so the other split
+    ///   searches share `memory_budget - split_max_allocation`.
+    ///
+    /// Contracts: `split_max_allocation` is lower or equal to `memory_budget`, and callers clamp
+    /// the permit sizes they request to `split_max_allocation`. A larger permit could never be
+    /// granted, and would block the permits queued after it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `split_max_allocation` is larger than `memory_budget`.
     pub fn with_split_max_allocation(
         num_download_slots: usize,
         memory_budget: ByteSize,
@@ -141,16 +152,18 @@ impl SearchPermitProvider {
         let (message_sender, message_receiver) = mpsc::unbounded_channel();
         let total_job_cost = Arc::new(AtomicUsize::new(0));
         let weak_message_sender = message_sender.downgrade();
-        let warmup_memory =
-            GlobalWarmupMemory::with_limit_and_free_callback(memory_budget, move || {
+        let warmup_memory = GlobalWarmupMemory::with_limits_and_free_callback(
+            memory_budget,
+            split_max_allocation,
+            move || {
                 send_if_still_running(&weak_message_sender, SearchPermitMessage::MemoryFreed);
-            });
+            },
+        );
         let actor = SearchPermitActor {
             msg_receiver: message_receiver,
             msg_sender: message_sender.downgrade(),
             num_warmup_slots_available: num_download_slots,
             warmup_memory,
-            split_max_allocation: split_max_allocation.as_u64(),
             permits_requests: BinaryHeap::new(),
             total_job_cost: total_job_cost.clone(),
         };
@@ -232,16 +245,13 @@ struct SearchPermitActor {
     msg_receiver: mpsc::UnboundedReceiver<SearchPermitMessage>,
     msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
     num_warmup_slots_available: usize,
-    /// Memory reserved by all granted permits.
+    /// Memory reserved by all granted permits. It also enforces the per-split limit.
     ///
     /// Permits are granted with [`GlobalWarmupMemory::try_allocate`]. Split searches grow their
-    /// reservation during the warmup without going through the actor. Each time memory is freed,
-    /// the `GlobalWarmupMemory` callback sends a `MemoryFreed` message, so that the actor tries
-    /// again.
+    /// reservation during the warmup without going through the actor. Each time memory is freed
+    /// or a split search ends, the `GlobalWarmupMemory` callback sends a `MemoryFreed` message, so
+    /// that the actor tries again.
     warmup_memory: GlobalWarmupMemory,
-    /// Warmup memory a single split search can reserve at most. Given to each permit's
-    /// [`SplitWarmupMemory`].
-    split_max_allocation: u64,
     /// Sum of [`SplitSearchTaskMetadata::job_cost`] for all queued and active tasks.
     ///
     /// Incremented when a task enters [`Self::permits_requests`], decremented when
@@ -456,10 +466,7 @@ impl SearchPermitActor {
                 .send(SearchPermit {
                     _ongoing_gauge_guard: ongoing_gauge_guard,
                     msg_sender: self.msg_sender.clone(),
-                    warmup_memory: Arc::new(SplitWarmupMemory::new(
-                        memory_guard,
-                        self.split_max_allocation,
-                    )),
+                    warmup_memory: Arc::new(SplitWarmupMemory::new(memory_guard)),
                     warmup_slot_freed: false,
                     job_cost: permit_request.job_cost,
                     total_job_cost: self.total_job_cost.clone(),
@@ -882,7 +889,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_memory_budget() {
-        let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100));
+        // 110MB - 10MB = 100MB are shared by the split searches other than the oldest one.
+        let permit_provider = SearchPermitProvider::with_split_max_allocation(
+            100,
+            ByteSize::mb(110),
+            ByteSize::mb(10),
+        );
         let mut permit_futs = permit_provider.get_permits(make_splits(10, 14, 5, 0)).await;
         let mut remaining_permit_futs = permit_futs.split_off(10).into_iter();
         assert_eq!(remaining_permit_futs.len(), 4);
@@ -1094,7 +1106,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_reserved_memory_blocks_pending_permits_until_freed() {
-        let permit_provider = SearchPermitProvider::new(10, ByteSize::mb(100));
+        // 100MB - 95MB = 5MB are shared by the split searches other than the oldest one.
+        let permit_provider = SearchPermitProvider::with_split_max_allocation(
+            10,
+            ByteSize::mb(100),
+            ByteSize::mb(95),
+        );
         let permit = get_single_permit(&permit_provider, 10).await;
         // Only the growth of the reservation matters here: the memory in use is released right
         // away, but the permit keeps its 95MB reservation.
@@ -1109,7 +1126,7 @@ mod tests {
             .get_permits(make_splits(10, 2, 5, 0))
             .await
             .into_iter();
-        // Only 5MB are left: the pending 10MB permit is blocked.
+        // The oldest split search holds 95MB: the pending 10MB permit is blocked.
         let blocked_permit_fut = pending_permit_futs.next().unwrap();
         try_get(blocked_permit_fut).await.err().unwrap();
         // Dropping the permit frees its memory and wakes up the actor.
@@ -1123,7 +1140,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_warmup_memory_freed_when_last_reference_dropped() {
-        let permit_provider = SearchPermitProvider::new(10, ByteSize::mb(100));
+        let permit_provider = SearchPermitProvider::with_split_max_allocation(
+            10,
+            ByteSize::mb(100),
+            ByteSize::mb(95),
+        );
         let permit = get_single_permit(&permit_provider, 95).await;
         // Held by the split's `CachingDirectory` in practice.
         let warmup_memory = permit.warmup_memory();
