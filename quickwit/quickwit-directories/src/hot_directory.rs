@@ -404,6 +404,16 @@ impl FileHandle for FileSliceWithCache {
         }
         self.underlying.read_bytes_slice_async(byte_range).await
     }
+
+    async fn read_bytes_stream(
+        &self,
+        byte_range: Range<usize>,
+    ) -> io::Result<Box<dyn tokio::io::AsyncRead + Send + Unpin>> {
+        if let Some(found_bytes) = self.static_cache.try_read_bytes(byte_range.clone()) {
+            return Ok(Box::new(io::Cursor::new(found_bytes)));
+        }
+        self.underlying.slice(byte_range).read_bytes_stream().await
+    }
 }
 
 impl fmt::Debug for FileSliceWithCache {
@@ -554,6 +564,45 @@ mod tests {
     use tantivy::{Index, TantivyDocument};
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_stream_uses_hotcache() {
+        use quickwit_storage::MockStorage;
+        use tokio::io::AsyncReadExt;
+
+        let path = Path::new("test.file");
+        let content = b"0123456789abcdef";
+        let mut storage = MockStorage::default();
+        storage
+            .expect_get_slice_stream()
+            .times(4)
+            .returning(move |stream_path, range| {
+                assert_eq!(stream_path, path);
+                assert!([2..4, 6..8].contains(&range));
+                Ok(Box::new(io::Cursor::new(&content[range])))
+            });
+        let directory = crate::StorageDirectory::new(Arc::new(storage));
+        let mut hotcache = StaticDirectoryCacheBuilder::default();
+        hotcache
+            .add_file(path, content.len() as u64)
+            .add_bytes(&content[4..6], 4);
+        let mut hotcache_bytes = Vec::new();
+        hotcache.write(&mut hotcache_bytes).unwrap();
+        let hot_directory = HotDirectory::open(directory, OwnedBytes::new(hotcache_bytes)).unwrap();
+        let file = hot_directory
+            .open_read(path)
+            .unwrap()
+            .slice(2..content.len());
+        for _ in 0..2 {
+            // Nested offsets reach both the hotcache and storage correctly.
+            for range in [0..2, 2..4, 4..6, 3..3] {
+                let mut stream = file.slice(range.clone()).read_bytes_stream().await.unwrap();
+                let mut bytes = Vec::new();
+                stream.read_to_end(&mut bytes).await.unwrap();
+                assert_eq!(bytes, &content[range.start + 2..range.end + 2]);
+            }
+        }
+    }
 
     #[test]
     fn test_empty_slice_cache_index() -> tantivy::Result<()> {

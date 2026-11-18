@@ -130,7 +130,10 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
         buffer: &mut [u8],
     ) -> StorageResult<()>;
 
-    /// Opens a stream handle on the file from the storage.
+    /// Opens an owned reader for a contiguous file range. Dropping it cancels further reads.
+    ///
+    /// Cache wrappers forward streams without cache lookup or insertion. Callers plan ranges
+    /// and consume the body incrementally. Buffered reads retain their caching behavior.
     ///
     /// Might panic, return an error or an empty stream if the range is empty.
     async fn get_slice_stream(

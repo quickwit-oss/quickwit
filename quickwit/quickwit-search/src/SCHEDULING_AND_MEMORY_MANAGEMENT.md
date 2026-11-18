@@ -66,6 +66,12 @@ That error is marked as not retryable and will fail sibling search request as we
 This logic in itself is sufficient to bound the warm up cache memory usage to our initial budget.
 However, this gives us no control on which leaf request will get OOMed.
 
+Streaming reads through Tantivy's `FileHandle::read_bytes_stream` bypass the ephemeral byte cache
+and its memory reservations. The storage cache wrappers also forward streams without looking up
+or inserting entries. Existing immutable hotcache hits can be served directly from memory.
+Callers own the streamed buffers and must account for their memory separately. Buffered dictionary
+and posting reads continue to use the cache and its reservations.
+
 For this reason, we also have a `warmup_single_split_max_allocation` that will fail the request if the
 single split allocation would be greater than a given amount (by default, `max(warmup_single_split_initial_allocation, warmup_memory_budget / 4)`); hence increasing
 the chance that the faulty query is the one that will be OOMed first.
