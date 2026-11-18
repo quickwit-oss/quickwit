@@ -62,7 +62,7 @@ async fn test_plans_collected_ranges_and_preserves_order() {
         300_000..300_011,
         10 * MIB..10 * MIB + 2,
     ]);
-    let buffers = read_collected_ranges(&storage, Path::new("file"), ranges.clone())
+    let buffers = download_chunks_in_parallel(&storage, Path::new("file"), ranges.clone())
         .await
         .unwrap();
     assert_eq!(buffers.last().unwrap().as_ptr(), unmerged_address);

@@ -55,7 +55,7 @@ impl CollectedBatch {
                 .unwrap()
                 .take()
                 .expect("collected ranges are taken once");
-            read_collected_ranges(underlying.as_ref(), &path, requested_ranges)
+            download_chunks_in_parallel(underlying.as_ref(), &path, requested_ranges)
                 .await
                 .map(Arc::new)
         }
@@ -201,34 +201,34 @@ impl Storage for CoalescingStorage {
     }
 }
 
-async fn read_collected_ranges(
+async fn download_chunks_in_parallel(
     storage: &dyn Storage,
     path: &Path,
     requested_ranges: Vec<Range<usize>>,
 ) -> StorageResult<Vec<OwnedBytes>> {
     let mut buffers = vec![OwnedBytes::empty(); requested_ranges.len()];
-    // Coalesce the collected ranges, then run at most five downloads concurrently.
-    let (requests, download_ranges) = run_cpu_intensive(move || {
+    // Merge the collected ranges into download chunks, then download at most five concurrently.
+    let (requests, download_chunks) = run_cpu_intensive(move || {
         let mut requests: Vec<_> = requested_ranges.into_iter().enumerate().collect();
         requests.sort_unstable_by_key(|(_, requested_range)| requested_range.start);
-        let download_ranges = coalesce_ranges(
+        let download_chunks = coalesce_ranges(
             requests
                 .iter()
                 .map(|(_, requested_range)| requested_range.clone()),
         );
-        (requests, download_ranges)
+        (requests, download_chunks)
     })
     .await
     .map_err(io::Error::other)?;
-    // Sorted, disjoint downloads consume consecutive groups of requests.
+    // Sorted, disjoint download chunks contain consecutive groups of requested ranges.
     let mut remaining_requests = requests.as_slice();
-    let mut downloads = stream::iter(download_ranges)
-        .map(|download_range| {
+    let mut downloads = stream::iter(download_chunks)
+        .map(|download_chunk| {
             let end = remaining_requests
-                .partition_point(|(_, requested_range)| requested_range.start < download_range.end);
+                .partition_point(|(_, requested_range)| requested_range.start < download_chunk.end);
             let (requests, remaining) = remaining_requests.split_at(end);
             remaining_requests = remaining;
-            fetch_requested_slices(storage, path, download_range, requests)
+            download_chunk_and_extract_slices(storage, path, download_chunk, requests)
         })
         .buffer_unordered(5);
     while let Some(downloaded) = downloads.try_next().await? {
@@ -243,37 +243,37 @@ async fn read_collected_ranges(
 /// Merges overlaps and gaps up to 4 MiB. This limits each gap, not the total download size
 /// or the total number of gap bytes downloaded.
 fn coalesce_ranges(requested_ranges: impl Iterator<Item = Range<usize>>) -> Vec<Range<usize>> {
-    let mut download_ranges: Vec<Range<usize>> = Vec::new();
+    let mut merged_ranges: Vec<Range<usize>> = Vec::new();
     for requested_range in requested_ranges {
         debug_assert!(requested_range.start < requested_range.end);
-        if let Some(previous) = download_ranges.last_mut()
+        if let Some(previous) = merged_ranges.last_mut()
             && requested_range.start.saturating_sub(previous.end) <= MAX_GAP
         {
             previous.end = previous.end.max(requested_range.end);
         } else {
-            download_ranges.push(requested_range);
+            merged_ranges.push(requested_range);
         }
     }
-    download_ranges
+    merged_ranges
 }
 
-// Requests are sorted, nonempty, and contained in the coalesced download range.
-async fn fetch_requested_slices(
+// Requests are sorted, nonempty, and contained in the download chunk.
+async fn download_chunk_and_extract_slices(
     storage: &dyn Storage,
     path: &Path,
-    download_range: Range<usize>,
+    download_chunk: Range<usize>,
     mut requests: &[(usize, Range<usize>)],
 ) -> StorageResult<Vec<(usize, OwnedBytes)>> {
     if let [(index, _)] = requests {
-        let bytes = storage.get_slice(path, download_range).await?;
+        let bytes = storage.get_slice(path, download_chunk).await?;
         return Ok(vec![(*index, bytes)]);
     }
     let reader = storage
-        .get_slice_stream(path, download_range.clone())
+        .get_slice_stream(path, download_chunk.clone())
         .await?;
     let mut reader = tokio::io::BufReader::new(reader);
     let mut buffers = Vec::with_capacity(requests.len());
-    let mut position = download_range.start;
+    let mut position = download_chunk.start;
     while !requests.is_empty() {
         // Read overlapping requests together so the stream never needs to seek backwards.
         let mut useful = requests[0].1.clone();
@@ -303,7 +303,7 @@ async fn fetch_requested_slices(
         position = useful.end;
         requests = &requests[count..];
     }
-    debug_assert_eq!(position, download_range.end);
+    debug_assert_eq!(position, download_chunk.end);
     Ok(buffers)
 }
 
@@ -362,7 +362,7 @@ mod plan_tests {
     #[test]
     fn test_coalesce_ranges_from_postings() {
         // Reference plans independently calculated with a 4 MiB gap threshold.
-        // Pattern, requested ranges/bytes, download ranges/bytes.
+        // Pattern, requested ranges/bytes, download chunks/bytes.
         for (fixture, json, expected) in [
             (
                 "inline_8",
