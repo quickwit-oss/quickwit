@@ -23,25 +23,13 @@ use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, OwnedBytes};
 use tantivy::{Directory, HasLen};
 
-/// Returned when reserving memory would go over a warmup memory limit.
+/// Returned when reserving memory would go over the warmup memory limit of a split search.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OutOfMemoryError {
-    /// The split search would go over its own warmup memory limit.
-    SplitBudgetExceeded,
-    /// The node would go over the warmup memory limit shared by all split searches.
-    GlobalBudgetExceeded,
-}
+pub struct OutOfMemoryError;
 
 impl fmt::Display for OutOfMemoryError {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            OutOfMemoryError::SplitBudgetExceeded => {
-                write!(formatter, "out of warmup memory: split budget exceeded")
-            }
-            OutOfMemoryError::GlobalBudgetExceeded => {
-                write!(formatter, "out of warmup memory: global budget exceeded")
-            }
-        }
+        write!(formatter, "out of warmup memory")
     }
 }
 
@@ -68,7 +56,7 @@ impl<'a> MemoryReservation<'a> {
     /// Creates a memory reservation that releases `num_bytes` on drop.
     ///
     /// Contract: only called by `memory_reserver`, from
-    /// [`MemoryReserver::try_reserve_memory`], for `num_bytes` it has just reserved. A reservation
+    /// [`MemoryReserver::reserve_memory`], for `num_bytes` it has just reserved. A reservation
     /// created for bytes that were not reserved would release them anyway.
     pub fn new(memory_reserver: &'a dyn MemoryReserver, num_bytes: u64) -> MemoryReservation<'a> {
         MemoryReservation {
@@ -97,21 +85,32 @@ impl Drop for MemoryReservation<'_> {
 }
 
 /// Reserves memory for the data a [`CachingDirectory`] downloads and keeps in its cache.
+///
+/// Only async reads reserve memory. Sync reads are only used by indexing, where the cache memory
+/// is not accounted for.
+#[async_trait]
 pub trait MemoryReserver: Send + Sync + 'static {
-    /// Called on each cache miss, before reading `num_bytes` from the underlying directory.
+    /// Called on each cache miss of an async read, before reading `num_bytes` from the underlying
+    /// directory. May wait until the memory is available, but must fail right away if the memory
+    /// can never be available.
     ///
     /// On success, returns a [`MemoryReservation`], which gives the memory back through
     /// `release_memory` when dropped, except for the bytes the read added to the cache.
     ///
     /// On error, the read fails with an `io::Error` of kind `OutOfMemory`: the underlying directory
     /// is not called and nothing is cached.
-    fn try_reserve_memory(&self, num_bytes: u64)
-    -> Result<MemoryReservation<'_>, OutOfMemoryError>;
-
-    /// Gives back `num_bytes` reserved by `try_reserve_memory` that a read did not add to the
-    /// cache: the read failed, panicked, its future was dropped, or the bytes were already cached.
     ///
-    /// Contract: `num_bytes` were reserved by an earlier `try_reserve_memory` call, and are not
+    /// Contract: the memory is reserved before the read starts, so the caller must not hold
+    /// anything another read waits on.
+    async fn reserve_memory(
+        &self,
+        num_bytes: u64,
+    ) -> Result<MemoryReservation<'_>, OutOfMemoryError>;
+
+    /// Gives back `num_bytes` reserved by `reserve_memory` that a read did not add to the cache:
+    /// the read failed, panicked, its future was dropped, or the bytes were already cached.
+    ///
+    /// Contract: `num_bytes` were reserved by an earlier `reserve_memory` call, and are not
     /// released twice. Called from `Drop`, possibly while a panic unwinds, so it must not panic.
     fn release_memory(&self, num_bytes: u64);
 }
@@ -119,8 +118,9 @@ pub trait MemoryReserver: Send + Sync + 'static {
 /// A [`MemoryReserver`] that always succeeds. Used when the cache memory is not accounted for.
 struct NoopMemoryReserver;
 
+#[async_trait]
 impl MemoryReserver for NoopMemoryReserver {
-    fn try_reserve_memory(
+    async fn reserve_memory(
         &self,
         num_bytes: u64,
     ) -> Result<MemoryReservation<'_>, OutOfMemoryError> {
@@ -161,7 +161,7 @@ impl CachingDirectory {
         }
     }
 
-    /// Reserves memory in `memory_reserver` before reading each cache miss.
+    /// Reserves memory in `memory_reserver` before reading each cache miss of an async read.
     ///
     /// The directory holds `memory_reserver` until it is dropped.
     pub fn with_memory_reserver(
@@ -199,16 +199,13 @@ impl fmt::Debug for CachingFileHandle {
 
 #[async_trait]
 impl FileHandle for CachingFileHandle {
+    /// Does not reserve memory: sync reads are only used by indexing.
     fn read_bytes(&self, byte_range: Range<usize>) -> io::Result<OwnedBytes> {
         if let Some(bytes) = self.cache.get_slice(byte_range.clone()) {
             return Ok(bytes);
         }
-        let read_reservation = self
-            .memory_reserver
-            .try_reserve_memory(byte_range.len() as u64)?;
         let owned_bytes = self.underlying_filehandle.read_bytes(byte_range.clone())?;
-        let num_added_bytes = self.cache.put_slice(byte_range, owned_bytes.clone());
-        read_reservation.keep(num_added_bytes);
+        self.cache.put_slice(byte_range, owned_bytes.clone());
         Ok(owned_bytes)
     }
 
@@ -218,7 +215,8 @@ impl FileHandle for CachingFileHandle {
         }
         let read_reservation = self
             .memory_reserver
-            .try_reserve_memory(byte_range.len() as u64)?;
+            .reserve_memory(byte_range.len() as u64)
+            .await?;
         let read_bytes = self
             .underlying_filehandle
             .read_bytes_async(byte_range.clone())
@@ -303,8 +301,9 @@ mod tests {
         }
     }
 
+    #[async_trait]
     impl MemoryReserver for LimitedMemoryReserver {
-        fn try_reserve_memory(
+        async fn reserve_memory(
             &self,
             num_bytes: u64,
         ) -> Result<MemoryReservation<'_>, OutOfMemoryError> {
@@ -313,7 +312,7 @@ mod tests {
                     let new_reserved = reserved + num_bytes;
                     (new_reserved <= self.limit).then_some(new_reserved)
                 })
-                .map_err(|_| OutOfMemoryError::GlobalBudgetExceeded)?;
+                .map_err(|_| OutOfMemoryError)?;
             Ok(MemoryReservation::new(self, num_bytes))
         }
 
@@ -371,22 +370,15 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_caching_file_handle_releases_memory_on_read_error() {
+    #[tokio::test]
+    async fn test_caching_file_handle_releases_memory_on_async_read_panic() {
         let memory_reserver = LimitedMemoryReserver::new(100);
-        let file_handle = failing_caching_file_handle(ReadFailure::Error, memory_reserver.clone());
-        assert!(file_handle.read_bytes(0..5).is_err());
-        assert_eq!(memory_reserver.reserved(), 0);
-    }
-
-    #[test]
-    fn test_caching_file_handle_releases_memory_on_read_panic() {
-        let memory_reserver = LimitedMemoryReserver::new(100);
-        let file_handle = failing_caching_file_handle(ReadFailure::Panic, memory_reserver.clone());
-        let read_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            file_handle.read_bytes(0..5)
-        }));
-        assert!(read_res.is_err());
+        let file_handle = Arc::new(failing_caching_file_handle(
+            ReadFailure::Panic,
+            memory_reserver.clone(),
+        ));
+        let join_res = tokio::spawn(async move { file_handle.read_bytes_async(0..5).await }).await;
+        assert!(join_res.unwrap_err().is_panic());
         assert_eq!(memory_reserver.reserved(), 0);
     }
 
@@ -433,24 +425,23 @@ mod tests {
     }
 
     #[test]
-    fn test_caching_directory_reserves_memory_on_cache_miss() {
+    fn test_caching_directory_sync_read_does_not_reserve_memory() {
         let test_path = Path::new("test");
         let debug_proxy_directory = debug_proxy_directory_with_file(test_path, b"hello world");
-        let memory_reserver = LimitedMemoryReserver::new(100);
+        let memory_reserver = LimitedMemoryReserver::new(4);
         let caching_directory = CachingDirectory::new_unbounded(debug_proxy_directory.clone())
             .with_memory_reserver(memory_reserver.clone());
         let file_handle = caching_directory.get_file_handle(test_path).unwrap();
 
+        // Would go over the limit of the memory reserver if it was accounted for.
         file_handle.read_bytes(0..5).unwrap();
-        assert_eq!(memory_reserver.reserved(), 5);
-        // A cache hit does not reserve memory.
         file_handle.read_bytes(0..5).unwrap();
-        assert_eq!(memory_reserver.reserved(), 5);
+        assert_eq!(memory_reserver.reserved(), 0);
         assert_eq!(debug_proxy_directory.drain_read_operations().count(), 1);
     }
 
-    #[test]
-    fn test_caching_directory_reserves_overlapping_bytes_once() {
+    #[tokio::test]
+    async fn test_caching_directory_reserves_overlapping_bytes_once() {
         let test_path = Path::new("test");
         let debug_proxy_directory = debug_proxy_directory_with_file(test_path, b"hello world");
         let memory_reserver = LimitedMemoryReserver::new(100);
@@ -460,9 +451,9 @@ mod tests {
                 .with_memory_reserver(memory_reserver.clone());
         let file_handle = caching_directory.get_file_handle(test_path).unwrap();
 
-        file_handle.read_bytes(0..5).unwrap();
+        file_handle.read_bytes_async(0..5).await.unwrap();
         // A cache miss: 3..5 is cached, but not 5..8. Only 5..8 stays reserved.
-        file_handle.read_bytes(3..8).unwrap();
+        file_handle.read_bytes_async(3..8).await.unwrap();
         assert_eq!(debug_proxy_directory.drain_read_operations().count(), 2);
         assert_eq!(byte_range_cache.get_num_bytes(), 8);
         assert_eq!(memory_reserver.reserved(), 8);
@@ -495,11 +486,7 @@ mod tests {
 
         let io_error = file_handle.read_bytes_async(0..5).await.unwrap_err();
         assert_eq!(io_error.kind(), io::ErrorKind::OutOfMemory);
-        assert_eq!(
-            io_error.to_string(),
-            "out of warmup memory: global budget exceeded"
-        );
-        assert!(file_handle.read_bytes(0..5).is_err());
+        assert_eq!(io_error.to_string(), "out of warmup memory");
         // The underlying directory is never called and nothing is cached.
         assert_eq!(debug_proxy_directory.drain_read_operations().count(), 0);
         assert_eq!(memory_reserver.reserved(), 0);
