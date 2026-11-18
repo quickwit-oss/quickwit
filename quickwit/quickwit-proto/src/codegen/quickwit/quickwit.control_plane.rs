@@ -77,13 +77,11 @@ pub struct AdviseResetShardsResponse {
     #[prost(message, repeated, tag = "1")]
     pub shards_to_delete: ::prost::alloc::vec::Vec<super::ingest::ShardIds>,
     #[prost(message, repeated, tag = "2")]
-    pub shards_to_truncate: ::prost::alloc::vec::Vec<super::ingest::ShardIdPositions>,
+    pub shards_to_keep: ::prost::alloc::vec::Vec<super::ingest::ShardIdPositions>,
     #[prost(message, repeated, tag = "3")]
     pub reconcile_shards_to_force_delete: ::prost::alloc::vec::Vec<
         super::ingest::ShardIds,
     >,
-    #[prost(message, repeated, tag = "4")]
-    pub reconcile_shards_to_keep: ::prost::alloc::vec::Vec<super::ingest::ShardIds>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]

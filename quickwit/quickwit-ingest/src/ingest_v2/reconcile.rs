@@ -203,11 +203,6 @@ async fn apply_reset_shards_response(
     reconcile_shards_response: AdviseResetShardsResponse,
     now: Instant,
 ) -> anyhow::Result<()> {
-    let queue_ids_to_keep: Vec<QueueId> = reconcile_shards_response
-        .reconcile_shards_to_keep
-        .iter()
-        .flat_map(|shard_ids| shard_ids.queue_ids())
-        .collect();
     let queue_ids_to_delete: Vec<QueueId> = reconcile_shards_response
         .shards_to_delete
         .iter()
@@ -218,15 +213,15 @@ async fn apply_reset_shards_response(
         .iter()
         .flat_map(|shard_ids| shard_ids.queue_ids())
         .collect();
-    let queue_positions_to_truncate: Vec<(QueueId, Position)> = reconcile_shards_response
-        .shards_to_truncate
+    let queue_positions_to_keep: Vec<(QueueId, Position)> = reconcile_shards_response
+        .shards_to_keep
         .iter()
         .flat_map(|shard_id_positions| shard_id_positions.queue_id_positions())
         .collect();
 
     let mut state_guard = state.lock_fully("reconcile_shards").await?;
 
-    for queue_id in &queue_ids_to_keep {
+    for (queue_id, _) in &queue_positions_to_keep {
         let Some(shard) = state_guard.shards.get_mut(queue_id) else {
             warn!("control plane advised keeping shard `{queue_id}` which no longer exists");
             continue;
@@ -257,7 +252,7 @@ async fn apply_reset_shards_response(
             .delete_shard(queue_id, "control-plane-reconcile-shards-rpc")
             .await;
     }
-    for (queue_id, publish_position) in &queue_positions_to_truncate {
+    for (queue_id, publish_position) in &queue_positions_to_keep {
         state_guard
             .truncate_shard(
                 queue_id,
@@ -270,14 +265,12 @@ async fn apply_reset_shards_response(
     drop(state_guard);
 
     info!(
-        "reconciled shards in {}: kept {}, deleted {}, force deleted {}, closed {} unsafe \
-         deletes, truncated {}",
+        "reconciled shards in {}: kept {}, deleted {}, force deleted {}, closed {} unsafe deletes",
         now.elapsed().pretty_display(),
-        queue_ids_to_keep.len(),
+        queue_positions_to_keep.len(),
         num_deleted_shards,
         queue_ids_to_force_delete.len(),
         num_unsafe_deletes,
-        queue_positions_to_truncate.len(),
     );
     Ok(())
 }
@@ -287,7 +280,7 @@ mod tests {
     use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_config::service::QuickwitService;
     use quickwit_proto::control_plane::MockControlPlaneService;
-    use quickwit_proto::ingest::ShardState;
+    use quickwit_proto::ingest::{ShardIdPosition, ShardIdPositions, ShardState};
     use quickwit_proto::types::queue_id;
 
     use super::*;
@@ -397,11 +390,21 @@ mod tests {
                 shard_ids,
             }]
         };
+        let shard_positions_to_keep: Vec<ShardIdPosition> = shard_ids_to_keep
+            .into_iter()
+            .map(|shard_id| ShardIdPosition {
+                shard_id: Some(shard_id),
+                publish_position_inclusive: Some(Position::Beginning),
+            })
+            .collect();
         let response = AdviseResetShardsResponse {
-            reconcile_shards_to_keep: to_shard_ids(shard_ids_to_keep),
             shards_to_delete: to_shard_ids(shard_ids_to_delete),
             reconcile_shards_to_force_delete: to_shard_ids(shard_ids_to_force_delete),
-            shards_to_truncate: Vec::new(),
+            shards_to_keep: vec![ShardIdPositions {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_positions: shard_positions_to_keep,
+            }],
         };
         let mut mock_control_plane = MockControlPlaneService::new();
         mock_control_plane

@@ -1226,7 +1226,7 @@ impl IngestController {
 
         AdviseResetShardsResponse {
             shards_to_delete,
-            shards_to_truncate,
+            shards_to_keep: shards_to_truncate,
             ..Default::default()
         }
     }
@@ -1245,10 +1245,9 @@ impl IngestController {
         );
         debug!(shard_ids=?summarize_shard_ids(&request.shard_ids), "reconcile shards");
 
-        let mut shards_to_keep: Vec<ShardIds> = Vec::new();
         let mut shards_to_delete: Vec<ShardIds> = Vec::new();
         let mut shards_to_force_delete: Vec<ShardIds> = Vec::new();
-        let mut shards_to_truncate: Vec<ShardIdPositions> = Vec::new();
+        let mut shards_to_keep: Vec<ShardIdPositions> = Vec::new();
 
         for shard_ids in request.shard_ids {
             let source_uid = SourceUid {
@@ -1260,26 +1259,17 @@ impl IngestController {
                 shards_to_force_delete.push(shard_ids);
                 continue;
             };
-            let mut shard_ids_to_keep = Vec::new();
             let mut shard_ids_to_delete = Vec::new();
-            let mut shard_positions_to_truncate = Vec::new();
+            let mut shard_positions = Vec::new();
 
             for shard_id in shard_ids.shard_ids {
                 let Some(shard_entry) = shard_entries.get(&shard_id) else {
                     shard_ids_to_delete.push(shard_id);
                     continue;
                 };
-                shard_positions_to_truncate.push(ShardIdPosition {
-                    shard_id: Some(shard_id.clone()),
+                shard_positions.push(ShardIdPosition {
+                    shard_id: Some(shard_id),
                     publish_position_inclusive: Some(shard_entry.publish_position_inclusive()),
-                });
-                shard_ids_to_keep.push(shard_id);
-            }
-            if !shard_ids_to_keep.is_empty() {
-                shards_to_keep.push(ShardIds {
-                    index_uid: Some(source_uid.index_uid.clone()),
-                    source_id: source_uid.source_id.clone(),
-                    shard_ids: shard_ids_to_keep,
                 });
             }
             if !shard_ids_to_delete.is_empty() {
@@ -1289,25 +1279,23 @@ impl IngestController {
                     shard_ids: shard_ids_to_delete,
                 });
             }
-            if !shard_positions_to_truncate.is_empty() {
-                shards_to_truncate.push(ShardIdPositions {
+            if !shard_positions.is_empty() {
+                shards_to_keep.push(ShardIdPositions {
                     index_uid: Some(source_uid.index_uid),
                     source_id: source_uid.source_id,
-                    shard_positions: shard_positions_to_truncate,
+                    shard_positions,
                 });
             }
         }
         debug!(
-            shard_ids_to_keep=?summarize_shard_ids(&shards_to_keep),
             shard_ids_to_delete=?summarize_shard_ids(&shards_to_delete),
             shard_ids_to_force_delete=?summarize_shard_ids(&shards_to_force_delete),
             "reconcile shards response"
         );
         AdviseResetShardsResponse {
             shards_to_delete,
-            shards_to_truncate,
+            shards_to_keep,
             reconcile_shards_to_force_delete: shards_to_force_delete,
-            reconcile_shards_to_keep: shards_to_keep,
         }
     }
 
@@ -3914,9 +3902,9 @@ mod tests {
         assert_eq!(shard_to_delete_01.shard_ids.len(), 1);
         assert_eq!(shard_to_delete_01.shard_ids[0], ShardId::from(3));
 
-        assert_eq!(advise_reset_shards_response.shards_to_truncate.len(), 1);
+        assert_eq!(advise_reset_shards_response.shards_to_keep.len(), 1);
 
-        let shard_to_truncate = &advise_reset_shards_response.shards_to_truncate[0];
+        let shard_to_truncate = &advise_reset_shards_response.shards_to_keep[0];
         assert_eq!(shard_to_truncate.index_uid(), &index_uid);
         assert_eq!(shard_to_truncate.source_id, source_id_00);
         assert_eq!(shard_to_truncate.shard_positions.len(), 1);
@@ -3977,14 +3965,6 @@ mod tests {
         let advise_reset_shards_response =
             controller.advise_reset_shards(advise_reset_shards_request, &model);
 
-        assert_eq!(
-            advise_reset_shards_response.reconcile_shards_to_keep.len(),
-            1
-        );
-        let shard_to_keep = &advise_reset_shards_response.reconcile_shards_to_keep[0];
-        assert_eq!(shard_to_keep.source_id, source_id_00);
-        assert_eq!(shard_to_keep.shard_ids, [ShardId::from(1)]);
-
         assert_eq!(advise_reset_shards_response.shards_to_delete.len(), 1);
         let shard_to_delete = &advise_reset_shards_response.shards_to_delete[0];
         assert_eq!(shard_to_delete.source_id, source_id_00);
@@ -4001,11 +3981,16 @@ mod tests {
         assert_eq!(shard_to_force_delete.source_id, source_id_01);
         assert_eq!(shard_to_force_delete.shard_ids, [ShardId::from(3)]);
 
-        assert_eq!(advise_reset_shards_response.shards_to_truncate.len(), 1);
-        let shard_to_truncate = &advise_reset_shards_response.shards_to_truncate[0];
-        assert_eq!(shard_to_truncate.source_id, source_id_00);
+        assert_eq!(advise_reset_shards_response.shards_to_keep.len(), 1);
+        let shard_to_keep = &advise_reset_shards_response.shards_to_keep[0];
+        assert_eq!(shard_to_keep.source_id, source_id_00);
+        assert_eq!(shard_to_keep.shard_positions.len(), 1);
         assert_eq!(
-            shard_to_truncate.shard_positions[0].publish_position_inclusive(),
+            shard_to_keep.shard_positions[0].shard_id(),
+            &ShardId::from(1)
+        );
+        assert_eq!(
+            shard_to_keep.shard_positions[0].publish_position_inclusive(),
             Position::offset(1337u64)
         );
     }

@@ -3282,7 +3282,7 @@ mod tests {
                         source_id: "test-source".to_string(),
                         shard_ids: vec![ShardId::from(1)],
                     }],
-                    shards_to_truncate: vec![ShardIdPositions {
+                    shards_to_keep: vec![ShardIdPositions {
                         index_uid: Some(IndexUid::for_test("test-index", 0)),
                         source_id: "test-source".to_string(),
                         shard_positions: vec![ShardIdPosition {
@@ -3291,7 +3291,6 @@ mod tests {
                         }],
                     }],
                     reconcile_shards_to_force_delete: Vec::new(),
-                    reconcile_shards_to_keep: Vec::new(),
                 };
                 Ok(response)
             });
