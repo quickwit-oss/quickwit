@@ -26,7 +26,7 @@ import { Settings } from "@styled-icons/feather/Settings";
 import { GroupWork } from "@styled-icons/material-outlined/GroupWork";
 import { CodeSSlash } from "@styled-icons/remix-line/CodeSSlash";
 import * as React from "react";
-import { Link as RouterLink, LinkProps as RouterLinkProps } from "react-router";
+import { Link as RouterLink } from "react-router";
 import { useLocalStorage } from "../providers/LocalStorageProvider";
 import { toUrlSearchRequestParams } from "../utils/urls";
 import { APP_BAR_HEIGHT_PX } from "./LayoutUtils";
@@ -40,21 +40,10 @@ interface ListItemLinkProps {
 function ListItemLink(props: ListItemLinkProps) {
   const { icon, primary, to } = props;
 
-  const renderLink = React.useMemo(
-    () =>
-      React.forwardRef<HTMLAnchorElement, Omit<RouterLinkProps, "to">>(
-        function Link(itemProps, ref) {
-          return (
-            // biome-ignore lint/a11y/useValidAriaRole: remove the role
-            <RouterLink to={to} ref={ref} {...itemProps} role={undefined} />
-          );
-        },
-      ),
-    [to],
-  );
-
+  // Passing `to` to the button (rather than closing over it in a wrapper
+  // component) lets ButtonBase see a link and skip `role="button"`.
   return (
-    <ListItemButton component={renderLink}>
+    <ListItemButton component={RouterLink} to={to}>
       {icon ? (
         <ListItemIcon sx={{ minWidth: "40px" }}>{icon}</ListItemIcon>
       ) : null}
