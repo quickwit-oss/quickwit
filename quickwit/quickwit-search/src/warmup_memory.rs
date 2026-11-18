@@ -14,100 +14,134 @@
 
 //! Node-wide accounting of the memory reserved by split search warmups.
 //!
+//! Each split search owns one [`WarmupMemoryGuard`]. Guards get increasing ids, in the order in
+//! which split searches are granted a permit. All the memory requests of split searches, including
+//! their initial reservation, go through a single queue, served by guard id, then in arrival
+//! order. So older split searches are served first, and a request never passes an older one.
+//!
 //! # Why split searches can wait for memory without deadlocking
 //!
-//! Each split search holds one [`WarmupMemoryGuard`], and grows it during its warmup. If split
-//! searches could simply wait for memory, they could all hold some memory and wait for more,
-//! forever. To prevent that, the oldest split search (the one whose guard was allocated first)
+//! If split searches could simply wait for memory, they could all hold some memory and wait for
+//! more, forever. To prevent that, the oldest split search (the live guard with the smallest id)
 //! never has to wait:
 //!
 //! - a guard never holds more than `split_max_allocation`;
-//! - the oldest split search can allocate up to `limit`;
-//! - the other split searches can only allocate up to `limit - split_max_allocation`.
+//! - the oldest guard can grow up to `limit`;
+//! - the other guards can only grow up to `limit - split_max_allocation`.
 //!
-//! So the memory held by the other split searches is at most `limit - split_max_allocation`, and
-//! the oldest split search can always grow to `split_max_allocation`. It completes, drops its
-//! guard, and the next split search becomes the oldest one.
+//! So the other guards hold at most `limit - split_max_allocation`, and the requests of the oldest
+//! guard always fit. Its requests are at the front of the queue, since it has the smallest id. It
+//! completes, its guard is dropped, and the next guard becomes the oldest one.
 
-use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use bytesize::ByteSize;
 use quickwit_directories::OutOfMemoryError;
-use tokio::sync::Notify;
+use tokio::sync::oneshot;
+use tracing::error;
 
 use crate::metrics::LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES;
 
-/// Called after memory is freed.
-type OnMemoryFreed = Box<dyn Fn() + Send + Sync>;
+/// Growth factor of a reservation, as `GROWTH_NUMERATOR / GROWTH_DENOMINATOR`.
+///
+/// Growing exponentially reduces the number of requests that have to wait, at the cost of
+/// reserving up to 70% more memory than needed during the warmup.
+const GROWTH_NUMERATOR: u64 = 17;
+const GROWTH_DENOMINATOR: u64 = 10;
+
+/// Identifies the split search that owns a [`WarmupMemoryGuard`].
+///
+/// Increases with the creation order of the guards, which is the order in which permits are
+/// granted: the smallest live id is the oldest split search.
+type SplitSearchId = u64;
 
 /// Memory reserved by split search warmups on this node.
 ///
-/// It is shared by the search permit actor and by every [`WarmupMemoryGuard`].
-///
-/// Invariants:
-/// - `allocated <= limit`;
-/// - each guard holds at most `split_max_allocation`;
-/// - the guards other than the oldest one hold at most `limit - split_max_allocation` in total.
+/// Shared by the search permit actor, which creates the guards, and by every
+/// [`WarmupMemoryGuard`].
 #[derive(Clone)]
 pub(crate) struct GlobalWarmupMemory {
-    inner: Arc<GlobalWarmupMemoryInner>,
+    /// Only locked for some bookkeeping, never across an `.await`.
+    state: Arc<Mutex<GlobalWarmupMemoryState>>,
 }
 
-struct GlobalWarmupMemoryInner {
-    /// Only locked for some arithmetic, never across an `.await`.
-    state: Mutex<GlobalWarmupMemoryState>,
+/// Invariants:
+/// - `allocated` is the sum of `held` over all guards, and `allocated <= limit`;
+/// - for each guard, `in_use <= held <= split_max_allocation`;
+/// - the guards other than the oldest one hold at most `limit - split_max_allocation` in total.
+struct GlobalWarmupMemoryState {
     limit: u64,
     split_max_allocation: u64,
-    on_memory_freed: OnMemoryFreed,
-    /// Notified each time memory is freed or a guard is dropped, so that waiting split searches
-    /// try again.
-    memory_freed_notify: Arc<Notify>,
+    allocated: u64,
+    /// Live guards. The first key is the oldest guard.
+    guards: BTreeMap<SplitSearchId, GuardAccount>,
+    /// Requests waiting for memory, served by guard id, then in arrival order.
+    ///
+    /// May contain cancelled requests: they are removed when `serve_waiters` meets them.
+    waiters: BTreeMap<(SplitSearchId, u64), Waiter>,
+    next_guard_id: SplitSearchId,
+    next_waiter_seq: u64,
 }
 
-struct GlobalWarmupMemoryState {
-    allocated: u64,
-    /// Ids of the live guards. The smallest one is the oldest split search.
-    live_guard_ids: BTreeSet<u64>,
-    next_guard_id: u64,
+#[derive(Default)]
+struct GuardAccount {
+    /// Memory reserved by the split search.
+    held: u64,
+    /// Bytes of the data that entered the split's warmup cache.
+    in_use: u64,
+    /// Sum of the `in_use_delta` of this guard's waiters, including cancelled ones that are not
+    /// removed yet.
+    ///
+    /// Counted in the per-split limit check, so that `in_use` can never go over the limit once
+    /// they are served. Counting cancelled waiters only makes the check stricter.
+    waiting: u64,
+}
+
+#[derive(Clone, Copy)]
+struct MemoryRequest {
+    /// Added to `in_use` once served. 0 for the initial reservation.
+    in_use_delta: u64,
+    /// `held` is grown to at least this once served. 0 for reads.
+    min_held: u64,
+}
+
+impl MemoryRequest {
+    /// `held` must reach this to serve the request.
+    fn needed_held(&self, in_use: u64) -> u64 {
+        self.min_held.max(in_use + self.in_use_delta)
+    }
+}
+
+struct Waiter {
+    request: MemoryRequest,
+    served_tx: oneshot::Sender<()>,
 }
 
 impl GlobalWarmupMemory {
     /// Creates a warmup memory that never allocates more than `limit`, and never more than
     /// `split_max_allocation` for a single guard.
     ///
-    /// `on_memory_freed` is called each time memory is freed or a guard is dropped, after the
-    /// memory is freed. The search permit actor uses it to try granting pending permits again. It
-    /// is called from the thread that frees the memory, possibly while a lock is held, so it must
-    /// be quick and must not block.
-    ///
     /// # Panics
     ///
     /// Panics if `split_max_allocation` is larger than `limit`.
-    pub fn with_limits_and_free_callback(
-        limit: ByteSize,
-        split_max_allocation: ByteSize,
-        on_memory_freed: impl Fn() + Send + Sync + 'static,
-    ) -> Self {
+    pub fn new(limit: ByteSize, split_max_allocation: ByteSize) -> Self {
         assert!(
             split_max_allocation <= limit,
             "split_max_allocation ({split_max_allocation}) must be lower or equal to the limit \
              ({limit})"
         );
         let state = GlobalWarmupMemoryState {
-            allocated: 0,
-            live_guard_ids: BTreeSet::new(),
-            next_guard_id: 0,
-        };
-        let inner = GlobalWarmupMemoryInner {
-            state: Mutex::new(state),
             limit: limit.as_u64(),
             split_max_allocation: split_max_allocation.as_u64(),
-            on_memory_freed: Box::new(on_memory_freed),
-            memory_freed_notify: Arc::new(Notify::new()),
+            allocated: 0,
+            guards: BTreeMap::new(),
+            waiters: BTreeMap::new(),
+            next_guard_id: 0,
+            next_waiter_seq: 0,
         };
         GlobalWarmupMemory {
-            inner: Arc::new(inner),
+            state: Arc::new(Mutex::new(state)),
         }
     }
 
@@ -117,420 +151,564 @@ impl GlobalWarmupMemory {
         self.lock_state().allocated
     }
 
-    /// Allocates `num_bytes` for a new split search, or fails if this would break the limits.
+    /// Creates a guard that holds no memory yet.
     ///
-    /// The new guard is the youngest one. If there is no other live guard, it is the oldest one
-    /// and can use the whole limit. The memory is freed when the guard is dropped.
-    pub fn try_allocate(&self, num_bytes: u64) -> Result<WarmupMemoryGuard, OutOfMemoryError> {
-        if num_bytes > self.inner.split_max_allocation {
-            return Err(OutOfMemoryError::SplitBudgetExceeded);
-        }
+    /// The guard is younger than all the live guards: its requests are served after theirs.
+    pub fn new_guard(&self) -> WarmupMemoryGuard {
         let mut state = self.lock_state();
-        let limit = if state.live_guard_ids.is_empty() {
-            self.inner.limit
-        } else {
-            self.non_oldest_limit()
-        };
-        state.try_add(num_bytes, limit)?;
         let guard_id = state.next_guard_id;
         state.next_guard_id += 1;
-        state.live_guard_ids.insert(guard_id);
-        Ok(WarmupMemoryGuard {
+        state.guards.insert(guard_id, GuardAccount::default());
+        WarmupMemoryGuard {
             global: self.clone(),
             guard_id,
-            num_bytes,
-        })
+        }
     }
 
-    /// Memory the guards other than the oldest one can allocate in total.
-    fn non_oldest_limit(&self) -> u64 {
-        self.inner.limit - self.inner.split_max_allocation
-    }
-
-    fn lock_state(&self) -> MutexGuard<'_, GlobalWarmupMemoryState> {
-        self.inner
-            .state
-            .lock()
-            .expect("global warmup memory lock should not be poisoned")
-    }
-
-    /// Wakes up the permit actor and the split searches waiting for memory.
+    /// Locks the state, even if a panic poisoned the lock.
     ///
-    /// Must be called after the state lock is released.
-    fn notify_memory_freed(&self) {
-        (self.inner.on_memory_freed)();
-        self.inner.memory_freed_notify.notify_waiters();
+    /// The state is also locked from `Drop`, possibly while a panic unwinds, so this must not
+    /// panic.
+    fn lock_state(&self) -> MutexGuard<'_, GlobalWarmupMemoryState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
 impl GlobalWarmupMemoryState {
-    /// Adds `num_bytes` to the allocated memory, or fails if the total would go over `limit`.
-    fn try_add(&mut self, num_bytes: u64, limit: u64) -> Result<(), OutOfMemoryError> {
-        let new_allocated = self
-            .allocated
-            .checked_add(num_bytes)
-            .filter(|new_allocated| *new_allocated <= limit)
-            .ok_or(OutOfMemoryError::GlobalBudgetExceeded)?;
-        self.allocated = new_allocated;
-        LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES.set(new_allocated as f64);
-        Ok(())
+    fn account(&self, guard_id: SplitSearchId) -> &GuardAccount {
+        self.guards
+            .get(&guard_id)
+            .expect("a live guard should have an account")
     }
 
-    /// Frees `num_bytes`. Never frees more than allocated: only called by [`WarmupMemoryGuard`],
-    /// with bytes the guard holds.
-    fn sub(&mut self, num_bytes: u64) {
-        self.allocated -= num_bytes;
-        LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES.set(self.allocated as f64);
+    fn account_mut(&mut self, guard_id: SplitSearchId) -> &mut GuardAccount {
+        self.guards
+            .get_mut(&guard_id)
+            .expect("a live guard should have an account")
     }
 
-    fn is_oldest(&self, guard_id: u64) -> bool {
-        self.live_guard_ids.first() == Some(&guard_id)
+    fn is_oldest(&self, guard_id: SplitSearchId) -> bool {
+        self.guards.first_key_value().map(|(id, _)| *id) == Some(guard_id)
+    }
+
+    fn set_allocated(&mut self, allocated: u64) {
+        self.allocated = allocated;
+        LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES.set(allocated as f64);
+    }
+
+    /// Checks the per-split limit, then serves the request right away if it fits in the memory
+    /// the guard already holds. Returns whether the request was served.
+    fn check_and_serve_from_reservation(
+        &mut self,
+        guard_id: SplitSearchId,
+        request: MemoryRequest,
+    ) -> Result<bool, OutOfMemoryError> {
+        let split_max_allocation = self.split_max_allocation;
+        let account = self.account_mut(guard_id);
+        let max_needed_held = request
+            .min_held
+            .max(account.in_use + account.waiting + request.in_use_delta);
+        if max_needed_held > split_max_allocation {
+            return Err(OutOfMemoryError);
+        }
+        if request.needed_held(account.in_use) > account.held {
+            return Ok(false);
+        }
+        account.in_use += request.in_use_delta;
+        Ok(true)
+    }
+
+    /// Serves the request by growing the guard's reservation, if that fits in the limit of the
+    /// guard. Returns whether the request was served.
+    ///
+    /// Grows by `GROWTH_NUMERATOR / GROWTH_DENOMINATOR` if that fits, and by the exact need
+    /// otherwise. So the exponential growth never makes a request wait.
+    ///
+    /// Contract: the request passed the per-split limit check.
+    fn try_serve_by_growing(&mut self, guard_id: SplitSearchId, request: MemoryRequest) -> bool {
+        let limit = if self.is_oldest(guard_id) {
+            self.limit
+        } else {
+            self.limit - self.split_max_allocation
+        };
+        let split_max_allocation = self.split_max_allocation;
+        let allocated = self.allocated;
+        let account = self.account(guard_id);
+        let needed_held = request.needed_held(account.in_use);
+        debug_assert!(needed_held <= split_max_allocation);
+        let exact_growth = needed_held.saturating_sub(account.held);
+        let exponential_growth = account
+            .held
+            .saturating_mul(GROWTH_NUMERATOR)
+            .div_ceil(GROWTH_DENOMINATOR)
+            .min(split_max_allocation)
+            .saturating_sub(account.held);
+        let growth = if exact_growth == 0 {
+            0
+        } else if exponential_growth > exact_growth && allocated + exponential_growth <= limit {
+            exponential_growth
+        } else if allocated + exact_growth <= limit {
+            exact_growth
+        } else {
+            return false;
+        };
+        let account = self.account_mut(guard_id);
+        account.held += growth;
+        account.in_use += request.in_use_delta;
+        self.set_allocated(allocated + growth);
+        true
+    }
+
+    /// Adds a waiter for the request, then serves the waiters. The returned receiver gets a
+    /// value once the request is served, possibly already.
+    fn enqueue(
+        &mut self,
+        guard_id: SplitSearchId,
+        request: MemoryRequest,
+    ) -> oneshot::Receiver<()> {
+        let (served_tx, served_rx) = oneshot::channel();
+        let waiter_seq = self.next_waiter_seq;
+        self.next_waiter_seq += 1;
+        self.account_mut(guard_id).waiting += request.in_use_delta;
+        let waiter = Waiter { request, served_tx };
+        self.waiters.insert((guard_id, waiter_seq), waiter);
+        self.serve_waiters();
+        served_rx
+    }
+
+    /// Serves the waiters in order, until one does not fit. Called after each change that can
+    /// let a waiter be served: a new waiter, freed memory, a dropped guard.
+    fn serve_waiters(&mut self) {
+        while let Some((&waiter_key, waiter)) = self.waiters.first_key_value() {
+            let (guard_id, _waiter_seq) = waiter_key;
+            let request = waiter.request;
+            if waiter.served_tx.is_closed() {
+                // The request was cancelled.
+                self.waiters.remove(&waiter_key);
+                self.account_mut(guard_id).waiting -= request.in_use_delta;
+                continue;
+            }
+            if !self.try_serve_by_growing(guard_id, request) {
+                if self.is_oldest(guard_id) {
+                    error!(
+                        guard_id,
+                        "the oldest split search could not get warmup memory: this is a bug"
+                    );
+                }
+                // Strict order: a request never passes an older one.
+                return;
+            }
+            let waiter = self
+                .waiters
+                .remove(&waiter_key)
+                .expect("the waiter should still be in the queue");
+            let account = self.account_mut(guard_id);
+            account.waiting -= request.in_use_delta;
+            if waiter.served_tx.send(()).is_err() {
+                // The request was cancelled after the `is_closed` check: nobody will use these
+                // bytes. The memory stays in the reservation, and is freed by the next shrink.
+                account.in_use -= request.in_use_delta;
+            }
+        }
+    }
+
+    /// Shrinks the reservation of the guard to `max_num_bytes`, but never below its memory in use.
+    fn shrink_reservation(&mut self, guard_id: SplitSearchId, max_num_bytes: u64) {
+        let account = self.account_mut(guard_id);
+        let new_held = max_num_bytes.max(account.in_use);
+        if new_held >= account.held {
+            return;
+        }
+        let freed_num_bytes = account.held - new_held;
+        account.held = new_held;
+        self.set_allocated(self.allocated - freed_num_bytes);
+        self.serve_waiters();
+    }
+
+    fn remove_guard(&mut self, guard_id: SplitSearchId) {
+        let account = self
+            .guards
+            .remove(&guard_id)
+            .expect("a live guard should have an account");
+        // A guard cannot be dropped while one of its requests is waiting: the remaining waiters
+        // are cancelled ones.
+        self.waiters
+            .retain(|&(waiter_guard_id, _), _| waiter_guard_id != guard_id);
+        self.set_allocated(self.allocated - account.held);
+        // The oldest guard may have changed: its waiters can now use the whole limit.
+        self.serve_waiters();
     }
 }
 
-/// Memory allocated in a [`GlobalWarmupMemory`] for one split search. Freed on drop.
+/// Memory reserved in a [`GlobalWarmupMemory`] for one split search. Freed on drop.
 ///
-/// Shrinking or dropping a guard calls the `on_memory_freed` callback of the global warmup memory.
+/// The bytes are accounted in the global warmup memory: this is just a handle.
 pub(crate) struct WarmupMemoryGuard {
     global: GlobalWarmupMemory,
-    /// Increases with the allocation order: the smallest live id is the oldest split search.
-    guard_id: u64,
-    num_bytes: u64,
+    /// Increases with the creation order: the smallest live id is the oldest split search.
+    guard_id: SplitSearchId,
 }
 
 impl WarmupMemoryGuard {
-    /// Number of bytes held by this guard.
+    /// Number of bytes reserved by this guard.
     pub fn num_bytes(&self) -> u64 {
-        self.num_bytes
+        self.global.lock_state().account(self.guard_id).held
     }
 
-    /// Maximum number of bytes this guard can hold.
+    /// Number of bytes in use, out of the reserved ones.
+    #[cfg(test)]
+    pub fn in_use_num_bytes(&self) -> u64 {
+        self.global.lock_state().account(self.guard_id).in_use
+    }
+
+    /// Maximum number of bytes this guard can reserve.
     pub fn max_num_bytes(&self) -> u64 {
-        self.global.inner.split_max_allocation
+        self.global.lock_state().split_max_allocation
     }
 
-    /// Whether this guard is the oldest live guard.
+    /// Reserves `num_bytes` for data entering the warmup cache. Waits until the memory is
+    /// available.
     ///
-    /// Once a guard is the oldest one, it stays the oldest one until it is dropped.
-    pub fn is_oldest(&self) -> bool {
-        self.global.lock_state().is_oldest(self.guard_id)
-    }
-
-    /// Notified each time memory is freed or a guard is dropped. Waiting on it is how a split
-    /// search waits for memory.
-    pub fn memory_freed_notify(&self) -> Arc<Notify> {
-        self.global.inner.memory_freed_notify.clone()
-    }
-
-    /// Frees memory so that this guard only holds `new_num_bytes`.
+    /// Fails right away with `OutOfMemoryError` if the guard would go over the per-split limit.
     ///
-    /// # Panics
-    ///
-    /// Panics if `new_num_bytes` is larger than the current size.
-    pub fn shrink_to(&mut self, new_num_bytes: u64) {
-        assert!(
-            new_num_bytes <= self.num_bytes,
-            "shrink_to cannot grow a warmup memory guard"
-        );
-        let freed_num_bytes = self.num_bytes - new_num_bytes;
-        if freed_num_bytes == 0 {
-            return;
-        }
-        self.global.lock_state().sub(freed_num_bytes);
-        self.num_bytes = new_num_bytes;
-        self.global.notify_memory_freed();
-    }
-
-    /// Adds `additional_num_bytes` to this guard, or fails if this would break the limits:
-    /// - `SplitBudgetExceeded` if the guard would hold more than `max_num_bytes`;
-    /// - `GlobalBudgetExceeded` if there is not enough memory left. This never happens to the
-    ///   oldest guard.
-    ///
-    /// On failure, the guard is left unchanged.
-    pub fn try_grow(&mut self, additional_num_bytes: u64) -> Result<(), OutOfMemoryError> {
-        let new_num_bytes = self
-            .num_bytes
-            .checked_add(additional_num_bytes)
-            .filter(|new_num_bytes| *new_num_bytes <= self.max_num_bytes())
-            .ok_or(OutOfMemoryError::SplitBudgetExceeded)?;
-        let mut state = self.global.lock_state();
-        let limit = if state.is_oldest(self.guard_id) {
-            self.global.inner.limit
-        } else {
-            self.global.non_oldest_limit()
+    /// Cancel-safe: if the future is dropped, nothing stays in use.
+    pub async fn reserve(&self, num_bytes: u64) -> Result<(), OutOfMemoryError> {
+        let request = MemoryRequest {
+            in_use_delta: num_bytes,
+            min_held: 0,
         };
-        state.try_add(additional_num_bytes, limit)?;
-        self.num_bytes = new_num_bytes;
+        self.request(request).await
+    }
+
+    /// Grows the reservation to at least `num_bytes`, without using them. Waits until the memory
+    /// is available.
+    ///
+    /// Fails right away with `OutOfMemoryError` if `num_bytes` is over the per-split limit.
+    pub async fn reserve_capacity(&self, num_bytes: u64) -> Result<(), OutOfMemoryError> {
+        let request = MemoryRequest {
+            in_use_delta: 0,
+            min_held: num_bytes,
+        };
+        self.request(request).await
+    }
+
+    /// Gives back `num_bytes` reserved by `reserve` that did not enter the cache. The reservation
+    /// itself is not shrunk.
+    ///
+    /// Does not panic, because it is called from `Drop`. Releasing more than the memory in use
+    /// fails a debug assertion, and saturates at 0 in release builds.
+    pub fn release(&self, num_bytes: u64) {
+        let mut state = self.global.lock_state();
+        let account = state.account_mut(self.guard_id);
+        debug_assert!(
+            num_bytes <= account.in_use,
+            "cannot release more warmup memory than reserved"
+        );
+        account.in_use = account.in_use.saturating_sub(num_bytes);
+    }
+
+    /// Shrinks the reservation to `max_num_bytes`, but never below the memory in use. Does nothing
+    /// if the reservation is already smaller.
+    pub fn shrink_reservation(&self, max_num_bytes: u64) {
+        self.global
+            .lock_state()
+            .shrink_reservation(self.guard_id, max_num_bytes);
+    }
+
+    async fn request(&self, request: MemoryRequest) -> Result<(), OutOfMemoryError> {
+        let served_rx = {
+            let mut state = self.global.lock_state();
+            if state.check_and_serve_from_reservation(self.guard_id, request)? {
+                return Ok(());
+            }
+            state.enqueue(self.guard_id, request)
+        };
+        let mut pending_request = PendingRequest {
+            guard: self,
+            served_rx,
+            in_use_delta: request.in_use_delta,
+            is_done: false,
+        };
+        let served_res = (&mut pending_request.served_rx).await;
+        pending_request.is_done = true;
+        served_res.expect(
+            "a waiter is only removed without being served when its guard is dropped, which \
+             cannot happen while this future borrows the guard",
+        );
         Ok(())
     }
 }
 
 impl Drop for WarmupMemoryGuard {
     fn drop(&mut self) {
-        {
-            let mut state = self.global.lock_state();
-            state.sub(self.num_bytes);
-            state.live_guard_ids.remove(&self.guard_id);
+        self.global.lock_state().remove_guard(self.guard_id);
+    }
+}
+
+/// Undoes a waiting request if its future is dropped.
+struct PendingRequest<'a> {
+    guard: &'a WarmupMemoryGuard,
+    served_rx: oneshot::Receiver<()>,
+    in_use_delta: u64,
+    /// Set once `served_rx` resolved. It must not be polled after that.
+    is_done: bool,
+}
+
+impl Drop for PendingRequest<'_> {
+    fn drop(&mut self) {
+        if self.is_done {
+            return;
         }
-        // Even if the guard held no memory, the oldest guard may have changed, which lets the
-        // other guards allocate more.
-        self.global.notify_memory_freed();
+        // Closed first, so that the request cannot be served between the check and the drop.
+        // The waiter is then removed the next time the waiters are served.
+        self.served_rx.close();
+        if self.served_rx.try_recv().is_ok() {
+            // Served before it was closed: the bytes are in use, but no read will use them.
+            self.guard.release(self.in_use_delta);
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Mutex, OnceLock};
+    use futures::FutureExt;
 
     use super::*;
 
-    /// A warmup memory where a single guard can use the whole limit.
-    fn global_warmup_memory(limit: ByteSize) -> GlobalWarmupMemory {
-        GlobalWarmupMemory::with_limits_and_free_callback(limit, limit, || {})
+    fn global_warmup_memory(limit: u64, split_max_allocation: u64) -> GlobalWarmupMemory {
+        GlobalWarmupMemory::new(ByteSize(limit), ByteSize(split_max_allocation))
     }
 
-    #[test]
-    fn test_try_allocate_within_limit() {
-        let global =
-            GlobalWarmupMemory::with_limits_and_free_callback(ByteSize(100), ByteSize(60), || {});
-        // The first guard is the oldest one: it can use the whole limit.
-        let mut guard_1 = global.try_allocate(10).unwrap();
-        // The other guards share `limit - split_max_allocation`.
-        let guard_2 = global.try_allocate(30).unwrap();
-        guard_1.try_grow(50).unwrap();
-        assert_eq!(guard_1.num_bytes(), 60);
-        assert_eq!(guard_2.num_bytes(), 30);
-        assert_eq!(global.allocated(), 90);
+    /// Creates a guard and reserves `num_bytes` for it, which must not wait.
+    fn guard_with_capacity(global: &GlobalWarmupMemory, num_bytes: u64) -> WarmupMemoryGuard {
+        let guard = global.new_guard();
+        guard
+            .reserve_capacity(num_bytes)
+            .now_or_never()
+            .expect("the reservation should not wait")
+            .unwrap();
+        guard
     }
 
-    #[test]
-    fn test_try_allocate_over_limit_fails() {
-        let global = global_warmup_memory(ByteSize(100));
-        let _guard = global.try_allocate(60).unwrap();
-        assert_eq!(
-            global.try_allocate(41).err(),
-            Some(OutOfMemoryError::GlobalBudgetExceeded)
-        );
-        // A failed allocation does not change the allocated memory.
-        assert_eq!(global.allocated(), 60);
-        assert_eq!(
-            global.try_allocate(u64::MAX).err(),
-            Some(OutOfMemoryError::SplitBudgetExceeded)
-        );
-        assert_eq!(global.allocated(), 60);
-    }
-
-    #[test]
-    fn test_try_allocate_over_split_max_allocation_fails() {
-        let global =
-            GlobalWarmupMemory::with_limits_and_free_callback(ByteSize(100), ByteSize(40), || {});
-        assert_eq!(
-            global.try_allocate(41).err(),
-            Some(OutOfMemoryError::SplitBudgetExceeded)
-        );
-        assert_eq!(global.allocated(), 0);
-        let _guard = global.try_allocate(40).unwrap();
+    /// Reserves `num_bytes` for a read. Returns `None` if the request would wait: it is then
+    /// cancelled.
+    fn reserve_now(
+        guard: &WarmupMemoryGuard,
+        num_bytes: u64,
+    ) -> Option<Result<(), OutOfMemoryError>> {
+        guard.reserve(num_bytes).now_or_never()
     }
 
     #[test]
     #[should_panic(expected = "must be lower or equal to the limit")]
     fn test_split_max_allocation_above_limit_panics() {
-        GlobalWarmupMemory::with_limits_and_free_callback(ByteSize(100), ByteSize(101), || {});
+        global_warmup_memory(100, 101);
+    }
+
+    #[test]
+    fn test_reserve_grows_reservation() {
+        let global = global_warmup_memory(100, 100);
+        let guard = guard_with_capacity(&global, 10);
+        // Fits in the reservation.
+        reserve_now(&guard, 10).unwrap().unwrap();
+        assert_eq!(guard.num_bytes(), 10);
+        // 11 does not fit in 10: the reservation grows to 1.7 x 10.
+        reserve_now(&guard, 1).unwrap().unwrap();
+        assert_eq!(guard.num_bytes(), 17);
+        assert_eq!(guard.in_use_num_bytes(), 11);
+        assert_eq!(global.allocated(), 17);
+    }
+
+    #[test]
+    fn test_reserve_over_split_max_allocation_fails() {
+        let global = global_warmup_memory(100, 40);
+        let guard = guard_with_capacity(&global, 10);
+        assert_eq!(reserve_now(&guard, 41), Some(Err(OutOfMemoryError)));
+        assert_eq!(guard.num_bytes(), 10);
+        assert_eq!(guard.in_use_num_bytes(), 0);
     }
 
     #[test]
     fn test_only_oldest_guard_can_use_reserve() {
-        let global =
-            GlobalWarmupMemory::with_limits_and_free_callback(ByteSize(100), ByteSize(40), || {});
-        let mut oldest_guard = global.try_allocate(10).unwrap();
-        let mut other_guard = global.try_allocate(40).unwrap();
-        assert!(oldest_guard.is_oldest());
-        assert!(!other_guard.is_oldest());
-        // The non-oldest guards are limited to 100 - 40 = 60 bytes, including the memory of the
-        // oldest guard.
-        assert_eq!(
-            global.try_allocate(11).err(),
-            Some(OutOfMemoryError::GlobalBudgetExceeded)
-        );
+        let global = global_warmup_memory(100, 40);
+        let oldest_guard = guard_with_capacity(&global, 10);
+        let other_guard = guard_with_capacity(&global, 40);
+        // The other guards are limited to 100 - 40 = 60 bytes, including the oldest guard's.
+        let new_guard = global.new_guard();
+        assert!(reserve_now(&new_guard, 11).is_none());
         // The oldest guard can always grow to the split max allocation.
-        oldest_guard.try_grow(30).unwrap();
+        reserve_now(&oldest_guard, 40).unwrap().unwrap();
         assert_eq!(global.allocated(), 80);
-        assert_eq!(
-            oldest_guard.try_grow(1).err(),
-            Some(OutOfMemoryError::SplitBudgetExceeded)
-        );
-        assert_eq!(
-            other_guard.try_grow(1).err(),
-            Some(OutOfMemoryError::SplitBudgetExceeded)
-        );
-        // Dropping the oldest guard promotes the next one.
+        // Dropping the oldest guard frees its memory, and the next guard becomes the oldest.
         drop(oldest_guard);
-        assert!(other_guard.is_oldest());
         assert_eq!(global.allocated(), 40);
+        reserve_now(&new_guard, 20).unwrap().unwrap();
+        assert!(reserve_now(&new_guard, 1).is_none());
+        reserve_now(&other_guard, 40).unwrap().unwrap();
+        assert_eq!(global.allocated(), 60);
     }
 
     #[test]
-    fn test_non_oldest_guard_cannot_grow_into_reserve() {
-        let global =
-            GlobalWarmupMemory::with_limits_and_free_callback(ByteSize(100), ByteSize(40), || {});
-        let oldest_guard = global.try_allocate(30).unwrap();
-        let mut other_guard = global.try_allocate(20).unwrap();
-        // 30 + 20 + 11 > 100 - 40.
-        assert_eq!(
-            other_guard.try_grow(11).err(),
-            Some(OutOfMemoryError::GlobalBudgetExceeded)
-        );
-        assert_eq!(other_guard.num_bytes(), 20);
-        other_guard.try_grow(10).unwrap();
-        // Once the oldest guard is dropped, the other guard can use the whole limit.
-        drop(oldest_guard);
-        other_guard.try_grow(10).unwrap();
-        assert_eq!(global.allocated(), 40);
+    fn test_shrink_reservation_never_below_memory_in_use() {
+        let global = global_warmup_memory(100, 100);
+        let guard = guard_with_capacity(&global, 50);
+        reserve_now(&guard, 20).unwrap().unwrap();
+        guard.shrink_reservation(10);
+        assert_eq!(guard.num_bytes(), 20);
+        // Shrinking never grows the reservation.
+        guard.shrink_reservation(30);
+        assert_eq!(guard.num_bytes(), 20);
+        guard.release(20);
+        guard.shrink_reservation(0);
+        assert_eq!(global.allocated(), 0);
     }
 
     #[test]
     fn test_guard_drop_frees_memory() {
-        let global = global_warmup_memory(ByteSize(100));
-        let guard = global.try_allocate(100).unwrap();
-        assert!(global.try_allocate(1).is_err());
+        let global = global_warmup_memory(100, 100);
+        let guard = guard_with_capacity(&global, 100);
+        reserve_now(&guard, 30).unwrap().unwrap();
         drop(guard);
         assert_eq!(global.allocated(), 0);
-        let _guard = global.try_allocate(100).unwrap();
-    }
-
-    #[test]
-    fn test_guard_shrink_to() {
-        let global = global_warmup_memory(ByteSize(100));
-        let mut guard = global.try_allocate(100).unwrap();
-        guard.shrink_to(30);
-        assert_eq!(guard.num_bytes(), 30);
-        assert_eq!(global.allocated(), 30);
-        guard.shrink_to(0);
-        assert_eq!(global.allocated(), 0);
-        drop(guard);
-        assert_eq!(global.allocated(), 0);
-    }
-
-    #[test]
-    #[should_panic(expected = "shrink_to cannot grow")]
-    fn test_guard_shrink_to_larger_size_panics() {
-        let global = global_warmup_memory(ByteSize(100));
-        let mut guard = global.try_allocate(10).unwrap();
-        guard.shrink_to(11);
-    }
-
-    #[test]
-    fn test_guard_try_grow() {
-        let global = global_warmup_memory(ByteSize(100));
-        let mut guard = global.try_allocate(60).unwrap();
-        guard.try_grow(30).unwrap();
-        assert_eq!(guard.num_bytes(), 90);
-        assert_eq!(global.allocated(), 90);
-        // A failed grow leaves the guard and the global memory unchanged.
-        assert_eq!(
-            guard.try_grow(11).err(),
-            Some(OutOfMemoryError::SplitBudgetExceeded)
-        );
-        assert_eq!(guard.num_bytes(), 90);
-        assert_eq!(global.allocated(), 90);
-        drop(guard);
-        assert_eq!(global.allocated(), 0);
-    }
-
-    /// Returns a warmup memory whose callback records the allocated memory each time it is called.
-    fn global_warmup_memory_recording_callbacks(
-        limit: ByteSize,
-    ) -> (GlobalWarmupMemory, Arc<Mutex<Vec<u64>>>) {
-        let allocated_on_callbacks: Arc<Mutex<Vec<u64>>> = Arc::default();
-        let global_cell: Arc<OnceLock<GlobalWarmupMemory>> = Arc::default();
-        let global = GlobalWarmupMemory::with_limits_and_free_callback(limit, limit, {
-            let allocated_on_callbacks = allocated_on_callbacks.clone();
-            let global_cell = global_cell.clone();
-            move || {
-                let allocated = global_cell.get().unwrap().allocated();
-                allocated_on_callbacks.lock().unwrap().push(allocated);
-            }
-        });
-        // This creates a reference cycle, which is fine in a test.
-        global_cell.set(global.clone()).ok().unwrap();
-        (global, allocated_on_callbacks)
-    }
-
-    #[test]
-    fn test_callback_on_memory_freed() {
-        let (global, allocated_on_callbacks) =
-            global_warmup_memory_recording_callbacks(ByteSize(100));
-        let mut guard = global.try_allocate(100).unwrap();
-        let failed_guard_res = global.try_allocate(1);
-        assert!(failed_guard_res.is_err());
-        guard.try_grow(0).unwrap();
-        assert!(allocated_on_callbacks.lock().unwrap().is_empty());
-
-        // The callback is called after the memory is freed.
-        guard.shrink_to(30);
-        assert_eq!(*allocated_on_callbacks.lock().unwrap(), vec![30]);
-        drop(guard);
-        assert_eq!(*allocated_on_callbacks.lock().unwrap(), vec![30, 0]);
-    }
-
-    #[test]
-    fn test_callback_not_called_when_shrink_frees_nothing() {
-        let (global, allocated_on_callbacks) =
-            global_warmup_memory_recording_callbacks(ByteSize(100));
-        let mut guard = global.try_allocate(30).unwrap();
-        guard.shrink_to(30);
-        assert!(allocated_on_callbacks.lock().unwrap().is_empty());
-        guard.shrink_to(0);
-        assert_eq!(*allocated_on_callbacks.lock().unwrap(), vec![0]);
-    }
-
-    #[test]
-    fn test_callback_called_when_empty_guard_dropped() {
-        let (global, allocated_on_callbacks) =
-            global_warmup_memory_recording_callbacks(ByteSize(100));
-        let empty_guard = global.try_allocate(0).unwrap();
-        // No memory is freed, but the oldest guard changes.
-        drop(empty_guard);
-        assert_eq!(*allocated_on_callbacks.lock().unwrap(), vec![0]);
     }
 
     #[tokio::test]
-    async fn test_memory_freed_notify() {
-        let global = global_warmup_memory(ByteSize(100));
-        let mut guard = global.try_allocate(100).unwrap();
-        let memory_freed_notify = guard.memory_freed_notify();
-        let memory_freed = memory_freed_notify.notified();
-        tokio::pin!(memory_freed);
-        memory_freed.as_mut().enable();
-        guard.shrink_to(50);
-        tokio::time::timeout(std::time::Duration::from_secs(1), memory_freed)
-            .await
-            .expect("shrinking a guard should notify the waiters");
+    async fn test_waiters_served_by_guard_age() {
+        // The guards other than the oldest one can use 50 bytes.
+        let global = global_warmup_memory(100, 50);
+        let _oldest_guard = guard_with_capacity(&global, 10);
+        let full_guard = guard_with_capacity(&global, 40);
+        let older_guard = global.new_guard();
+        let younger_guard = global.new_guard();
+        // The younger guard asks first.
+        let mut younger_fut = Box::pin(younger_guard.reserve_capacity(5));
+        assert!(futures::poll!(&mut younger_fut).is_pending());
+        let mut older_fut = Box::pin(older_guard.reserve_capacity(5));
+        assert!(futures::poll!(&mut older_fut).is_pending());
+        // Only 5 bytes are freed: they go to the older guard.
+        full_guard.shrink_reservation(35);
+        assert!(futures::poll!(&mut older_fut).is_ready());
+        assert!(futures::poll!(&mut younger_fut).is_pending());
+        full_guard.shrink_reservation(30);
+        assert!(futures::poll!(&mut younger_fut).is_ready());
+    }
+
+    #[tokio::test]
+    async fn test_younger_request_does_not_pass_older_one() {
+        let global = global_warmup_memory(100, 50);
+        let _oldest_guard = guard_with_capacity(&global, 10);
+        let full_guard = guard_with_capacity(&global, 40);
+        let older_guard = global.new_guard();
+        let younger_guard = global.new_guard();
+        let mut older_fut = Box::pin(older_guard.reserve_capacity(20));
+        assert!(futures::poll!(&mut older_fut).is_pending());
+        full_guard.shrink_reservation(35);
+        // 5 bytes are free: they would be enough for the younger guard, but the older one asked
+        // first.
+        let mut younger_fut = Box::pin(younger_guard.reserve_capacity(1));
+        assert!(futures::poll!(&mut younger_fut).is_pending());
+        assert!(reserve_now(&younger_guard, 1).is_none());
+        full_guard.shrink_reservation(0);
+        assert!(futures::poll!(&mut older_fut).is_ready());
+        assert!(futures::poll!(&mut younger_fut).is_ready());
+    }
+
+    #[tokio::test]
+    async fn test_oldest_guard_never_waits() {
+        let global = global_warmup_memory(100, 50);
+        let oldest_guard = guard_with_capacity(&global, 0);
+        let _full_guard = guard_with_capacity(&global, 50);
+        oldest_guard
+            .reserve(50)
+            .now_or_never()
+            .expect("the oldest guard should never wait")
+            .unwrap();
+        assert_eq!(global.allocated(), 100);
+    }
+
+    #[tokio::test]
+    async fn test_dropping_oldest_guard_serves_next_guard() {
+        let global = global_warmup_memory(100, 50);
+        let oldest_guard = guard_with_capacity(&global, 10);
+        let next_guard = guard_with_capacity(&global, 40);
+        let mut next_fut = Box::pin(next_guard.reserve(50));
+        assert!(futures::poll!(&mut next_fut).is_pending());
+        // The next guard becomes the oldest one: it can use the whole limit.
+        drop(oldest_guard);
+        assert!(futures::poll!(&mut next_fut).is_ready());
+        assert_eq!(next_guard.in_use_num_bytes(), 50);
+    }
+
+    #[tokio::test]
+    async fn test_cancelled_waiter_is_removed() {
+        let global = global_warmup_memory(100, 50);
+        let _oldest_guard = guard_with_capacity(&global, 10);
+        let full_guard = guard_with_capacity(&global, 40);
+        let cancelled_guard = global.new_guard();
+        let other_guard = global.new_guard();
+        let mut cancelled_fut = Box::pin(cancelled_guard.reserve(20));
+        assert!(futures::poll!(&mut cancelled_fut).is_pending());
+        full_guard.shrink_reservation(35);
+        drop(cancelled_fut);
+        // The cancelled request does not block the next one anymore.
+        other_guard
+            .reserve_capacity(5)
+            .now_or_never()
+            .expect("the cancelled request should be removed")
+            .unwrap();
+        assert_eq!(cancelled_guard.num_bytes(), 0);
+        // The cancelled request does not count in the per-split limit anymore: 50 bytes do not go
+        // over it, they only have to wait.
+        assert!(reserve_now(&cancelled_guard, 50).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_request_cancelled_after_being_served_releases_memory() {
+        let global = global_warmup_memory(100, 50);
+        let _oldest_guard = guard_with_capacity(&global, 10);
+        let full_guard = guard_with_capacity(&global, 40);
+        let guard = global.new_guard();
+        let mut reserve_fut = Box::pin(guard.reserve(10));
+        assert!(futures::poll!(&mut reserve_fut).is_pending());
+        // Served, but the future is dropped before it is polled again.
+        full_guard.shrink_reservation(0);
+        assert_eq!(guard.in_use_num_bytes(), 10);
+        drop(reserve_fut);
+        assert_eq!(guard.in_use_num_bytes(), 0);
+        guard.shrink_reservation(0);
+        assert_eq!(global.allocated(), 10);
+    }
+
+    #[tokio::test]
+    async fn test_per_split_limit_counts_waiting_requests() {
+        let global = global_warmup_memory(100, 50);
+        let _oldest_guard = guard_with_capacity(&global, 10);
+        let _full_guard = guard_with_capacity(&global, 40);
+        let guard = global.new_guard();
+        let mut reserve_fut = Box::pin(guard.reserve(30));
+        assert!(futures::poll!(&mut reserve_fut).is_pending());
+        assert_eq!(
+            guard.reserve(21).now_or_never().unwrap().err(),
+            Some(OutOfMemoryError)
+        );
     }
 
     #[test]
-    fn test_concurrent_try_allocate_never_exceeds_limit() {
+    fn test_concurrent_reserve_never_exceeds_limit() {
         const NUM_THREADS: usize = 8;
         const NUM_ITERATIONS: usize = 10_000;
         const LIMIT: u64 = 100;
         const SPLIT_MAX_ALLOCATION: u64 = 30;
-        let global = GlobalWarmupMemory::with_limits_and_free_callback(
-            ByteSize(LIMIT),
-            ByteSize(SPLIT_MAX_ALLOCATION),
-            || {},
-        );
+        let global = global_warmup_memory(LIMIT, SPLIT_MAX_ALLOCATION);
         std::thread::scope(|scope| {
             for _ in 0..NUM_THREADS {
                 let global = global.clone();
                 scope.spawn(move || {
                     for i in 0..NUM_ITERATIONS {
                         let num_bytes = (i as u64 % SPLIT_MAX_ALLOCATION) + 1;
-                        let Ok(mut guard) = global.try_allocate(num_bytes) else {
-                            continue;
-                        };
-                        let _ = guard.try_grow(SPLIT_MAX_ALLOCATION - num_bytes);
+                        let guard = global.new_guard();
+                        let _ = reserve_now(&guard, num_bytes);
                         assert!(global.allocated() <= LIMIT);
-                        drop(guard);
                     }
                 });
             }

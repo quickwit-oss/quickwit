@@ -22,8 +22,8 @@ use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
 use bytesize::ByteSize;
+use quickwit_directories::OutOfMemoryError;
 use quickwit_metrics::GaugeGuard;
-use quickwit_proto::search::SplitIdAndFooterOffsets;
 use tokio::sync::{mpsc, oneshot};
 use tracing::warn;
 
@@ -32,14 +32,17 @@ use crate::metrics::{
     SEARCHER_NODE_LOAD,
 };
 use crate::split_warmup_memory::SplitWarmupMemory;
-use crate::warmup_memory::{GlobalWarmupMemory, WarmupMemoryGuard};
+use crate::warmup_memory::GlobalWarmupMemory;
 
 /// Distributor of permits to perform split search operation.
 ///
-/// Requests are served by priority, then by lowest estimated cost. Each permit initially
-/// reserves a slot for the warmup (limit concurrent downloads) and a pessimistic amount of
-/// memory. During the warmup, the permit grows its memory reservation as data is downloaded. It
-/// waits if the warmup memory is full, and fails if the per-split limit would be exceeded (see
+/// Requests are served by priority, then by lowest estimated cost. A permit is granted when a
+/// warmup slot is available (to limit concurrent downloads). It comes with an empty warmup memory
+/// reservation, younger than the ones of all the permits granted before.
+///
+/// The split search then reserves a pessimistic amount of memory with
+/// [`SearchPermit::warmup_memory`], and grows its reservation as data is downloaded. It waits
+/// if the warmup memory is full, and fails if the per-split limit would be exceeded (see
 /// [`GlobalWarmupMemory`] for why waiting cannot deadlock). Once the warmup is completed, the
 /// unused memory and the warmup slot are released. Once the search is completed and the permit is
 /// dropped, the remaining memory is also released.
@@ -52,22 +55,14 @@ pub struct SearchPermitProvider {
     actor_join_handle: Arc<tokio::task::JoinHandle<SearchPermitActor>>,
 }
 
-/// Metadata for a single split search task, bundling the estimated memory
-/// allocation with the job cost used by the search job placer.
-pub(crate) struct SplitSearchTaskMetadata {
-    /// Pessimistic estimate of the memory this split search will require.
-    pub memory_allocation: ByteSize,
-    /// Estimated query aware cost of this task, in the same arbitrary unit as [`Job::cost()`].
-    /// Used to report the current load of this node to the job placer and to prioritize leaf
-    /// requests.
-    pub job_cost: usize,
-}
-
 /// Metadata for a leaf search task.
 pub(crate) struct LeafSearchTaskMetadata {
     /// Lower values have higher priority.
     pub priority: i32,
-    pub splits: Vec<SplitSearchTaskMetadata>,
+    /// Estimated query aware cost of each split search, in the same arbitrary unit as
+    /// [`Job::cost()`]. Used to report the current load of this node to the job placer and to
+    /// prioritize leaf requests.
+    pub split_job_costs: Vec<usize>,
 }
 
 pub enum SearchPermitMessage {
@@ -82,43 +77,13 @@ pub enum SearchPermitMessage {
         /// permits.
         permit_resp_tx: oneshot::Sender<Vec<SearchPermitFuture>>,
     },
-    /// Sent by the [`GlobalWarmupMemory`] callback each time memory is freed or a split search
-    /// ends, so that pending permits can be granted.
-    ///
-    /// The memory is already freed when this message is sent.
-    MemoryFreed,
     FreeWarmupSlot,
     /// Sent when a permit is dropped.
     ///
-    /// The permit memory is freed separately, with a `MemoryFreed` message, once the split's
-    /// `CachingDirectory` is dropped too.
+    /// The permit memory is freed separately, once the split's `CachingDirectory` is dropped too.
     Drop {
         warmup_slot_freed: bool,
     },
-}
-
-/// Makes very pessimistic estimate of the memory allocation required for a split search
-///
-/// This is refined later on when more data is available about the split.
-pub fn compute_initial_memory_allocation(
-    split: &SplitIdAndFooterOffsets,
-    warmup_single_split_initial_allocation: ByteSize,
-) -> ByteSize {
-    let split_size = split.split_footer_start;
-    // we consider the configured initial allocation to be set for a large split with 10M docs
-    const LARGE_SPLIT_NUM_DOCS: u64 = 10_000_000;
-    let proportional_allocation =
-        warmup_single_split_initial_allocation.as_u64() * split.num_docs / LARGE_SPLIT_NUM_DOCS;
-    let size_bytes = [
-        split_size,
-        proportional_allocation,
-        warmup_single_split_initial_allocation.as_u64(),
-    ]
-    .into_iter()
-    .min()
-    .unwrap();
-    const MINIMUM_ALLOCATION_BYTES: u64 = 10_000_000;
-    ByteSize(size_bytes.max(MINIMUM_ALLOCATION_BYTES))
 }
 
 impl SearchPermitProvider {
@@ -137,10 +102,6 @@ impl SearchPermitProvider {
     ///   also the part of `memory_budget` reserved for the oldest split search, so the other split
     ///   searches share `memory_budget - split_max_allocation`.
     ///
-    /// Contracts: `split_max_allocation` is lower or equal to `memory_budget`, and callers clamp
-    /// the permit sizes they request to `split_max_allocation`. A larger permit could never be
-    /// granted, and would block the permits queued after it.
-    ///
     /// # Panics
     ///
     /// Panics if `split_max_allocation` is larger than `memory_budget`.
@@ -151,14 +112,7 @@ impl SearchPermitProvider {
     ) -> Self {
         let (message_sender, message_receiver) = mpsc::unbounded_channel();
         let total_job_cost = Arc::new(AtomicUsize::new(0));
-        let weak_message_sender = message_sender.downgrade();
-        let warmup_memory = GlobalWarmupMemory::with_limits_and_free_callback(
-            memory_budget,
-            split_max_allocation,
-            move || {
-                send_if_still_running(&weak_message_sender, SearchPermitMessage::MemoryFreed);
-            },
-        );
+        let warmup_memory = GlobalWarmupMemory::new(memory_budget, split_max_allocation);
         let actor = SearchPermitActor {
             msg_receiver: message_receiver,
             msg_sender: message_sender.downgrade(),
@@ -187,7 +141,7 @@ impl SearchPermitProvider {
     }
 
     /// Returns the current load of this node, expressed as the sum of
-    /// [`SplitSearchTaskMetadata::job_cost`] across all queued and active tasks.
+    /// [`LeafSearchTaskMetadata::split_job_costs`] across all queued and active tasks.
     ///
     /// This value uses the same arbitrary unit as [`Job::cost()`] in the search job placer, so it
     /// can be used directly to seed the job placement algorithm.
@@ -224,7 +178,7 @@ impl SearchPermitProvider {
         task_metadata: LeafSearchTaskMetadata,
         offload_threshold: usize,
     ) -> Vec<SearchPermitFuture> {
-        if task_metadata.splits.is_empty() {
+        if task_metadata.split_job_costs.is_empty() {
             return Vec::new();
         }
         let (permit_sender, permit_receiver) = oneshot::channel();
@@ -245,14 +199,10 @@ struct SearchPermitActor {
     msg_receiver: mpsc::UnboundedReceiver<SearchPermitMessage>,
     msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
     num_warmup_slots_available: usize,
-    /// Memory reserved by all granted permits. It also enforces the per-split limit.
-    ///
-    /// Permits are granted with [`GlobalWarmupMemory::try_allocate`]. Split searches grow their
-    /// reservation during the warmup without going through the actor. Each time memory is freed
-    /// or a split search ends, the `GlobalWarmupMemory` callback sends a `MemoryFreed` message, so
-    /// that the actor tries again.
+    /// Warmup memory of all the split searches. The actor only creates an empty guard for each
+    /// permit it grants, in grant order: split searches reserve their memory themselves.
     warmup_memory: GlobalWarmupMemory,
-    /// Sum of [`SplitSearchTaskMetadata::job_cost`] for all queued and active tasks.
+    /// Sum of [`LeafSearchTaskMetadata::split_job_costs`] for all queued and active tasks.
     ///
     /// Incremented when a task enters [`Self::permits_requests`], decremented when
     /// its [`SearchPermit`] is dropped (which happens both on normal completion and
@@ -266,7 +216,6 @@ struct SearchPermitActor {
 
 struct SingleSplitPermitRequest {
     permit_sender: oneshot::Sender<SearchPermit>,
-    permit_size: u64,
     job_cost: usize,
     requested_at: Instant,
 }
@@ -310,25 +259,30 @@ impl LeafPermitRequest {
     fn from_task_metadata(
         task_metadata: LeafSearchTaskMetadata,
     ) -> (Self, Vec<SearchPermitFuture>) {
-        let LeafSearchTaskMetadata { priority, splits } = task_metadata;
-        assert!(!splits.is_empty(), "task_metadata must not be empty");
+        let LeafSearchTaskMetadata {
+            priority,
+            split_job_costs,
+        } = task_metadata;
+        assert!(
+            !split_job_costs.is_empty(),
+            "task_metadata must not be empty"
+        );
         // Stamped on every `SingleSplitPermitRequest` we're about to enqueue.
         // The actor will compute `requested_at.elapsed()` at grant time to
         // report the permit's acquisition latency.
         let requested_at = Instant::now();
         let mut remaining_job_cost = 0;
-        let mut permits = Vec::with_capacity(splits.len());
-        let mut single_split_permit_requests = Vec::with_capacity(splits.len());
-        for split in splits {
+        let mut permits = Vec::with_capacity(split_job_costs.len());
+        let mut single_split_permit_requests = Vec::with_capacity(split_job_costs.len());
+        for job_cost in split_job_costs {
             let (tx, rx) = oneshot::channel();
             // we keep our internal list of permits and the returned wait handles in the
             // same order to make sure we emit each permit in the right order. Doing otherwise
             // may cause deadlocks
-            remaining_job_cost += split.job_cost;
+            remaining_job_cost += job_cost;
             single_split_permit_requests.push(SingleSplitPermitRequest {
                 permit_sender: tx,
-                permit_size: split.memory_allocation.as_u64(),
-                job_cost: split.job_cost,
+                job_cost,
                 requested_at,
             });
             permits.push(SearchPermitFuture(rx));
@@ -341,12 +295,6 @@ impl LeafPermitRequest {
             },
             permits,
         )
-    }
-
-    /// Memory required by the next single split permit request.
-    fn next_permit_size(&self) -> Option<u64> {
-        let next_single_split_req = self.single_split_permit_requests.as_slice().first()?;
-        Some(next_single_split_req.permit_size)
     }
 
     fn pop_next(&mut self) -> Option<SingleSplitPermitRequest> {
@@ -396,18 +344,18 @@ impl SearchPermitActor {
 
                 // If this indeed truncates the task_metadata vector, other splits will be
                 // offloaded to lambdas.
-                task_metadata.splits.truncate(local_capacity);
+                task_metadata.split_job_costs.truncate(local_capacity);
 
                 // We special case here in order to avoid pushing empty request in the queue.
                 // (they would never be removed)
-                if task_metadata.splits.is_empty() {
+                if task_metadata.split_job_costs.is_empty() {
                     let _ = permit_sender.send(Vec::new());
                     return;
                 }
 
                 // Increment total_job_cost for all tasks entering the queue (both pending and
                 // those that will be granted immediately by assign_available_permits below).
-                let added: usize = task_metadata.splits.iter().map(|m| m.job_cost).sum();
+                let added: usize = task_metadata.split_job_costs.iter().sum();
                 // fetch_add returns the previous value, so add `added` to get the new total.
                 let new_load = self.total_job_cost.fetch_add(added, Ordering::Relaxed) + added;
                 SEARCHER_NODE_LOAD.set(new_load as f64);
@@ -417,9 +365,6 @@ impl SearchPermitActor {
                 self.permits_requests.push(leaf_permit_request);
                 self.assign_available_permits();
                 let _ = permit_sender.send(permit_futures);
-            }
-            SearchPermitMessage::MemoryFreed => {
-                self.assign_available_permits();
             }
             SearchPermitMessage::FreeWarmupSlot => {
                 self.num_warmup_slots_available += 1;
@@ -436,10 +381,8 @@ impl SearchPermitActor {
         }
     }
 
-    /// Pops the next request if a warmup slot is available and its memory can be allocated.
-    fn pop_next_request_if_serviceable(
-        &mut self,
-    ) -> Option<(SingleSplitPermitRequest, WarmupMemoryGuard)> {
+    /// Pops the next request if a warmup slot is available.
+    fn pop_next_request_if_serviceable(&mut self) -> Option<SingleSplitPermitRequest> {
         if self.num_warmup_slots_available == 0 {
             return None;
         }
@@ -448,19 +391,20 @@ impl SearchPermitActor {
             !peeked.is_empty(),
             "unexpected empty permits_requests present in the search permit provider queue"
         );
-        let permit_size = peeked.next_permit_size()?;
-        let memory_guard = self.warmup_memory.try_allocate(permit_size).ok()?;
         let permit_request = peeked.pop_next()?;
         if peeked.is_empty() {
             PeekMut::pop(peeked);
         }
-        Some((permit_request, memory_guard))
+        Some(permit_request)
     }
 
     fn assign_available_permits(&mut self) {
-        while let Some((permit_request, memory_guard)) = self.pop_next_request_if_serviceable() {
+        while let Some(permit_request) = self.pop_next_request_if_serviceable() {
             let ongoing_gauge_guard = GaugeGuard::new(&LEAF_SEARCH_SINGLE_SPLIT_TASKS_ONGOING, 1.0);
             self.num_warmup_slots_available -= 1;
+            // Created at grant time: the warmup memory requests of split searches are served in
+            // grant order.
+            let memory_guard = self.warmup_memory.new_guard();
             permit_request
                 .permit_sender
                 .send(SearchPermit {
@@ -500,11 +444,24 @@ impl SearchPermit {
         self.wait_for_acquisition
     }
 
-    /// Warmup memory of this split search, to give to the split's `CachingDirectory`.
+    /// Reserves `initial_memory_allocation` for the warmup of this split search, waiting until it
+    /// is available, then returns the warmup memory to give to the split's `CachingDirectory`.
+    ///
+    /// Contracts:
+    /// - called once, before the warmup. Calling it again after the reservation was shrunk grows it
+    ///   back;
+    /// - `initial_memory_allocation` is lower or equal to the per-split limit. Otherwise, this
+    ///   fails with `OutOfMemoryError`.
     ///
     /// The memory is freed when both the permit and all the clones returned here are dropped.
-    pub fn warmup_memory(&self) -> Arc<SplitWarmupMemory> {
-        self.warmup_memory.clone()
+    pub async fn warmup_memory(
+        &self,
+        initial_memory_allocation: ByteSize,
+    ) -> Result<Arc<SplitWarmupMemory>, OutOfMemoryError> {
+        self.warmup_memory
+            .reserve_capacity(initial_memory_allocation.as_u64())
+            .await?;
+        Ok(self.warmup_memory.clone())
     }
 
     /// Shrinks the memory reservation to `max_memory_allocation`, but never below the memory in
@@ -564,8 +521,8 @@ impl Drop for SearchPermit {
             },
         );
         // If this permit holds the last reference to the warmup memory, the memory is freed when
-        // the `warmup_memory` field is dropped, right after this function. The `GlobalWarmupMemory`
-        // callback then wakes up the actor.
+        // the `warmup_memory` field is dropped, right after this function. The waiting split
+        // searches are then served.
     }
 }
 
@@ -611,20 +568,10 @@ mod tests {
 
     use super::*;
 
-    fn make_splits(
-        memory_mb: u64,
-        count: usize,
-        job_cost: usize,
-        priority: i32,
-    ) -> LeafSearchTaskMetadata {
+    fn make_splits(count: usize, job_cost: usize, priority: i32) -> LeafSearchTaskMetadata {
         LeafSearchTaskMetadata {
             priority,
-            splits: (0..count)
-                .map(|_| SplitSearchTaskMetadata {
-                    memory_allocation: ByteSize::mb(memory_mb),
-                    job_cost,
-                })
-                .collect(),
+            split_job_costs: vec![job_cost; count],
         }
     }
 
@@ -632,21 +579,15 @@ mod tests {
     async fn test_search_permit_priority_precedes_cost() {
         let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100));
         let blocker = permit_provider
-            .get_permits(make_splits(10, 1, 5, 0))
+            .get_permits(make_splits(1, 5, 0))
             .await
             .pop()
             .unwrap()
             .await;
 
-        let negative_priority = permit_provider
-            .get_permits(make_splits(10, 1, 1000, -10))
-            .await;
-        let default_priority = permit_provider
-            .get_permits(make_splits(10, 1, 100, 0))
-            .await;
-        let positive_priority = permit_provider
-            .get_permits(make_splits(10, 1, 10, 10))
-            .await;
+        let negative_priority = permit_provider.get_permits(make_splits(1, 1000, -10)).await;
+        let default_priority = permit_provider.get_permits(make_splits(1, 100, 0)).await;
+        let positive_priority = permit_provider.get_permits(make_splits(1, 10, 10)).await;
 
         let mut join_set = JoinSet::new();
         for (request, permit_futures) in [
@@ -679,18 +620,14 @@ mod tests {
     async fn test_search_permit_order_uses_remaining_job_cost() {
         let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100));
         let blocker = permit_provider
-            .get_permits(make_splits(10, 1, 5, 0))
+            .get_permits(make_splits(1, 5, 0))
             .await
             .pop()
             .unwrap()
             .await;
 
-        let high_cost = permit_provider
-            .get_permits(make_splits(10, 1, 1000, 0))
-            .await;
-        let low_cost = permit_provider
-            .get_permits(make_splits(10, 3, 100, 0))
-            .await;
+        let high_cost = permit_provider.get_permits(make_splits(1, 1000, 0)).await;
+        let low_cost = permit_provider.get_permits(make_splits(3, 100, 0)).await;
 
         let mut join_set = JoinSet::new();
         for (request, permit_futures) in [("high", high_cost), ("low", low_cost)] {
@@ -710,9 +647,7 @@ mod tests {
 
         // Hold the first permit while enqueueing work costing more than low's remaining
         // cost (200), but less than its original cost (300).
-        let medium_cost = permit_provider
-            .get_permits(make_splits(10, 1, 250, 0))
-            .await;
+        let medium_cost = permit_provider.get_permits(make_splits(1, 250, 0)).await;
         for (split_idx, permit_future) in medium_cost.into_iter().enumerate() {
             join_set.spawn(async move {
                 let permit = permit_future.await;
@@ -740,7 +675,7 @@ mod tests {
     async fn test_search_permit_order() {
         let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100));
         let mut all_futures = Vec::new();
-        let first_batch_of_permits = permit_provider.get_permits(make_splits(10, 10, 5, 0)).await;
+        let first_batch_of_permits = permit_provider.get_permits(make_splits(10, 5, 0)).await;
         assert_eq!(first_batch_of_permits.len(), 10);
         all_futures.extend(
             first_batch_of_permits
@@ -749,7 +684,7 @@ mod tests {
                 .map(move |(i, fut)| ((1, i), fut)),
         );
 
-        let second_batch_of_permits = permit_provider.get_permits(make_splits(10, 10, 5, 0)).await;
+        let second_batch_of_permits = permit_provider.get_permits(make_splits(10, 5, 0)).await;
         assert_eq!(second_batch_of_permits.len(), 10);
         all_futures.extend(
             second_batch_of_permits
@@ -786,7 +721,7 @@ mod tests {
     async fn test_search_permit_order_with_concurrent_search() {
         let permit_provider = SearchPermitProvider::new(4, ByteSize::mb(100));
         let mut all_futures = Vec::new();
-        let first_batch_of_permits = permit_provider.get_permits(make_splits(10, 8, 5, 0)).await;
+        let first_batch_of_permits = permit_provider.get_permits(make_splits(8, 5, 0)).await;
         assert_eq!(first_batch_of_permits.len(), 8);
         all_futures.extend(
             first_batch_of_permits
@@ -795,7 +730,7 @@ mod tests {
                 .map(move |(i, fut)| ((1, i), fut)),
         );
 
-        let second_batch_of_permits = permit_provider.get_permits(make_splits(10, 2, 5, 0)).await;
+        let second_batch_of_permits = permit_provider.get_permits(make_splits(2, 5, 0)).await;
         all_futures.extend(
             second_batch_of_permits
                 .into_iter()
@@ -803,7 +738,7 @@ mod tests {
                 .map(move |(i, fut)| ((2, i), fut)),
         );
 
-        let third_batch_of_permits = permit_provider.get_permits(make_splits(10, 6, 5, 0)).await;
+        let third_batch_of_permits = permit_provider.get_permits(make_splits(6, 5, 0)).await;
         all_futures.extend(
             third_batch_of_permits
                 .into_iter()
@@ -849,24 +784,27 @@ mod tests {
     async fn test_search_permit_early_drops() {
         let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100));
         let permit_fut1 = permit_provider
-            .get_permits(make_splits(10, 1, 5, 0))
+            .get_permits(make_splits(1, 5, 0))
             .await
             .into_iter()
             .next()
             .unwrap();
         let permit_fut2 = permit_provider
-            .get_permits(make_splits(10, 1, 5, 0))
+            .get_permits(make_splits(1, 5, 0))
             .await
             .into_iter()
             .next()
             .unwrap();
         drop(permit_fut1);
         let permit = permit_fut2.await;
+        // The permit comes without memory: the split search reserves it.
+        assert_eq!(permit.memory_allocation(), ByteSize(0));
+        permit.warmup_memory(ByteSize::mb(10)).await.unwrap();
         assert_eq!(permit.memory_allocation(), ByteSize::mb(10));
         assert!(!permit_provider.actor_join_handle.is_finished());
 
         let _permit_fut3 = permit_provider
-            .get_permits(make_splits(10, 1, 5, 0))
+            .get_permits(make_splits(1, 5, 0))
             .await
             .into_iter()
             .next()
@@ -887,6 +825,17 @@ mod tests {
         Ok(permit)
     }
 
+    /// Tries to reserve an initial warmup memory of 10MB for a permit.
+    async fn try_reserve_initial_memory(
+        permit: &SearchPermit,
+    ) -> anyhow::Result<Arc<SplitWarmupMemory>> {
+        // using a short timeout is a bit flaky, but it should be enough for these tests
+        let warmup_memory_fut = permit.warmup_memory(ByteSize::mb(10));
+        let warmup_memory =
+            tokio::time::timeout(Duration::from_millis(20), warmup_memory_fut).await??;
+        Ok(warmup_memory)
+    }
+
     #[tokio::test]
     async fn test_memory_budget() {
         // 110MB - 10MB = 100MB are shared by the split searches other than the oldest one.
@@ -895,35 +844,45 @@ mod tests {
             ByteSize::mb(110),
             ByteSize::mb(10),
         );
-        let mut permit_futs = permit_provider.get_permits(make_splits(10, 14, 5, 0)).await;
-        let mut remaining_permit_futs = permit_futs.split_off(10).into_iter();
-        assert_eq!(remaining_permit_futs.len(), 4);
-        // we should be able to obtain 10 permits right away (100MB / 10MB)
+        let permit_futs = permit_provider.get_permits(make_splits(14, 5, 0)).await;
+        // The permits only wait for warmup slots: they are all granted.
         let mut permits: Vec<SearchPermit> = futures::stream::iter(permit_futs.into_iter())
             .buffered(1)
             .collect()
             .await;
+        let mut blocked_permits = permits.split_off(10).into_iter();
+        assert_eq!(blocked_permits.len(), 4);
+        // we should be able to reserve the memory of 10 permits right away (100MB / 10MB)
+        for permit in &permits {
+            try_reserve_initial_memory(permit).await.unwrap();
+        }
         // the next permit is blocked by the memory budget
-        let next_blocked_permit_fut = remaining_permit_futs.next().unwrap();
-        try_get(next_blocked_permit_fut).await.err().unwrap();
-        // if we drop one of the permits, we can get a new one
+        let next_permit = blocked_permits.next().unwrap();
+        try_reserve_initial_memory(&next_permit)
+            .await
+            .err()
+            .unwrap();
+        // if we drop one of the permits, the next one can reserve its memory
         permits.drain(0..1);
-        let next_permit_fut = remaining_permit_futs.next().unwrap();
-        let _new_permit = try_get(next_permit_fut).await.unwrap();
+        try_reserve_initial_memory(&next_permit).await.unwrap();
+        permits.push(next_permit);
         // the next permit is blocked again by the memory budget
-        let next_blocked_permit_fut = remaining_permit_futs.next().unwrap();
-        try_get(next_blocked_permit_fut).await.err().unwrap();
-        // by setting a more accurate memory usage after a completed warmup, we can get more permits
+        let next_permit = blocked_permits.next().unwrap();
+        try_reserve_initial_memory(&next_permit)
+            .await
+            .err()
+            .unwrap();
+        // by setting a more accurate memory usage after a completed warmup, more permits can
+        // reserve their memory
         permits[0].shrink_memory_allocation(ByteSize::mb(4));
         permits[1].shrink_memory_allocation(ByteSize::mb(6));
-        let next_permit_fut = remaining_permit_futs.next().unwrap();
-        try_get(next_permit_fut).await.unwrap();
+        try_reserve_initial_memory(&next_permit).await.unwrap();
     }
 
     #[tokio::test]
     async fn test_all_memory_freed_after_permits_dropped() {
         let permit_provider = SearchPermitProvider::new(2, ByteSize::mb(100));
-        let permit_futs = permit_provider.get_permits(make_splits(10, 6, 5, 0)).await;
+        let permit_futs = permit_provider.get_permits(make_splits(6, 5, 0)).await;
         // Drop a pending permit future before it is granted.
         let mut permit_futs = permit_futs.into_iter();
         drop(permit_futs.next_back());
@@ -941,7 +900,7 @@ mod tests {
     async fn test_get_permits_with_offload_threshold_max_returns_all() {
         let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100));
         let permits = permit_provider
-            .get_permits_with_offload(make_splits(1, 8, 5, 0), usize::MAX)
+            .get_permits_with_offload(make_splits(8, 5, 0), usize::MAX)
             .await;
         assert_eq!(permits.len(), 8);
     }
@@ -950,7 +909,7 @@ mod tests {
     async fn test_get_permits_with_offload_threshold_zero_returns_none() {
         let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100));
         let permits = permit_provider
-            .get_permits_with_offload(make_splits(1, 5, 5, 0), 0)
+            .get_permits_with_offload(make_splits(5, 5, 0), 0)
             .await;
         assert!(permits.is_empty());
         let permit_actor = permit_provider.stop_and_unwrap().await;
@@ -961,7 +920,7 @@ mod tests {
     async fn test_get_permits_with_offload_truncates_to_threshold() {
         let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100));
         let permits = permit_provider
-            .get_permits_with_offload(make_splits(1, 10, 5, 0), 4)
+            .get_permits_with_offload(make_splits(10, 5, 0), 4)
             .await;
         assert_eq!(permits.len(), 4);
     }
@@ -972,7 +931,7 @@ mod tests {
         // resolved in order.
         let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100));
         let permits = permit_provider
-            .get_permits_with_offload(make_splits(1, 4, 5, 0), 10)
+            .get_permits_with_offload(make_splits(4, 5, 0), 10)
             .await;
         assert_eq!(permits.len(), 4);
         let mut futs: Vec<_> = permits
@@ -1000,7 +959,7 @@ mod tests {
         let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100));
         // First call: 4 splits, threshold 6.
         let first_permits = permit_provider
-            .get_permits_with_offload(make_splits(1, 4, 5, 0), 6)
+            .get_permits_with_offload(make_splits(4, 5, 0), 6)
             .await;
         assert_eq!(first_permits.len(), 4);
         // Consume all permits from the first batch (they resolve and get dropped).
@@ -1009,7 +968,7 @@ mod tests {
         }
         // Second call: the consumed permits no longer count as pending.
         let second_permits = permit_provider
-            .get_permits_with_offload(make_splits(1, 5, 5, 0), 6)
+            .get_permits_with_offload(make_splits(5, 5, 0), 6)
             .await;
         assert_eq!(second_permits.len(), 5);
     }
@@ -1017,7 +976,7 @@ mod tests {
     #[tokio::test]
     async fn test_warmup_slot() {
         let permit_provider = SearchPermitProvider::new(10, ByteSize::mb(100));
-        let mut permit_futs = permit_provider.get_permits(make_splits(1, 16, 5, 0)).await;
+        let mut permit_futs = permit_provider.get_permits(make_splits(16, 5, 0)).await;
         let mut remaining_permit_futs = permit_futs.split_off(10).into_iter();
         assert_eq!(remaining_permit_futs.len(), 6);
         // we should be able to obtain 10 permits right away
@@ -1057,20 +1016,7 @@ mod tests {
 
         let task_metadata = LeafSearchTaskMetadata {
             priority: 0,
-            splits: vec![
-                SplitSearchTaskMetadata {
-                    memory_allocation: ByteSize::mb(10),
-                    job_cost: 7,
-                },
-                SplitSearchTaskMetadata {
-                    memory_allocation: ByteSize::mb(10),
-                    job_cost: 3,
-                },
-                SplitSearchTaskMetadata {
-                    memory_allocation: ByteSize::mb(10),
-                    job_cost: 5,
-                },
-            ],
+            split_job_costs: vec![7, 3, 5],
         };
         let mut permit_futs = permit_provider.get_permits(task_metadata).await;
 
@@ -1092,12 +1038,9 @@ mod tests {
         assert_eq!(permit_provider.get_load(), 0);
     }
 
-    async fn get_single_permit(
-        permit_provider: &SearchPermitProvider,
-        memory_mb: u64,
-    ) -> SearchPermit {
+    async fn get_single_permit(permit_provider: &SearchPermitProvider) -> SearchPermit {
         permit_provider
-            .get_permits(make_splits(memory_mb, 1, 5, 0))
+            .get_permits(make_splits(1, 5, 0))
             .await
             .pop()
             .unwrap()
@@ -1105,34 +1048,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_reserved_memory_blocks_pending_permits_until_freed() {
+    async fn test_reserved_memory_blocks_initial_reservations_until_freed() {
         // 100MB - 95MB = 5MB are shared by the split searches other than the oldest one.
         let permit_provider = SearchPermitProvider::with_split_max_allocation(
             10,
             ByteSize::mb(100),
             ByteSize::mb(95),
         );
-        let permit = get_single_permit(&permit_provider, 10).await;
+        let permit = get_single_permit(&permit_provider).await;
         // Only the growth of the reservation matters here: the memory in use is released right
         // away, but the permit keeps its 95MB reservation.
         {
-            let warmup_memory = permit.warmup_memory();
+            let warmup_memory = permit.warmup_memory(ByteSize::mb(10)).await.unwrap();
             let reservation = warmup_memory
-                .try_reserve_memory(ByteSize::mb(95).as_u64())
+                .reserve_memory(ByteSize::mb(95).as_u64())
+                .await
                 .unwrap();
             drop(reservation);
         }
-        let mut pending_permit_futs = permit_provider
-            .get_permits(make_splits(10, 2, 5, 0))
+        // Permits only wait for warmup slots: the next one is granted right away.
+        let next_permit = get_single_permit(&permit_provider).await;
+        // The oldest split search holds 95MB: the next one cannot reserve its 10MB.
+        try_reserve_initial_memory(&next_permit)
             .await
-            .into_iter();
-        // The oldest split search holds 95MB: the pending 10MB permit is blocked.
-        let blocked_permit_fut = pending_permit_futs.next().unwrap();
-        try_get(blocked_permit_fut).await.err().unwrap();
-        // Dropping the permit frees its memory and wakes up the actor.
+            .err()
+            .unwrap();
+        // Dropping the permit frees its memory.
         drop(permit);
-        let next_permit_fut = pending_permit_futs.next().unwrap();
-        let next_permit = try_get(next_permit_fut).await.unwrap();
+        try_reserve_initial_memory(&next_permit).await.unwrap();
         drop(next_permit);
         let permit_actor = permit_provider.stop_and_unwrap().await;
         assert_eq!(permit_actor.warmup_memory.allocated(), 0);
@@ -1145,21 +1088,20 @@ mod tests {
             ByteSize::mb(100),
             ByteSize::mb(95),
         );
-        let permit = get_single_permit(&permit_provider, 95).await;
+        let permit = get_single_permit(&permit_provider).await;
         // Held by the split's `CachingDirectory` in practice.
-        let warmup_memory = permit.warmup_memory();
-        let mut pending_permit_futs = permit_provider
-            .get_permits(make_splits(10, 2, 5, 0))
-            .await
-            .into_iter();
-        // The memory is still referenced by the directory, so the pending permit stays blocked.
+        let warmup_memory = permit.warmup_memory(ByteSize::mb(95)).await.unwrap();
+        let next_permit = get_single_permit(&permit_provider).await;
+        // The memory is still referenced by the directory, so the next permit cannot reserve its
+        // memory.
         drop(permit);
-        let blocked_permit_fut = pending_permit_futs.next().unwrap();
-        try_get(blocked_permit_fut).await.err().unwrap();
-        // Dropping the last reference frees the memory and wakes up the actor.
+        try_reserve_initial_memory(&next_permit)
+            .await
+            .err()
+            .unwrap();
+        // Dropping the last reference frees the memory.
         drop(warmup_memory);
-        let next_permit_fut = pending_permit_futs.next().unwrap();
-        let next_permit = try_get(next_permit_fut).await.unwrap();
+        try_reserve_initial_memory(&next_permit).await.unwrap();
         drop(next_permit);
         let permit_actor = permit_provider.stop_and_unwrap().await;
         assert_eq!(permit_actor.warmup_memory.allocated(), 0);

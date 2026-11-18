@@ -36,10 +36,10 @@ use tantivy::{ReloadPolicy, Term};
 use tracing::{debug, error, info, instrument};
 
 use crate::cost::compute_split_query_cost;
-use crate::leaf::open_index_with_caches;
+use crate::leaf::{compute_initial_memory_allocation, open_index_with_caches};
 use crate::metrics::{LEAF_LIST_TERMS_SPLITS_TOTAL, LEAF_SEARCH_SPLIT_DURATION_SECS};
 use crate::search_job_placer::group_jobs_by_index_id;
-use crate::search_permit_provider::{SearchPermit, compute_initial_memory_allocation};
+use crate::search_permit_provider::SearchPermit;
 use crate::{ClusterClient, SearchError, SearchJob, SearcherContext, resolve_index_patterns};
 
 /// Performs a distributed list terms.
@@ -222,13 +222,19 @@ async fn leaf_list_terms_single_split(
     search_permit: &SearchPermit,
 ) -> crate::Result<LeafListTermsResponse> {
     let cache = ByteRangeCache::with_infinite_capacity();
+    // Waits until the initial warmup memory of the split search is available.
+    let initial_memory_allocation =
+        compute_initial_memory_allocation(&split, &searcher_context.searcher_config);
+    let warmup_memory = search_permit
+        .warmup_memory(initial_memory_allocation)
+        .await?;
     let (index, hot_directory) = open_index_with_caches(
         searcher_context,
         storage,
         &split,
         None,
         Some(cache),
-        Some(search_permit.warmup_memory()),
+        Some(warmup_memory),
     )
     .await?;
     // Listing terms cannot download more than the index, so we do not need to reserve more.
@@ -346,34 +352,15 @@ pub async fn leaf_list_terms(
     splits: &[SplitIdAndFooterOffsets],
 ) -> Result<LeafListTermsResponse, SearchError> {
     info!(split_offsets = ?PrettySample::new(splits, 5));
-    let split_metadatas = splits
+    // query_complexity_factor is 1.0 here (no effect) because list_terms doesn't execute the
+    // query.
+    let split_job_costs: Vec<usize> = splits
         .iter()
-        .map(|split| {
-            let memory_allocation = compute_initial_memory_allocation(
-                split,
-                searcher_context
-                    .searcher_config
-                    .warmup_single_split_initial_allocation,
-            )
-            // A split search can never reserve more than the per-split limit, which is also lower
-            // or equal to the total budget (a reservation above it could never acquire a permit).
-            .min(
-                searcher_context
-                    .searcher_config
-                    .effective_warmup_single_split_max_allocation(),
-            );
-            // query_complexity_factor is 1.0 here (no effect) because list_terms doesn't execute
-            // the query.
-            let job_cost = compute_split_query_cost(split.num_docs, 1.0);
-            crate::search_permit_provider::SplitSearchTaskMetadata {
-                memory_allocation,
-                job_cost,
-            }
-        })
+        .map(|split| compute_split_query_cost(split.num_docs, 1.0))
         .collect();
     let task_metadata = crate::search_permit_provider::LeafSearchTaskMetadata {
         priority: 0,
-        splits: split_metadatas,
+        split_job_costs,
     };
     // We have added offloading leaf search to lambdas, but not for list_terms yet.
     // TODO (Add it)

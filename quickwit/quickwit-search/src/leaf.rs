@@ -31,6 +31,7 @@ use futures::stream::{self, FuturesUnordered};
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::thread_pool::with_priority::Priority;
 use quickwit_common::uri::Uri;
+use quickwit_config::SearcherConfig;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{Automaton, DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo};
 use quickwit_metrics::HistogramTimer;
@@ -61,16 +62,14 @@ use tokio_util::sync::CancellationToken;
 use tracing::*;
 
 use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
-use crate::cost::{compute_query_cost, compute_split_query_cost};
+use crate::cost::{compute_query_complexity_factor, compute_split_query_cost};
 use crate::leaf_cache::LeafSearchCache;
 use crate::metrics::{
     LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES, LEAF_SEARCH_SPLIT_DURATION_SECS,
     SPLIT_SEARCH_OUTCOME_TOTAL, SplitSearchOutcomeCounters,
 };
 use crate::root::is_metadata_count_request_with_ast;
-use crate::search_permit_provider::{
-    SearchPermit, SearchPermitFuture, compute_initial_memory_allocation,
-};
+use crate::search_permit_provider::{SearchPermit, SearchPermitFuture};
 use crate::service::{SearcherContext, deserialize_doc_mapper};
 use crate::split_warmup_memory::SplitWarmupMemory;
 use crate::{QuickwitAggregations, SearchError};
@@ -691,13 +690,22 @@ async fn leaf_search_single_split(
     // ABOVE this wrapper, so reads served from cache do not contribute to the
     // counters — that is the desired "downloaded from object storage" semantics.
     let (storage, download_counters) = CountingStorage::instrument_storage(storage);
+    // Waits until the initial warmup memory of the split search is available.
+    let initial_memory_allocation =
+        compute_initial_memory_allocation(&split, &ctx.searcher_context.searcher_config);
+    let warmup_memory = search_permit
+        .warmup_memory(initial_memory_allocation)
+        .await
+        .inspect_err(|_| {
+            leaf_search_state_guard.set_state(SplitSearchState::Error(SplitSearchErrorKind::Warmup))
+        })?;
     let (index, hot_directory) = open_index_with_caches(
         &ctx.searcher_context,
         storage,
         &split,
         Some(ctx.doc_mapper.tokenizer_manager()),
         Some(byte_range_cache.clone()),
-        Some(search_permit.warmup_memory()),
+        Some(warmup_memory),
     )
     .await
     .inspect_err(|_| {
@@ -1920,6 +1928,31 @@ async fn run_offloaded_search_tasks(
     Ok(())
 }
 
+/// Makes a very pessimistic estimate of the warmup memory of a split search. It is reserved
+/// before the warmup, and refined later on when more data is available about the split.
+///
+/// Clamped to the per-split limit, since a split search can never reserve more: the 10MB floor
+/// could otherwise go over it.
+pub(crate) fn compute_initial_memory_allocation(
+    split: &SplitIdAndFooterOffsets,
+    searcher_config: &SearcherConfig,
+) -> ByteSize {
+    let initial_allocation = searcher_config
+        .warmup_single_split_initial_allocation
+        .as_u64();
+    let split_size = split.split_footer_start;
+    // we consider the configured initial allocation to be set for a large split with 10M docs
+    const LARGE_SPLIT_NUM_DOCS: u64 = 10_000_000;
+    let proportional_allocation = initial_allocation * split.num_docs / LARGE_SPLIT_NUM_DOCS;
+    let size_bytes = [split_size, proportional_allocation, initial_allocation]
+        .into_iter()
+        .min()
+        .unwrap();
+    const MINIMUM_ALLOCATION_BYTES: u64 = 10_000_000;
+    ByteSize(size_bytes.max(MINIMUM_ALLOCATION_BYTES))
+        .min(searcher_config.effective_warmup_single_split_max_allocation())
+}
+
 struct LocalSearchTask {
     split: SplitIdAndFooterOffsets,
     search_request: SearchRequest,
@@ -1940,44 +1973,24 @@ struct ScheduleSearchTaskResult {
 /// - remotely on lambdas, if lambda are configured, and the number of tasks scheduled exceed the
 ///   offload threshold.
 ///
-/// Query factors are computed once from the original request, before per-split rewrites.
+/// The query complexity factor is computed once from the original request, before per-split
+/// rewrites.
 async fn schedule_search_tasks(
     mut splits: Vec<(SplitIdAndFooterOffsets, SearchRequest)>,
     searcher_context: &SearcherContext,
     query_complexity_factor: f32,
-    warmup_memory_factor: u64,
 ) -> ScheduleSearchTaskResult {
     let priority = splits
         .first()
         .map(|(_, search_request)| search_request.priority)
         .unwrap_or_default();
-    let split_metadatas = splits
+    let split_job_costs: Vec<usize> = splits
         .iter()
-        .map(|(split, _)| {
-            let memory_allocation = compute_initial_memory_allocation(
-                split,
-                searcher_context
-                    .searcher_config
-                    .warmup_single_split_initial_allocation,
-            );
-            // A split search can never reserve more than the per-split limit, which is also lower
-            // or equal to the total budget (a reservation above it could never acquire a permit).
-            let memory_allocation = ByteSize(memory_allocation.as_u64() * warmup_memory_factor)
-                .min(
-                    searcher_context
-                        .searcher_config
-                        .effective_warmup_single_split_max_allocation(),
-                );
-            let job_cost = compute_split_query_cost(split.num_docs, query_complexity_factor);
-            crate::search_permit_provider::SplitSearchTaskMetadata {
-                memory_allocation,
-                job_cost,
-            }
-        })
+        .map(|(split, _)| compute_split_query_cost(split.num_docs, query_complexity_factor))
         .collect();
     let task_metadata = crate::search_permit_provider::LeafSearchTaskMetadata {
         priority,
-        splits: split_metadatas,
+        split_job_costs,
     };
 
     let offload_threshold: usize = if searcher_context.lambda_invoker.is_some()
@@ -2087,20 +2100,14 @@ pub async fn single_doc_mapping_leaf_search(
     let incremental_merge_collector_arc: Arc<Mutex<IncrementalCollector>> =
         Arc::new(Mutex::new(incremental_merge_collector));
 
-    // Use the original request to compute query factors once.
-    let query_cost = compute_query_cost(&request)?;
+    // Use the original request to compute the query complexity factor once.
+    let query_complexity_factor = compute_query_complexity_factor(&request)?;
 
     // Determine which uncached splits to process locally vs offload.
     let ScheduleSearchTaskResult {
         local_search_tasks,
         offloaded_search_tasks,
-    } = schedule_search_tasks(
-        uncached_splits,
-        &searcher_context,
-        query_cost.complexity_factor,
-        query_cost.warmup_memory_factor,
-    )
-    .await;
+    } = schedule_search_tasks(uncached_splits, &searcher_context, query_complexity_factor).await;
 
     let has_offloaded_tasks = !offloaded_search_tasks.is_empty();
 
@@ -3126,7 +3133,7 @@ mod tests {
     async fn test_schedule_search_tasks_no_lambda_all_local() {
         let searcher_context = SearcherContext::for_test();
         let splits = make_splits_with_requests(5);
-        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0, 1).await;
+        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0).await;
         assert_eq!(result.local_search_tasks.len(), 5);
         assert!(result.offloaded_search_tasks.is_empty());
         for (idx, task) in result.local_search_tasks.iter().enumerate() {
@@ -3134,89 +3141,35 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_schedule_search_tasks_warmup_memory_factor() {
-        let mut config = SearcherConfig::default();
-        config.warmup_memory_budget = ByteSize::mb(500);
-        let searcher_context = SearcherContext::new(config, None, None::<DummyInvoker>);
-        for (value, factor) in [("error*", 1), ("*error", 10)] {
-            for num_docs in [100, 1_000_000, 10_000_000] {
-                let split = SplitIdAndFooterOffsets {
-                    num_docs,
-                    split_footer_start: 1_000_000_000,
-                    ..Default::default()
-                };
-                let request = SearchRequest {
-                    query_ast: serde_json::json!({
-                        "type": "wildcard", "field": "message", "value": value,
-                        "lenient": false, "case_insensitive": false
-                    })
-                    .to_string(),
-                    ..Default::default()
-                };
-                let cost = compute_query_cost(&request).unwrap();
-                let expected = compute_initial_memory_allocation(
-                    &split,
-                    searcher_context
-                        .searcher_config
-                        .warmup_single_split_initial_allocation,
-                )
-                .as_u64()
-                    * factor;
-                let result = super::schedule_search_tasks(
-                    vec![(split, request)],
-                    &searcher_context,
-                    cost.complexity_factor,
-                    cost.warmup_memory_factor,
-                )
-                .await;
-                let task = result.local_search_tasks.into_iter().next().unwrap();
-                let permit = task.search_permit_future.await;
-                assert_eq!(
-                    permit.memory_allocation().as_u64(),
-                    expected.min(
-                        searcher_context
-                            .searcher_config
-                            .effective_warmup_single_split_max_allocation()
-                            .as_u64()
-                    )
-                );
-            }
+    #[test]
+    fn test_compute_initial_memory_allocation() {
+        let split = |num_docs: u64, split_footer_start: u64| SplitIdAndFooterOffsets {
+            num_docs,
+            split_footer_start,
+            ..Default::default()
+        };
+        // Default config: 300MB for a split of 10M docs, proportionally less for smaller splits,
+        // never more than the split itself, and at least 10MB.
+        let config = SearcherConfig::default();
+        let cases = [
+            (split(10_000_000, 1_000_000_000), ByteSize::mb(300)),
+            (split(1_000_000, 1_000_000_000), ByteSize::mb(30)),
+            (split(10_000_000, 50_000_000), ByteSize::mb(50)),
+            (split(100, 1_000_000_000), ByteSize::mb(10)),
+            (split(10_000_000, 1_000), ByteSize::mb(10)),
+        ];
+        for (split, expected) in cases {
+            assert_eq!(compute_initial_memory_allocation(&split, &config), expected);
         }
-    }
-
-    #[tokio::test]
-    async fn test_schedule_search_tasks_clamps_to_split_max_allocation() {
+        // The 10MB floor is clamped to the per-split limit.
         let mut config = SearcherConfig::default();
-        config.warmup_single_split_initial_allocation = ByteSize::mb(50);
-        config.warmup_single_split_max_allocation = Some(ByteSize::mb(50));
+        config.warmup_single_split_initial_allocation = ByteSize::mb(1);
+        config.warmup_single_split_max_allocation = Some(ByteSize::mb(5));
         config.validate().unwrap();
-        let searcher_context = SearcherContext::new(config, None, None::<DummyInvoker>);
-        // A large split with a leading wildcard asks for 10 x 300MB: it gets the per-split limit.
-        let split = SplitIdAndFooterOffsets {
-            num_docs: 10_000_000,
-            split_footer_start: 1_000_000_000,
-            ..Default::default()
-        };
-        let request = SearchRequest {
-            query_ast: serde_json::json!({
-                "type": "wildcard", "field": "message", "value": "*error",
-                "lenient": false, "case_insensitive": false
-            })
-            .to_string(),
-            ..Default::default()
-        };
-        let cost = compute_query_cost(&request).unwrap();
-        let result = super::schedule_search_tasks(
-            vec![(split, request)],
-            &searcher_context,
-            cost.complexity_factor,
-            cost.warmup_memory_factor,
-        )
-        .await;
-        let task = result.local_search_tasks.into_iter().next().unwrap();
-        let permit = task.search_permit_future.await;
-        assert_eq!(permit.memory_allocation(), ByteSize::mb(50));
+        assert_eq!(
+            compute_initial_memory_allocation(&split(10_000_000, 1_000_000_000), &config),
+            ByteSize::mb(5)
+        );
     }
 
     struct DummyInvoker;
@@ -3239,7 +3192,7 @@ mod tests {
         });
         let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(7);
-        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0, 1).await;
+        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0).await;
         assert_eq!(result.local_search_tasks.len(), 3);
         assert_eq!(result.offloaded_search_tasks.len(), 4);
         for (idx, task) in result.local_search_tasks.iter().enumerate() {
@@ -3259,7 +3212,7 @@ mod tests {
         });
         let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(5);
-        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0, 1).await;
+        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0).await;
         assert!(result.local_search_tasks.is_empty());
         assert_eq!(result.offloaded_search_tasks.len(), 5);
     }
@@ -3273,7 +3226,7 @@ mod tests {
         });
         let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(5);
-        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0, 1).await;
+        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0).await;
         assert_eq!(result.local_search_tasks.len(), 5);
         assert!(result.offloaded_search_tasks.is_empty());
     }
@@ -3281,7 +3234,7 @@ mod tests {
     #[tokio::test]
     async fn test_schedule_search_tasks_empty() {
         let searcher_context = SearcherContext::for_test();
-        let result = super::schedule_search_tasks(Vec::new(), &searcher_context, 1.0, 1).await;
+        let result = super::schedule_search_tasks(Vec::new(), &searcher_context, 1.0).await;
         assert!(result.local_search_tasks.is_empty());
         assert!(result.offloaded_search_tasks.is_empty());
     }
