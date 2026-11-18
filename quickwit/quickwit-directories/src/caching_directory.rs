@@ -131,6 +131,7 @@ impl MemoryReserver for NoopMemoryReserver {
 }
 
 /// The caching directory is a simple cache that wraps another directory.
+/// Streaming reads bypass cache lookups, insertion, and memory reservations.
 #[derive(Clone)]
 pub struct CachingDirectory {
     underlying: Arc<dyn Directory>,
@@ -224,6 +225,15 @@ impl FileHandle for CachingFileHandle {
         let num_added_bytes = self.cache.put_slice(byte_range, read_bytes.clone());
         read_reservation.keep(num_added_bytes);
         Ok(read_bytes)
+    }
+
+    async fn read_bytes_stream(
+        &self,
+        byte_range: Range<usize>,
+    ) -> io::Result<Box<dyn tokio::io::AsyncRead + Send + Unpin>> {
+        self.underlying_filehandle
+            .read_bytes_stream(byte_range)
+            .await
     }
 }
 
@@ -473,6 +483,46 @@ mod tests {
         file_handle.read_bytes_async(0..5).await.unwrap();
         assert_eq!(memory_reserver.reserved(), 5);
         assert_eq!(debug_proxy_directory.drain_read_operations().count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_stream_bypasses_cache_and_memory_reservations() {
+        use tokio::io::AsyncReadExt;
+
+        let path = Path::new("test");
+        let content = b"hello world";
+        let underlying = debug_proxy_directory_with_file(path, content);
+        let memory_reserver = LimitedMemoryReserver::new(2);
+        let cache = ByteRangeCache::with_infinite_capacity();
+        let directory = CachingDirectory::new(underlying.clone(), cache.clone())
+            .with_memory_reserver(memory_reserver.clone());
+        let handle = directory.get_file_handle(path).unwrap();
+        handle.read_bytes_async(0..2).await.unwrap();
+        assert_eq!(underlying.drain_read_operations().count(), 1);
+
+        // Hits reach the underlying stream. Misses succeed with the cache budget exhausted.
+        for range in [0..2, 2..content.len(), 2..content.len()] {
+            let mut stream = handle.read_bytes_stream(range.clone()).await.unwrap();
+            let operations: Vec<_> = underlying.drain_read_operations().collect();
+            assert_eq!(operations.len(), 1);
+            assert_eq!(operations[0].path, path);
+            assert_eq!(operations[0].offset, range.start);
+            assert_eq!(operations[0].num_bytes, range.len());
+            let mut bytes = Vec::new();
+            stream.read_to_end(&mut bytes).await.unwrap();
+            assert_eq!(bytes, &content[range]);
+            assert_eq!(underlying.drain_read_operations().count(), 0);
+            assert_eq!(cache.get_num_bytes(), 2);
+            assert_eq!(memory_reserver.reserved(), 2);
+        }
+        assert!(
+            cache
+                .get_file_cache(path)
+                .get_slice(2..content.len())
+                .is_none()
+        );
+        assert_eq!(handle.read_bytes(0..2).unwrap().as_slice(), &content[..2]);
+        assert_eq!(underlying.drain_read_operations().count(), 0);
     }
 
     #[tokio::test]

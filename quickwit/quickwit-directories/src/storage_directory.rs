@@ -64,6 +64,20 @@ impl FileHandle for StorageDirectoryFileHandle {
             .await?;
         Ok(object_bytes)
     }
+
+    async fn read_bytes_stream(
+        &self,
+        byte_range: Range<usize>,
+    ) -> io::Result<Box<dyn tokio::io::AsyncRead + Send + Unpin>> {
+        if byte_range.is_empty() {
+            return Ok(Box::new(tokio::io::empty()));
+        }
+        self.storage_directory
+            .storage
+            .get_slice_stream(&self.path, byte_range)
+            .await
+            .map_err(io::Error::from)
+    }
 }
 
 /// Directory backed a quickwit `Storage` abstraction.
@@ -139,4 +153,61 @@ impl Directory for StorageDirectory {
     }
 
     crate::read_only_directory!();
+}
+
+#[cfg(test)]
+mod tests {
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use quickwit_storage::{MockStorage, StorageErrorKind};
+    use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
+
+    use super::*;
+
+    struct FailingReader;
+
+    impl AsyncRead for FailingReader {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+            _buffer: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            Poll::Ready(Err(io::ErrorKind::ConnectionReset.into()))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_empty_stream_skips_storage() {
+        let directory = StorageDirectory::new(Arc::new(MockStorage::default()));
+        let handle = directory.get_file_handle(Path::new("file")).unwrap();
+        let mut stream = handle.read_bytes_stream(7..7).await.unwrap();
+        assert_eq!(stream.read(&mut [0; 1]).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_stream_propagates_open_and_read_errors() {
+        let mut storage = MockStorage::default();
+        storage
+            .expect_get_slice_stream()
+            .times(2)
+            .returning(|_, range| {
+                if range.start == 0 {
+                    return Err(
+                        StorageErrorKind::NotFound.with_error(anyhow::anyhow!("missing file"))
+                    );
+                }
+                Ok(Box::new(io::Cursor::new([5]).chain(FailingReader)))
+            });
+        let directory = StorageDirectory::new(Arc::new(storage));
+        let handle = directory.get_file_handle(Path::new("file")).unwrap();
+        let error = handle.read_bytes_stream(0..1).await.err().unwrap();
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        let mut stream = handle.read_bytes_stream(5..20).await.unwrap();
+        assert_eq!(stream.read_u8().await.unwrap(), 5);
+        assert_eq!(
+            stream.read_u8().await.unwrap_err().kind(),
+            io::ErrorKind::ConnectionReset
+        );
+    }
 }

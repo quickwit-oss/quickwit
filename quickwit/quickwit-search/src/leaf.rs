@@ -206,8 +206,9 @@ fn configure_storage_retries(
 /// - An ephemeral unbounded cache directory (whose lifetime is tied to the returned `Index` if no
 ///   `ByteRangeCache` is provided).
 ///
-/// If `warmup_memory` is provided, every read that misses the hotcache and the ephemeral cache
-/// first reserves memory in it, and fails if the warmup memory limit would be exceeded.
+/// If `warmup_memory` is provided, every buffered read that misses the hotcache and the ephemeral
+/// cache first reserves memory in it, and fails if the warmup memory limit would be exceeded.
+/// Streaming reads bypass the ephemeral cache and its reservations.
 pub(crate) async fn open_index_with_caches(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
