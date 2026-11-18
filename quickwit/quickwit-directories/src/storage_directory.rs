@@ -194,12 +194,11 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::single_range_in_vec_init)] // Each caller requests one byte range.
     async fn test_failed_batch_is_not_cached() {
-        // Missing file, short gap/data, oversized body, and I/O failures in gaps/data.
+        // Missing file, short gap/data, and I/O failures in gaps/data.
         for (end, fail_at, kind) in [
             (None, None, io::ErrorKind::NotFound),
             (Some(10), None, io::ErrorKind::UnexpectedEof),
             (Some(18), None, io::ErrorKind::UnexpectedEof),
-            (Some(21), None, io::ErrorKind::InvalidData),
             (Some(20), Some(7), io::ErrorKind::ConnectionReset),
             (Some(20), Some(18), io::ErrorKind::ConnectionReset),
         ] {
@@ -243,6 +242,33 @@ mod tests {
                 assert_eq!(bytes[0].as_slice(), &[0, 1, 2, 3, 4]);
                 assert_eq!(bytes[1].as_slice(), &[16, 17, 18, 19]);
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_batch_reads_requested_bytes_from_oversized_response() {
+        let mut storage = MockStorage::default();
+        storage
+            .expect_get_slice_stream()
+            .times(1)
+            .returning(|_, range| {
+                assert_eq!(range, 0..20);
+                Ok(Box::new(GeneratedReader {
+                    position: 0,
+                    end: 21,
+                    fail_at: None,
+                }))
+            });
+        let storage = Arc::new(CoalescingStorage::new(Arc::new(storage)));
+        let directory = CachingDirectory::new_unbounded(Arc::new(StorageDirectory::new(storage)));
+        let handle = directory.get_file_handle(Path::new("file")).unwrap();
+        for _ in 0..2 {
+            let bytes = handle
+                .read_bytes_batch_async(vec![0..5, 16..20])
+                .await
+                .unwrap();
+            assert_eq!(bytes[0].as_slice(), &[0, 1, 2, 3, 4]);
+            assert_eq!(bytes[1].as_slice(), &[16, 17, 18, 19]);
         }
     }
 

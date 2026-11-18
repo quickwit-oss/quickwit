@@ -320,8 +320,10 @@ mod plan_tests {
     }
 
     #[test]
+    #[allow(clippy::single_range_in_vec_init)] // Inputs and expected outputs contain byte ranges.
     fn test_coalesce_ranges_boundaries() {
-        let cases: &[(&[Range<usize>], &[Range<usize>])] = &[
+        type TestCase<'a> = (&'a [Range<usize>], &'a [Range<usize>]);
+        let cases: &[TestCase<'_>] = &[
             (&[], &[]),
             (&[10..20], &[10..20]),
             // Unsorted, duplicate, nested, adjacent, and separated ranges.

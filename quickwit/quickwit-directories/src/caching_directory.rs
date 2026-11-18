@@ -550,6 +550,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::single_range_in_vec_init)] // These reads request one byte range.
     async fn test_caching_directory_batch_memory_accounting() {
         for (budget, ranges, reserved, reads) in [
             // Overlaps and duplicates count once. Hits need no reservation,
@@ -571,6 +572,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::single_range_in_vec_init)] // These reads request one byte range.
     async fn test_caching_directory_memory_reservation_failure() {
         for (mode, budget, ranges) in [
             (ReadMode::Sync, 4, vec![0..5]),
