@@ -35,7 +35,9 @@ updates:
 
   # Docker dependencies
   - package-ecosystem: docker
-    directory: "/"
+    directories:
+      - "/"
+      - "/distribution/docker/ubuntu"
     labels:
       - "dependencies"
       - "type:chore"
