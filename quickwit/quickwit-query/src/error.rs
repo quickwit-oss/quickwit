@@ -42,6 +42,8 @@ pub enum InvalidQuery {
     JsonFieldRootNotSearchable { full_path: String },
     #[error("user query should have been parsed")]
     UserQueryNotParsed,
+    #[error("failed to serialize query: {0}")]
+    SerializationError(#[from] serde_json::Error),
     #[error("{0}")]
     Other(#[from] anyhow::Error),
 }

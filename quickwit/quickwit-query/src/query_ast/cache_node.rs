@@ -77,6 +77,11 @@ impl CacheNode {
             state: CacheState::Uninitialized,
         }
     }
+
+    /// Retains prepared matches in the query, independently of shared-cache admission.
+    pub fn set_hits(&mut self, segment_id: SegmentId, hits: HitSet) {
+        self.state = CacheState::CacheHit(Box::new(CacheEntry { segment_id, hits }));
+    }
 }
 
 impl BuildTantivyAst for CacheNode {
@@ -290,8 +295,8 @@ impl Weight for CacheFillerWeight {
     }
 }
 
-/// Resolves cache nodes asynchronously before synchronous query construction and warmup planning.
-/// Uninitialized nodes execute their inner query without caching.
+/// Wraps regex/wildcard predicates and resolves cache nodes asynchronously before synchronous
+/// query construction and warmup planning. Uninitialized nodes execute without caching.
 pub struct PredicateCacheInjector {
     pub cache: Arc<dyn PredicateCache>,
     pub split_id: String,
@@ -302,6 +307,10 @@ impl PredicateCacheInjector {
         let mut pending = vec![query_ast];
         let mut lookups = Vec::new();
         while let Some(query_ast) = pending.pop() {
+            if matches!(query_ast, QueryAst::Regex(_) | QueryAst::Wildcard(_)) {
+                let inner = std::mem::replace(query_ast, QueryAst::MatchNone);
+                *query_ast = CacheNode::new(inner).into();
+            }
             match query_ast {
                 QueryAst::Bool(bool_query) => pending.extend(
                     bool_query
@@ -331,7 +340,13 @@ impl PredicateCacheInjector {
                             };
                         });
                     }
-                    pending.push(&mut cache_node.inner);
+                    // Direct automaton predicates already have a cache wrapper.
+                    if !matches!(
+                        *cache_node.inner,
+                        QueryAst::Regex(_) | QueryAst::Wildcard(_)
+                    ) {
+                        pending.push(&mut cache_node.inner);
+                    }
                 }
                 QueryAst::Term(_)
                 | QueryAst::TermSet(_)
@@ -697,6 +712,36 @@ mod tests {
         )
         .await
         .expect("sibling and nested lookups must run concurrently");
+    }
+
+    #[tokio::test]
+    async fn test_cache_injector_wraps_automatons_once() {
+        let cache = Arc::new(Mutex::new(HashMap::new()));
+        let injector = PredicateCacheInjector {
+            cache,
+            split_id: "split".to_string(),
+        };
+        for predicate in [
+            serde_json::json!({"type": "regex", "field": "body", "regex": "a.*"}),
+            serde_json::json!({"type": "wildcard", "field": "body", "value": "a*",
+                "lenient": false, "case_insensitive": false}),
+        ] {
+            let predicate: QueryAst = serde_json::from_value(predicate).unwrap();
+            for mut ast in [predicate.clone(), CacheNode::new(predicate.clone()).into()] {
+                // Repeated resolution also preserves a single wrapper and its cache key.
+                for _ in 0..2 {
+                    injector.resolve(&mut ast).await;
+                    let QueryAst::Cache(node) = &ast else {
+                        panic!("automaton predicate must be wrapped");
+                    };
+                    assert_eq!(*node.inner, predicate);
+                    let CacheState::CacheMiss(filler) = &node.state else {
+                        panic!("empty cache must resolve to a miss");
+                    };
+                    assert_eq!(filler.query, serde_json::to_string(&predicate).unwrap());
+                }
+            }
+        }
     }
 
     #[tokio::test]
