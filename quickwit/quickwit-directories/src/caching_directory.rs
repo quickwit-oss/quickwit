@@ -491,27 +491,36 @@ mod tests {
 
         let path = Path::new("test");
         let content = b"hello world";
-        let underlying = debug_proxy_directory_with_file(path, content);
+        let mut storage = quickwit_storage::MockStorage::default();
+        storage
+            .expect_get_slice()
+            .times(1)
+            .returning(move |read_path, range| {
+                assert_eq!(read_path, path);
+                assert_eq!(range, 0..2);
+                Ok(OwnedBytes::new(&content[..2]))
+            });
+        storage
+            .expect_get_slice_stream()
+            .times(3)
+            .returning(move |read_path, range| {
+                assert_eq!(read_path, path);
+                Ok(Box::new(io::Cursor::new(&content[range])))
+            });
+        let underlying = Arc::new(crate::StorageDirectory::new(Arc::new(storage)));
         let memory_reserver = LimitedMemoryReserver::new(2);
         let cache = ByteRangeCache::with_infinite_capacity();
-        let directory = CachingDirectory::new(underlying.clone(), cache.clone())
+        let directory = CachingDirectory::new(underlying, cache.clone())
             .with_memory_reserver(memory_reserver.clone());
         let handle = directory.get_file_handle(path).unwrap();
         handle.read_bytes_async(0..2).await.unwrap();
-        assert_eq!(underlying.drain_read_operations().count(), 1);
 
         // Hits reach the underlying stream. Misses succeed with the cache budget exhausted.
         for range in [0..2, 2..content.len(), 2..content.len()] {
             let mut stream = handle.read_bytes_stream(range.clone()).await.unwrap();
-            let operations: Vec<_> = underlying.drain_read_operations().collect();
-            assert_eq!(operations.len(), 1);
-            assert_eq!(operations[0].path, path);
-            assert_eq!(operations[0].offset, range.start);
-            assert_eq!(operations[0].num_bytes, range.len());
             let mut bytes = Vec::new();
             stream.read_to_end(&mut bytes).await.unwrap();
             assert_eq!(bytes, &content[range]);
-            assert_eq!(underlying.drain_read_operations().count(), 0);
             assert_eq!(cache.get_num_bytes(), 2);
             assert_eq!(memory_reserver.reserved(), 2);
         }
@@ -522,7 +531,6 @@ mod tests {
                 .is_none()
         );
         assert_eq!(handle.read_bytes(0..2).unwrap().as_slice(), &content[..2]);
-        assert_eq!(underlying.drain_read_operations().count(), 0);
     }
 
     #[tokio::test]
