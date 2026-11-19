@@ -68,7 +68,7 @@ impl FileHandle for StorageDirectoryFileHandle {
         Ok(object_bytes)
     }
 
-    fn read_bytes_batch_stream(
+    fn stream_ranges(
         &self,
         ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
     ) -> BoxStream<'_, io::Result<OwnedBytes>> {
@@ -190,12 +190,12 @@ mod tests {
             });
         let directory = StorageDirectory::new(Arc::new(storage));
         let handle = directory.get_file_handle(Path::new("file")).unwrap();
-        let mut missing = handle.read_bytes_batch_stream(Box::new(std::iter::once(0..1)));
+        let mut missing = handle.stream_ranges(Box::new(std::iter::once(0..1)));
         assert_eq!(
             missing.try_next().await.unwrap_err().kind(),
             io::ErrorKind::NotFound
         );
-        let mut stream = handle.read_bytes_batch_stream(Box::new([5..6, 6..20].into_iter()));
+        let mut stream = handle.stream_ranges(Box::new([5..6, 6..20].into_iter()));
         assert_eq!(stream.try_next().await.unwrap().unwrap().as_slice(), &[5]);
         assert_eq!(
             stream.try_next().await.unwrap_err().kind(),

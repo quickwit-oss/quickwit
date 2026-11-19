@@ -406,12 +406,12 @@ impl FileHandle for FileSliceWithCache {
         self.underlying.read_bytes_slice_async(byte_range).await
     }
 
-    fn read_bytes_batch_stream(
+    fn stream_ranges(
         &self,
         ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
     ) -> BoxStream<'_, io::Result<OwnedBytes>> {
         if self.static_cache.index.slices.is_empty() {
-            return self.underlying.read_bytes_batch_stream(ranges);
+            return self.underlying.stream_ranges(ranges);
         }
         let cache = self.static_cache.clone();
         let ranges = ranges.map(move |range| {
@@ -422,18 +422,21 @@ impl FileHandle for FileSliceWithCache {
         async_stream::try_stream! {
             loop {
                 let next = ranges.lock().unwrap().next();
-                let Some((first, hit)) = next else { break };
-                if let Some(bytes) = hit {
-                    yield bytes;
-                    continue;
-                }
+                let first_uncached_range = match next {
+                    Some((range, None)) => range,
+                    Some((_, Some(bytes))) => {
+                        yield bytes;
+                        continue;
+                    }
+                    None => break,
+                };
                 // The inner iterator must be owned. Share the cursor so it can pull consecutive
                 // misses on demand and leave the next cache hit queued for the outer stream.
                 let cursor = ranges.clone();
                 let misses = std::iter::from_fn(move || cursor.lock().unwrap()
                     .next_if(|(_, hit)| hit.is_none()).map(|(range, _)| range));
-                let run = std::iter::once(first).chain(misses);
-                let mut stream = self.underlying.read_bytes_batch_stream(Box::new(run));
+                let ranges_to_download = std::iter::once(first_uncached_range).chain(misses);
+                let mut stream = self.underlying.stream_ranges(Box::new(ranges_to_download));
                 while let Some(bytes) = stream.try_next().await? {
                     yield bytes;
                 }
@@ -614,7 +617,7 @@ mod tests {
         // Cached bytes differ from storage. A partial hit still reads the complete range from
         // storage.
         let ranges = [0..2, 5..7, 2..4, 3..3, 2..4, 3..5];
-        let mut stream = file.read_bytes_batch_stream(Box::new(ranges.into_iter()));
+        let mut stream = file.stream_ranges(Box::new(ranges.into_iter()));
         for expected in [b"23".as_slice(), b"78", b"xx", b"", b"xx", b"56"] {
             assert_eq!(
                 stream.try_next().await.unwrap().unwrap().as_slice(),
@@ -626,7 +629,7 @@ mod tests {
         // A miss run stays lazy when the backend itself only asks for one range.
         let ranges =
             std::iter::once(0..2).chain(std::iter::from_fn(|| panic!("unexpected read-ahead")));
-        let mut stream = file.read_bytes_batch_stream(Box::new(ranges));
+        let mut stream = file.stream_ranges(Box::new(ranges));
         assert_eq!(stream.try_next().await.unwrap().unwrap().as_slice(), b"23");
     }
 
