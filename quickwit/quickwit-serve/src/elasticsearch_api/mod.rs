@@ -67,10 +67,11 @@ pub fn elastic_api_handlers(
     index_service: IndexService,
     enable_ingest_v1: bool,
     enable_ingest_v2: bool,
+    build_info: &'static BuildInfo,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     let max_body_size = node_config.ingest_api_config.max_body_size;
     let max_decompressed_body_size = node_config.ingest_api_config.max_decompressed_body_size;
-    es_compat_cluster_info_handler(node_config.clone(), BuildInfo::get())
+    es_compat_cluster_info_handler(node_config.clone(), build_info)
         .or(es_compat_nodes_handler(node_config.clone()))
         .or(es_compat_search_handler(search_service.clone()))
         .or(es_compat_bulk_handler(
@@ -228,6 +229,7 @@ mod tests {
             index_service,
             true,
             false,
+            BuildInfo::for_tests(),
         );
         let msearch_payload = r#"
             {"index":"index-1"}
@@ -293,6 +295,7 @@ mod tests {
             index_service,
             true,
             false,
+            BuildInfo::for_tests(),
         );
         let msearch_payload = r#"
             {"index":"index-1"}
@@ -343,6 +346,7 @@ mod tests {
             index_service,
             true,
             false,
+            BuildInfo::for_tests(),
         );
         let msearch_payload = r#"
             {"index":"index-1"
@@ -382,6 +386,7 @@ mod tests {
             index_service,
             true,
             false,
+            BuildInfo::for_tests(),
         );
         let msearch_payload = r#"
             {"index":"index-1"}
@@ -421,6 +426,7 @@ mod tests {
             index_service,
             true,
             false,
+            BuildInfo::for_tests(),
         );
         let msearch_payload = r#"
             {"index":"index-1"}
@@ -459,6 +465,7 @@ mod tests {
             index_service,
             true,
             false,
+            BuildInfo::for_tests(),
         );
         let msearch_payload = r#"
             {}
@@ -508,6 +515,7 @@ mod tests {
             index_service,
             true,
             false,
+            BuildInfo::for_tests(),
         );
         let msearch_payload = r#"
             {"index": ["index-1", "index-2"]}
@@ -524,7 +532,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_es_compat_cluster_info_handler() {
-        let build_info = BuildInfo::get();
+        let build_info = BuildInfo::for_tests();
         let config = Arc::new(NodeConfig::for_test());
         let handler =
             es_compat_cluster_info_handler(config.clone(), build_info).recover(recover_fn);
@@ -553,7 +561,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_head_request_on_root_endpoint() {
-        let build_info = BuildInfo::get();
+        let build_info = BuildInfo::for_tests();
         let config = Arc::new(NodeConfig::for_test());
         let handler =
             es_compat_cluster_info_handler(config.clone(), build_info).recover(recover_fn);

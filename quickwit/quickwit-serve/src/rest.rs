@@ -66,7 +66,7 @@ use crate::search_api::{
 };
 use crate::template_api::index_template_api_handlers;
 use crate::ui_handler::ui_handler;
-use crate::{BodyFormat, BuildInfo, QuickwitServices, RuntimeInfo};
+use crate::{BodyFormat, QuickwitServices, RuntimeInfo};
 
 #[derive(Debug)]
 pub(crate) struct InvalidJsonRequest(pub serde_json::Error);
@@ -499,6 +499,7 @@ fn mcp_routes(
     quickwit_services: Arc<QuickwitServices>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     crate::mcp_api::mcp_api_handlers(
+        quickwit_services.build_info,
         quickwit_services.search_service.clone(),
         quickwit_services.metastore_client.clone(),
         quickwit_services
@@ -525,11 +526,12 @@ fn api_v1_routes(
             quickwit_services.index_manager.clone(),
             !disable_ingest_v1(),
             enable_ingest_v2(),
+            quickwit_services.build_info,
         )
         .or(cluster_handler(quickwit_services.cluster.clone()))
         .boxed()
         .or(node_info_handler(
-            BuildInfo::get(),
+            quickwit_services.build_info,
             RuntimeInfo::get(),
             quickwit_services.node_config.clone(),
         ))
@@ -924,6 +926,7 @@ mod tests {
             .await
             .unwrap();
         let quickwit_services = QuickwitServices {
+            build_info: crate::BuildInfo::for_tests(),
             _report_splits_subscription_handle_opt: None,
             _local_shards_update_listener_handle_opt: None,
             cluster,

@@ -17,6 +17,7 @@ use std::sync::LazyLock;
 use quickwit_common::runtimes::RuntimesConfig;
 use serde::Serialize;
 
+/// Build metadata supplied by the executable and shared with its server services.
 #[derive(Debug, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 pub struct BuildInfo {
     pub build_date: &'static str,
@@ -31,61 +32,26 @@ pub struct BuildInfo {
 }
 
 impl BuildInfo {
-    /// Returns the properties of the binary.
-    pub fn get() -> &'static Self {
-        const UNKNOWN: &str = "unknown";
-
-        static INSTANCE: LazyLock<BuildInfo> = LazyLock::new(|| {
-            let commit_date = option_env!("QW_COMMIT_DATE")
-                .filter(|commit_date| !commit_date.is_empty())
-                .unwrap_or(UNKNOWN);
-            let commit_hash = option_env!("QW_COMMIT_HASH")
-                .filter(|commit_hash| !commit_hash.is_empty())
-                .unwrap_or(UNKNOWN);
-            let commit_short_hash = option_env!("QW_COMMIT_HASH")
-                .filter(|commit_hash| commit_hash.len() >= 7)
-                .map(|commit_hash| &commit_hash[..7])
-                .unwrap_or(UNKNOWN);
-            let mut commit_tags: Vec<String> = option_env!("QW_COMMIT_TAGS")
-                .map(|tags| {
-                    tags.split(',')
-                        .map(|tag| tag.trim().to_string())
-                        .filter(|tag| !tag.is_empty())
-                        .collect()
-                })
-                .unwrap_or_default();
-            commit_tags.sort();
-
-            let version = commit_tags
-                .iter()
-                .find(|tag| tag.starts_with('v'))
-                .cloned()
-                .unwrap_or_else(|| concat!(env!("CARGO_PKG_VERSION"), "-nightly").to_string());
-
-            BuildInfo {
-                build_date: env!("BUILD_DATE"),
-                build_profile: env!("BUILD_PROFILE"),
-                build_target: env!("BUILD_TARGET"),
-                cargo_pkg_version: env!("CARGO_PKG_VERSION"),
-                commit_date,
-                commit_hash,
-                commit_short_hash,
-                commit_tags,
-                version,
-            }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_tests() -> &'static Self {
+        static BUILD_INFO: LazyLock<BuildInfo> = LazyLock::new(|| BuildInfo {
+            build_date: "2025-01-01T00:00:00Z",
+            build_profile: "test",
+            build_target: "test-target",
+            cargo_pkg_version: "0.0.0",
+            commit_date: "2025-01-01T00:00:00Z",
+            commit_hash: "0123456789abcdef0123456789abcdef01234567",
+            commit_short_hash: "0123456",
+            commit_tags: Vec::new(),
+            version: "0.0.0-nightly".to_string(),
         });
-
-        &INSTANCE
+        &BUILD_INFO
     }
 
-    pub fn get_version_text() -> String {
-        let build_info = Self::get();
+    pub fn get_version_text(&self) -> String {
         format!(
             "{} ({} {} {})",
-            build_info.cargo_pkg_version,
-            build_info.build_target,
-            build_info.commit_date,
-            build_info.commit_short_hash
+            self.cargo_pkg_version, self.build_target, self.commit_date, self.commit_short_hash
         )
     }
 }

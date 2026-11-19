@@ -104,6 +104,7 @@ async fn test_serve_quickwit_returns_error_when_a_server_fails_to_start() {
         };
 
         let error = serve_quickwit(
+            quickwit_serve::BuildInfo::for_tests(),
             node_config,
             RuntimesConfig::light_for_tests(),
             MetastoreResolver::unconfigured(),
@@ -169,6 +170,7 @@ async fn test_serve_quickwit_shuts_down_sibling_servers_after_server_failure() {
     tcp_listener_resolver.add_listener(health_listener).await;
 
     let error = serve_quickwit(
+        quickwit_serve::BuildInfo::for_tests(),
         node_config,
         RuntimesConfig::light_for_tests(),
         MetastoreResolver::unconfigured(),

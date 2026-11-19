@@ -33,10 +33,13 @@ use tools::Tools;
 use warp::reply::Response;
 use warp::{Filter, Rejection, Reply};
 
+use crate::BuildInfo;
+
 const BODY_LENGTH_LIMIT: u64 = 1024 * 1024;
 
 #[derive(Clone)]
 struct Context {
+    build_info: &'static BuildInfo,
     tools: Tools,
     allowed_origins: Vec<String>,
 }
@@ -46,11 +49,13 @@ struct TransportError(StatusCode, &'static str);
 impl warp::reject::Reject for TransportError {}
 
 pub(crate) fn mcp_api_handlers(
+    build_info: &'static BuildInfo,
     search_service: Arc<dyn SearchService>,
     metastore: MetastoreServiceClient,
     allowed_origins: Vec<String>,
 ) -> impl Filter<Extract = (Response,), Error = Rejection> + Clone {
     let context = Context {
+        build_info,
         tools: Tools {
             search_service,
             metastore,
@@ -177,7 +182,7 @@ async fn handle_post(
     let version = headers
         .get("mcp-protocol-version")
         .and_then(|value| value.to_str().ok());
-    let (status, body) = protocol::handle(&body, version, &context.tools).await;
+    let (status, body) = protocol::handle(context.build_info, &body, version, &context.tools).await;
     let response = match body {
         Some(body) => warp::reply::with_status(warp::reply::json(&body), status).into_response(),
         None => status.into_response(),

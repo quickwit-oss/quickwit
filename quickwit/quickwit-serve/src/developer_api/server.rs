@@ -34,6 +34,7 @@ use crate::{BuildInfo, QuickwitServices, RuntimeInfo};
 
 #[derive(Clone)]
 pub(crate) struct DeveloperApiServer {
+    build_info: &'static BuildInfo,
     node_config: Arc<NodeConfig>,
     cluster: Cluster,
     control_plane_mailbox_opt: Option<Mailbox<ControlPlane>>,
@@ -52,6 +53,7 @@ impl DeveloperApiServer {
 
     pub fn from_services(services: &QuickwitServices) -> Self {
         Self {
+            build_info: services.build_info,
             node_config: services.node_config.clone(),
             cluster: services.cluster.clone(),
             control_plane_mailbox_opt: services.control_plane_server_opt.clone(),
@@ -81,7 +83,7 @@ impl DeveloperService for DeveloperApiServer {
         node_config.redact();
 
         let mut debug_info = json!({
-            "build_info": BuildInfo::get(),
+            "build_info": self.build_info,
             "runtime_info": RuntimeInfo::get(),
             "node_config": node_config,
             "cluster_membership_info": json!({
@@ -147,6 +149,7 @@ mod tests {
         let node_config = Arc::new(node_config);
 
         let developer_api_server = DeveloperApiServer {
+            build_info: BuildInfo::for_tests(),
             node_config,
             cluster,
             control_plane_mailbox_opt: None,
@@ -157,7 +160,10 @@ mod tests {
         let response = developer_api_server.get_debug_info(request).await.unwrap();
         let debug_info: JsonValue = serde_json::from_slice(&response.debug_info_json).unwrap();
 
-        assert!(debug_info["build_info"].is_object());
+        assert_eq!(
+            debug_info["build_info"],
+            serde_json::to_value(BuildInfo::for_tests()).unwrap()
+        );
         assert!(debug_info["runtime_info"].is_object());
         assert!(debug_info["node_config"].is_object());
         assert!(debug_info["cluster_membership_info"].is_object());
