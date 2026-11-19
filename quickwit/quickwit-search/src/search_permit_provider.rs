@@ -29,7 +29,7 @@ use tracing::warn;
 
 use crate::metrics::{
     LEAF_SEARCH_SINGLE_SPLIT_TASKS_ONGOING, LEAF_SEARCH_SINGLE_SPLIT_TASKS_PENDING,
-    SEARCHER_NODE_LOAD,
+    LEAF_SEARCH_WARMUP_BUDGET_NUM_BYTES, SEARCHER_NODE_LOAD,
 };
 use crate::split_warmup_memory::SplitWarmupMemory;
 use crate::warmup_memory::{GlobalWarmupMemory, WarmupMemoryGuard};
@@ -38,10 +38,12 @@ use crate::warmup_memory::{GlobalWarmupMemory, WarmupMemoryGuard};
 ///
 /// Requests are served by priority, then by lowest estimated cost. Each permit initially
 /// reserves a slot for the warmup (limit concurrent downloads) and a pessimistic amount of
-/// memory. During the warmup, the permit grows its memory reservation as data is downloaded, and
-/// the split search fails if the warmup memory limit would be exceeded. Once the warmup is
-/// completed, the unused memory and the warmup slot are released. Once the search is completed and
-/// the permit is dropped, the remaining memory is also released.
+/// memory. During the warmup, the permit grows its memory reservation as data is downloaded: it
+/// waits if the node-wide warmup memory budget is full (except for the oldest active split search,
+/// which allocates without waiting to prevent deadlocks), and fails if the per-split warmup memory
+/// limit would be exceeded. Once the warmup is completed, the unused memory and the warmup slot
+/// are released. Once the search is completed and the permit is dropped, the remaining memory is
+/// also released.
 #[derive(Clone)]
 pub struct SearchPermitProvider {
     message_sender: mpsc::UnboundedSender<SearchPermitMessage>,
@@ -121,28 +123,41 @@ pub fn compute_initial_memory_allocation(
 }
 
 impl SearchPermitProvider {
-    /// Creates a provider without a per-split limit other than `memory_budget`.
+    /// Creates a provider with `shared_memory_budget` available to concurrent permits, plus an
+    /// equal per-split max allocation reserved for the leading split.
     #[cfg(test)]
-    pub fn new(num_download_slots: usize, memory_budget: ByteSize) -> Self {
-        Self::with_split_max_allocation(num_download_slots, memory_budget, memory_budget)
+    pub fn new(num_download_slots: usize, shared_memory_budget: ByteSize) -> Self {
+        Self::with_split_max_allocation(
+            num_download_slots,
+            ByteSize(shared_memory_budget.as_u64() * 2),
+            shared_memory_budget,
+        )
     }
 
     /// Creates a provider.
     ///
     /// - `memory_budget`: total warmup memory of the split searches of this node.
-    /// - `split_max_allocation`: warmup memory a single split search can reserve at most. It is
-    ///   expected to be lower or equal to `memory_budget`. Callers are expected to clamp the permit
-    ///   sizes they request to it.
+    /// - `split_max_allocation`: warmup memory a single split search can reserve at most. Must be
+    ///   strictly lower than `memory_budget`: `split_max_allocation` is kept aside from the shared
+    ///   budget so that the oldest active split search can allocate without waiting while keeping
+    ///   total warmup memory within `memory_budget`.
     pub fn with_split_max_allocation(
         num_download_slots: usize,
         memory_budget: ByteSize,
         split_max_allocation: ByteSize,
     ) -> Self {
+        assert!(
+            split_max_allocation < memory_budget,
+            "split_max_allocation ({split_max_allocation}) must be strictly lower than \
+             memory_budget ({memory_budget})"
+        );
+        let shared_memory_budget = ByteSize(memory_budget.as_u64() - split_max_allocation.as_u64());
+        LEAF_SEARCH_WARMUP_BUDGET_NUM_BYTES.set(memory_budget.as_u64() as f64);
         let (message_sender, message_receiver) = mpsc::unbounded_channel();
         let total_job_cost = Arc::new(AtomicUsize::new(0));
         let weak_message_sender = message_sender.downgrade();
         let warmup_memory =
-            GlobalWarmupMemory::with_limit_and_free_callback(memory_budget, move || {
+            GlobalWarmupMemory::with_limit_and_free_callback(shared_memory_budget, move || {
                 send_if_still_running(&weak_message_sender, SearchPermitMessage::MemoryFreed);
             });
         let actor = SearchPermitActor {
@@ -438,8 +453,11 @@ impl SearchPermitActor {
             !peeked.is_empty(),
             "unexpected empty permits_requests present in the search permit provider queue"
         );
-        let permit_size = peeked.next_permit_size()?;
-        let memory_guard = self.warmup_memory.try_allocate(permit_size).ok()?;
+        // Clamp to the shared budget (`memory_budget - split_max_allocation`) so a permit whose
+        // initial size exceeds the shared budget can still be granted when idle and grow up to
+        // `split_max_allocation` during warmup.
+        let permit_size = peeked.next_permit_size()?.min(self.warmup_memory.limit());
+        let memory_guard = self.warmup_memory.try_allocate(permit_size)?;
         let permit_request = peeked.pop_next()?;
         if peeked.is_empty() {
             PeekMut::pop(peeked);
@@ -1101,7 +1119,8 @@ mod tests {
         {
             let warmup_memory = permit.warmup_memory();
             let reservation = warmup_memory
-                .try_reserve_memory(ByteSize::mb(95).as_u64())
+                .reserve_memory(ByteSize::mb(95).as_u64())
+                .await
                 .unwrap();
             drop(reservation);
         }
@@ -1140,6 +1159,61 @@ mod tests {
         let next_permit_fut = pending_permit_futs.next().unwrap();
         let next_permit = try_get(next_permit_fut).await.unwrap();
         drop(next_permit);
+        let permit_actor = permit_provider.stop_and_unwrap().await;
+        assert_eq!(permit_actor.warmup_memory.allocated(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_with_split_max_allocation_reserves_room_for_leading_split() {
+        // 100MB total budget - 25MB split max = 75MB shared budget.
+        let permit_provider = SearchPermitProvider::with_split_max_allocation(
+            100,
+            ByteSize::mb(100),
+            ByteSize::mb(25),
+        );
+        let mut permit_futs = permit_provider.get_permits(make_splits(10, 8, 5, 0)).await;
+        let blocked_permit_fut = permit_futs.pop().unwrap();
+        let permits: Vec<SearchPermit> = futures::stream::iter(permit_futs)
+            .buffered(1)
+            .collect()
+            .await;
+        // 7 x 10MB = 70MB fits in the 75MB shared budget; the 8th (80MB > 75MB) is blocked.
+        try_get(blocked_permit_fut).await.err().unwrap();
+
+        // The oldest permit can still grow up to 25MB without waiting, and total allocated memory
+        // (6 x 10MB + 25MB = 85MB, or up to 75MB + 25MB = 100MB) never exceeds the 100MB budget.
+        let oldest_warmup_memory = permits[0].warmup_memory();
+        let _oldest_reservation = oldest_warmup_memory
+            .reserve_memory(ByteSize::mb(25).as_u64())
+            .await
+            .unwrap();
+        assert_eq!(permits[0].memory_allocation(), ByteSize::mb(25));
+        drop(_oldest_reservation);
+        drop(oldest_warmup_memory);
+        drop(permits);
+
+        let permit_actor = permit_provider.stop_and_unwrap().await;
+        assert_eq!(permit_actor.warmup_memory.allocated(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_permit_larger_than_shared_budget_clamped_and_grows_as_oldest() {
+        // 50MB total budget - 30MB split max = 20MB shared budget, while initial permit asks 30MB.
+        let permit_provider =
+            SearchPermitProvider::with_split_max_allocation(10, ByteSize::mb(50), ByteSize::mb(30));
+        let permit = get_single_permit(&permit_provider, 30).await;
+        assert_eq!(permit.memory_allocation(), ByteSize::mb(20));
+
+        let warmup_memory = permit.warmup_memory();
+        let reservation = warmup_memory
+            .reserve_memory(ByteSize::mb(30).as_u64())
+            .await
+            .unwrap();
+        assert_eq!(permit.memory_allocation(), ByteSize::mb(30));
+        drop(reservation);
+        drop(warmup_memory);
+        drop(permit);
+
         let permit_actor = permit_provider.stop_and_unwrap().await;
         assert_eq!(permit_actor.warmup_memory.allocated(), 0);
     }

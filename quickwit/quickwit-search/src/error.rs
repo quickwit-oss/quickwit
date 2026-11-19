@@ -287,7 +287,7 @@ mod tests {
 
     #[test]
     fn test_out_of_memory_io_error_is_not_retryable() {
-        let io_error = io::Error::from(OutOfMemoryError::SplitBudgetExceeded);
+        let io_error = io::Error::from(OutOfMemoryError);
         let search_error = SearchError::from(io_error);
         let SearchError::OutOfWarmupMemory(message) = &search_error else {
             panic!("expected OutOfWarmupMemory, got {search_error:?}");
@@ -306,13 +306,13 @@ mod tests {
 
     #[test]
     fn test_out_of_memory_tantivy_error_is_not_retryable() {
-        let io_error = io::Error::from(OutOfMemoryError::GlobalBudgetExceeded);
+        let io_error = io::Error::from(OutOfMemoryError);
         let tantivy_error = TantivyError::IoError(Arc::new(io_error));
         let search_error = SearchError::from(tantivy_error);
         let SearchError::OutOfWarmupMemory(message) = &search_error else {
             panic!("expected OutOfWarmupMemory, got {search_error:?}");
         };
-        assert_eq!(message, "out of warmup memory: global budget exceeded");
+        assert_eq!(message, "out of warmup memory: split budget exceeded");
         assert!(!search_error.is_retryable_on_another_searcher());
 
         let tantivy_error = TantivyError::InternalError("boom".to_string());
@@ -323,9 +323,8 @@ mod tests {
 
     #[test]
     fn test_with_context_keeps_the_variant() {
-        let search_error =
-            SearchError::from(io::Error::from(OutOfMemoryError::SplitBudgetExceeded))
-                .with_context("failed to load automaton");
+        let search_error = SearchError::from(io::Error::from(OutOfMemoryError))
+            .with_context("failed to load automaton");
         let SearchError::OutOfWarmupMemory(message) = &search_error else {
             panic!("expected OutOfWarmupMemory, got {search_error:?}");
         };

@@ -788,7 +788,7 @@ impl SearcherConfig {
     /// `warmup_single_split_max_allocation` if set, otherwise
     /// `max(warmup_single_split_initial_allocation, warmup_memory_budget / 4)`.
     ///
-    /// Never above `warmup_memory_budget` for a config that was validated.
+    /// Always strictly lower than `warmup_memory_budget` for a config that was validated.
     pub fn effective_warmup_single_split_max_allocation(&self) -> ByteSize {
         if let Some(warmup_single_split_max_allocation) = self.warmup_single_split_max_allocation {
             warmup_single_split_max_allocation
@@ -799,16 +799,16 @@ impl SearcherConfig {
     }
     fn validate_warmup_memory(&self) -> anyhow::Result<()> {
         anyhow::ensure!(
-            self.warmup_single_split_initial_allocation <= self.warmup_memory_budget,
-            "warmup_single_split_initial_allocation ({}) must be lower or equal to \
+            self.warmup_single_split_initial_allocation < self.warmup_memory_budget,
+            "warmup_single_split_initial_allocation ({}) must be strictly lower than \
              warmup_memory_budget ({})",
             self.warmup_single_split_initial_allocation,
             self.warmup_memory_budget
         );
         if let Some(warmup_single_split_max_allocation) = self.warmup_single_split_max_allocation {
             anyhow::ensure!(
-                warmup_single_split_max_allocation <= self.warmup_memory_budget,
-                "warmup_single_split_max_allocation ({}) must be lower or equal to \
+                warmup_single_split_max_allocation < self.warmup_memory_budget,
+                "warmup_single_split_max_allocation ({}) must be strictly lower than \
                  warmup_memory_budget ({})",
                 warmup_single_split_max_allocation,
                 self.warmup_memory_budget
@@ -1712,39 +1712,46 @@ mod tests {
 
     #[test]
     fn test_searcher_config_warmup_single_split_max_allocation_validation() {
-        let above_budget_config = SearcherConfig {
-            warmup_memory_budget: ByteSize::gb(8),
-            warmup_single_split_max_allocation: Some(ByteSize::gb(9)),
-            ..Default::default()
-        };
-        assert_eq!(
-            above_budget_config.validate().unwrap_err().to_string(),
-            format!(
-                "warmup_single_split_max_allocation ({}) must be lower or equal to \
-                 warmup_memory_budget ({})",
-                ByteSize::gb(9),
-                ByteSize::gb(8)
-            )
-        );
+        for invalid_max in [ByteSize::gb(8), ByteSize::gb(9)] {
+            let at_or_above_budget_config = SearcherConfig {
+                warmup_memory_budget: ByteSize::gb(8),
+                warmup_single_split_max_allocation: Some(invalid_max),
+                ..Default::default()
+            };
+            assert_eq!(
+                at_or_above_budget_config
+                    .validate()
+                    .unwrap_err()
+                    .to_string(),
+                format!(
+                    "warmup_single_split_max_allocation ({}) must be strictly lower than \
+                     warmup_memory_budget ({})",
+                    invalid_max,
+                    ByteSize::gb(8)
+                )
+            );
+        }
 
         // Checked even without a split cache.
-        let initial_above_budget_config = SearcherConfig {
-            warmup_memory_budget: ByteSize::mb(100),
-            ..Default::default()
-        };
-        assert!(initial_above_budget_config.split_cache.is_none());
-        assert_eq!(
-            initial_above_budget_config
-                .validate()
-                .unwrap_err()
-                .to_string(),
-            format!(
-                "warmup_single_split_initial_allocation ({}) must be lower or equal to \
-                 warmup_memory_budget ({})",
-                ByteSize::mb(300),
-                ByteSize::mb(100)
-            )
-        );
+        for invalid_budget in [ByteSize::mb(100), ByteSize::mb(300)] {
+            let initial_at_or_above_budget_config = SearcherConfig {
+                warmup_memory_budget: invalid_budget,
+                ..Default::default()
+            };
+            assert!(initial_at_or_above_budget_config.split_cache.is_none());
+            assert_eq!(
+                initial_at_or_above_budget_config
+                    .validate()
+                    .unwrap_err()
+                    .to_string(),
+                format!(
+                    "warmup_single_split_initial_allocation ({}) must be strictly lower than \
+                     warmup_memory_budget ({})",
+                    ByteSize::mb(300),
+                    invalid_budget
+                )
+            );
+        }
 
         let max_below_initial_config = SearcherConfig {
             warmup_memory_budget: ByteSize::gb(8),

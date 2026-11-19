@@ -18,8 +18,9 @@ Our system is aiming at the following:
 - no deadlock (of course)
 
 It comes with the following side effect:
-- a scheduled search request can error if not enough memory is available in the system.
-This is not entirely a function of the query itself and depends on the existing workload.
+- a scheduled split search request fails if a single split needs more warmup memory than
+  `warmup_single_split_max_allocation`. Contention on the global `warmup_memory_budget` waits for
+  memory to be freed rather than failing.
 
 
 ## Scheduling order
@@ -55,17 +56,24 @@ We do not know in advance how much memory will be required by a task.
 We therefore we only start a single split search task when we can reserve an arbitrary pessimistic  number of bytes. 
 This amount is configurable via the warmup_single_split_initial_allocation parameter in the `SearcherConfig`.
 
-We then track, before any download, whether we are about to exceed our currently reserved amount of memory.
-If we do, we increase that amount through atomic using an exponential strategy to amortized this operation.
+We then track, before any async download, whether we are about to exceed our currently reserved
+amount of memory. If we do, we grow our reservation in the global warmup memory using an
+exponential strategy (`1.7x`) to amortize allocations.
 
-Once warm up has ended, release the memory that is unused in our allocation.
+If there is not enough memory globally when we try to grow our reservation, the task waits until
+memory is freed — except for the oldest active split search task (identified by a monotonic ID
+assigned when its `WarmupMemoryGuard` is created), which always allocates immediately without
+waiting. This ensures at least one split search task always progresses, finishes its search, and
+releases its memory, preventing deadlocks.
 
-If there is not enough memory globally when we try to allocate more, we fail the search request as an OOM Error.
-That error is marked as not retryable and will fail sibling search request as well.
+To keep total warmup memory strictly within `warmup_memory_budget` even when the oldest split
+search allocates without waiting, `GlobalWarmupMemory` is given a shared budget of
+`warmup_memory_budget - warmup_single_split_max_allocation`, keeping
+`warmup_single_split_max_allocation` in reserve for the oldest split search.
 
-This logic in itself is sufficient to bound the warm up cache memory usage to our initial budget.
-However, this gives us no control on which leaf request will get OOMed.
+Once warmup has ended, we release the memory that is unused in our reservation.
 
-For this reason, we also have a `warmup_single_split_max_allocation` that will fail the request if the
-single split allocation would be greater than a given amount (by default, `max(warmup_single_split_initial_allocation, warmup_memory_budget / 4)`); hence increasing
-the chance that the faulty query is the one that will be OOMed first.
+`warmup_single_split_max_allocation` (strictly lower than `warmup_memory_budget`; by default,
+`max(warmup_single_split_initial_allocation, warmup_memory_budget / 4)`) fails a split search
+immediately if its reservation would exceed that per-split cap. That error is marked as not
+retryable on another searcher.
