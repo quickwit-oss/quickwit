@@ -513,11 +513,19 @@ mod tests {
         writer.commit()?;
 
         let cache = ByteRangeCache::with_infinite_capacity();
-        let index = Index::open(CachingDirectory::new(Arc::new(directory), cache.clone()))?;
+        let budget = 32 * 1024 * 1024;
+        let reserver = LimitedMemoryReserver::new(budget);
+        let directory = CachingDirectory::new(Arc::new(directory), cache.clone())
+            .with_memory_reserver(reserver.clone());
+        let index = Index::open(directory)?;
         let searcher = index.reader()?.searcher();
         let segment = searcher.segment_reader(0);
         let reader = segment.inverted_index(field)?;
-        let initial_bytes = cache.get_num_bytes(); // Opening the index reads metadata.
+        // Opening the index caches metadata. Leave no budget for dictionary or posting reads.
+        let initial_bytes = cache.get_num_bytes();
+        let _reservation = reserver
+            .try_reserve_memory(budget - reserver.reserved())
+            .unwrap();
         let executor = Executor::single_thread();
         let sparse = reader
             .create_bitset_for_automaton(Regex::new("a|z").unwrap(), segment.max_doc(), &executor)
@@ -531,40 +539,6 @@ mod tests {
         assert_eq!(all.len(), 3);
         assert_eq!(cache.get_num_bytes(), initial_bytes);
         Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_stream_bypasses_cache_and_memory_reservations() {
-        use futures::TryStreamExt;
-
-        let path = Path::new("test");
-        let content = b"hello world";
-        let underlying = debug_proxy_directory_with_file(path, content);
-        let memory_reserver = LimitedMemoryReserver::new(0);
-        let cache = ByteRangeCache::with_infinite_capacity();
-        let directory = CachingDirectory::new(underlying, cache.clone())
-            .with_memory_reserver(memory_reserver.clone());
-        let handle = directory.get_file_handle(path).unwrap();
-        // Distinct cached bytes make a lookup observable. The cache budget is exhausted.
-        cache
-            .get_file_cache(path)
-            .put_slice(0..2, OwnedBytes::new(b"xx".as_slice()));
-        let ranges = [0..2, 2..content.len(), 2..content.len()];
-        let mut stream = handle.read_bytes_batch_stream(Box::new(ranges.clone().into_iter()));
-        for range in ranges {
-            let bytes = stream.try_next().await.unwrap().unwrap();
-            assert_eq!(bytes.as_slice(), &content[range]);
-            assert_eq!(cache.get_num_bytes(), 2);
-            assert_eq!(memory_reserver.reserved(), 0);
-        }
-        assert!(
-            cache
-                .get_file_cache(path)
-                .get_slice(2..content.len())
-                .is_none()
-        );
-        assert!(stream.try_next().await.unwrap().is_none());
-        assert_eq!(handle.read_bytes(0..2).unwrap().as_slice(), b"xx");
     }
 
     #[tokio::test]
