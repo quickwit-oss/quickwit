@@ -83,7 +83,8 @@ impl From<StorageError> for io::Error {
             StorageErrorKind::NotFound => io::ErrorKind::NotFound,
             _ => io::ErrorKind::Other,
         };
-        io::Error::new(io_error_kind, storage_err)
+        // TODO: This is swallowing the context of the source error.
+        io::Error::new(io_error_kind, storage_err.source.to_string())
     }
 }
 
@@ -129,11 +130,6 @@ impl StorageError {
 
 impl From<io::Error> for StorageError {
     fn from(err: io::Error) -> StorageError {
-        // Stream adapters may carry a storage error through AsyncRead.
-        let err = match err.downcast::<StorageError>() {
-            Ok(storage_err) => return storage_err,
-            Err(err) => err,
-        };
         match err.kind() {
             io::ErrorKind::NotFound => StorageErrorKind::NotFound.with_error(err),
             _ => StorageErrorKind::Io.with_error(err),
