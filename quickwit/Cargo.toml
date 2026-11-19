@@ -384,7 +384,7 @@ quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
 quickwit-transport = { path = "quickwit-transport" }
 
 # Stream coalesced postings into automaton bitsets.
-tantivy = { git = "https://github.com/PSeitz/tantivy/", rev = "2f3611e39623fc9e8c78f69900ce70ce3d1c8263", default-features = false, features = [
+tantivy = { git = "https://github.com/PSeitz/tantivy/", rev = "b6412a6f60028a1a95faa9eab7551b102bda9162", default-features = false, features = [
   "jitexpr",
   "lz4-compression",
   "mmap",
@@ -393,7 +393,7 @@ tantivy = { git = "https://github.com/PSeitz/tantivy/", rev = "2f3611e39623fc9e8
   "columnar-zstd-compression",
 ] }
 # Must stay on the same rev as `tantivy`.
-tantivy-common = { git = "https://github.com/PSeitz/tantivy/", rev = "2f3611e39623fc9e8c78f69900ce70ce3d1c8263" }
+tantivy-common = { git = "https://github.com/PSeitz/tantivy/", rev = "b6412a6f60028a1a95faa9eab7551b102bda9162" }
 tantivy-fst = "0.5"
 
 # This is actually not used directly the goal is to fix the version
