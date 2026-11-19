@@ -485,6 +485,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_automaton_bitset_does_not_fill_directory_cache() -> tantivy::Result<()> {
+        use rand::SeedableRng;
+        use rand::distr::{Alphanumeric, SampleString};
+        use tantivy::schema::{STRING, Schema};
+        use tantivy::{Executor, Index, IndexWriter, TantivyDocument, doc};
+        use tantivy_fst::Regex;
+        use tantivy_fst::automaton::AlwaysMatch;
+
+        let directory = RamDirectory::create();
+        let mut schema = Schema::builder();
+        let field = schema.add_text_field("field", STRING);
+        let index = Index::create(directory.clone(), schema.build(), Default::default())?;
+        let mut writer: IndexWriter = index.writer_with_num_threads(1, 64_000_000)?;
+        writer.add_document(doc!(field => "a"))?;
+        // Put more than one decode batch of dictionary blocks between the two sparse hits.
+        let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+        let mut doc = TantivyDocument::default();
+        for _ in 0..16_000 {
+            doc.add_text(
+                field,
+                format!("m{}", Alphanumeric.sample_string(&mut rng, 128)),
+            );
+        }
+        writer.add_document(doc)?;
+        writer.add_document(doc!(field => "z"))?;
+        writer.commit()?;
+
+        let cache = ByteRangeCache::with_infinite_capacity();
+        let index = Index::open(CachingDirectory::new(Arc::new(directory), cache.clone()))?;
+        let searcher = index.reader()?.searcher();
+        let segment = searcher.segment_reader(0);
+        let reader = segment.inverted_index(field)?;
+        let initial_bytes = cache.get_num_bytes(); // Opening the index reads metadata.
+        let executor = Executor::single_thread();
+        let sparse = reader
+            .create_bitset_for_automaton(Regex::new("a|z").unwrap(), segment.max_doc(), &executor)
+            .await?;
+        assert_eq!(sparse.len(), 2);
+        assert!(sparse.contains(0) && sparse.contains(2));
+        assert_eq!(cache.get_num_bytes(), initial_bytes);
+        let all = reader
+            .create_bitset_for_automaton(AlwaysMatch, segment.max_doc(), &executor)
+            .await?;
+        assert_eq!(all.len(), 3);
+        assert_eq!(cache.get_num_bytes(), initial_bytes);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_stream_bypasses_cache_and_memory_reservations() {
         use futures::TryStreamExt;
 
