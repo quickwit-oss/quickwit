@@ -256,6 +256,13 @@ pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES: LazyHistogram = laz
     buckets: pseudo_exponential_bytes_buckets(),
 );
 
+pub(crate) static LEAF_SEARCH_WARMUP_BUDGET_NUM_BYTES: LazyGauge = lazy_gauge!(
+    name: "leaf_search_warmup_budget_num_bytes",
+    description: "Node-wide warmup memory budget in bytes, configured by \
+                  `searcher.warmup_memory_budget`.",
+    subsystem: "search",
+);
+
 pub(crate) static LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES: LazyGauge = lazy_gauge!(
     name: "leaf_search_warmup_ongoing_num_bytes",
     description: "Warmup memory currently reserved by split searches, including the initial \
@@ -264,23 +271,11 @@ pub(crate) static LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES: LazyGauge = lazy_gauge!(
     subsystem: "search",
 );
 
-static LEAF_SEARCH_SPLIT_WARMUP_OUT_OF_MEMORY_TOTAL_BASE: LazyCounter = lazy_counter!(
+pub(crate) static LEAF_SEARCH_SPLIT_WARMUP_OUT_OF_MEMORY_TOTAL: LazyCounter = lazy_counter!(
     name: "leaf_search_split_warmup_out_of_memory_total",
     description: "Number of split searches that failed because their warmup would have gone over \
-                  a warmup memory limit. The `budget` label tells which one: `split` for \
-                  `searcher.warmup_single_split_max_allocation`, `global` for \
-                  `searcher.warmup_memory_budget`.",
+                  `searcher.warmup_single_split_max_allocation`.",
     subsystem: "search",
-);
-
-pub(crate) static LEAF_SEARCH_SPLIT_WARMUP_OUT_OF_MEMORY_SPLIT_BUDGET_TOTAL: LazyCounter = lazy_counter!(
-    parent: LEAF_SEARCH_SPLIT_WARMUP_OUT_OF_MEMORY_TOTAL_BASE,
-    "budget" => "split"
-);
-
-pub(crate) static LEAF_SEARCH_SPLIT_WARMUP_OUT_OF_MEMORY_GLOBAL_BUDGET_TOTAL: LazyCounter = lazy_counter!(
-    parent: LEAF_SEARCH_SPLIT_WARMUP_OUT_OF_MEMORY_TOTAL_BASE,
-    "budget" => "global"
 );
 
 pub(crate) static JOB_ASSIGNED_TOTAL: LazyCounter = lazy_counter!(
