@@ -88,8 +88,8 @@ impl Storage for StorageWithCache {
         path: &Path,
         range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        if let Some(bytes) = self.cache.get(path, range.clone()).await {
-            return Ok(Box::new(std::io::Cursor::new(bytes)));
+        if let Some(reader) = self.cache.get_slice_stream(path, range.clone()).await {
+            return Ok(reader);
         }
         self.storage.get_slice_stream(path, range).await
     }

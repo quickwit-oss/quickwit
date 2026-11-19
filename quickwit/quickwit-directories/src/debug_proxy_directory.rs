@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 use std::{fmt, io, mem};
 
 use async_trait::async_trait;
+use futures::stream::BoxStream;
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, OwnedBytes};
 use tantivy::{Directory, HasLen};
@@ -177,11 +178,11 @@ impl<D: Directory> FileHandle for DebugProxyFileHandle<D> {
         Ok(payload)
     }
 
-    async fn read_bytes_stream(
+    fn read_bytes_batch_stream(
         &self,
-        byte_range: Range<usize>,
-    ) -> io::Result<Box<dyn tokio::io::AsyncRead + Send + Unpin>> {
-        self.underlying.read_bytes_stream(byte_range).await
+        ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
+    ) -> BoxStream<'_, io::Result<OwnedBytes>> {
+        self.underlying.read_bytes_batch_stream(ranges)
     }
 }
 

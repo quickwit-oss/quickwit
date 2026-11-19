@@ -15,11 +15,12 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::{fmt, io};
 
 use anyhow::{Context, bail};
 use async_trait::async_trait;
+use futures::stream::{BoxStream, StreamExt, TryStreamExt};
 use quickwit_storage::VersionedComponent;
 use serde::{Deserialize, Serialize};
 use tantivy::directory::error::OpenReadError;
@@ -405,14 +406,40 @@ impl FileHandle for FileSliceWithCache {
         self.underlying.read_bytes_slice_async(byte_range).await
     }
 
-    async fn read_bytes_stream(
+    fn read_bytes_batch_stream(
         &self,
-        byte_range: Range<usize>,
-    ) -> io::Result<Box<dyn tokio::io::AsyncRead + Send + Unpin>> {
-        if let Some(found_bytes) = self.static_cache.try_read_bytes(byte_range.clone()) {
-            return Ok(Box::new(io::Cursor::new(found_bytes)));
+        ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
+    ) -> BoxStream<'_, io::Result<OwnedBytes>> {
+        if self.static_cache.index.slices.is_empty() {
+            return self.underlying.read_bytes_batch_stream(ranges);
         }
-        self.underlying.slice(byte_range).read_bytes_stream().await
+        let cache = self.static_cache.clone();
+        let ranges = ranges.map(move |range| {
+            let hit = cache.try_read_bytes(range.clone());
+            (range, hit)
+        });
+        let ranges = Arc::new(Mutex::new(ranges.peekable()));
+        async_stream::try_stream! {
+            loop {
+                let next = ranges.lock().unwrap().next();
+                let Some((first, hit)) = next else { break };
+                if let Some(bytes) = hit {
+                    yield bytes;
+                    continue;
+                }
+                // The inner iterator must be owned. Share the cursor so it can pull consecutive
+                // misses on demand and leave the next cache hit queued for the outer stream.
+                let cursor = ranges.clone();
+                let misses = std::iter::from_fn(move || cursor.lock().unwrap()
+                    .next_if(|(_, hit)| hit.is_none()).map(|(range, _)| range));
+                let run = std::iter::once(first).chain(misses);
+                let mut stream = self.underlying.read_bytes_batch_stream(Box::new(run));
+                while let Some(bytes) = stream.try_next().await? {
+                    yield bytes;
+                }
+            }
+        }
+        .boxed()
     }
 }
 
@@ -567,25 +594,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_stream_uses_hotcache() {
-        use quickwit_storage::MockStorage;
-        use tokio::io::AsyncReadExt;
+        use futures::TryStreamExt;
 
         let path = Path::new("test.file");
         let content = b"0123456789abcdef";
-        let mut storage = MockStorage::default();
-        storage
-            .expect_get_slice_stream()
-            .times(4)
-            .returning(move |stream_path, range| {
-                assert_eq!(stream_path, path);
-                assert!([2..4, 6..8].contains(&range));
-                Ok(Box::new(io::Cursor::new(&content[range])))
-            });
-        let directory = crate::StorageDirectory::new(Arc::new(storage));
+        let directory = RamDirectory::default();
+        directory.atomic_write(path, content).unwrap();
         let mut hotcache = StaticDirectoryCacheBuilder::default();
         hotcache
             .add_file(path, content.len() as u64)
-            .add_bytes(&content[4..6], 4);
+            .add_bytes(b"xx", 4);
         let mut hotcache_bytes = Vec::new();
         hotcache.write(&mut hotcache_bytes).unwrap();
         let hot_directory = HotDirectory::open(directory, OwnedBytes::new(hotcache_bytes)).unwrap();
@@ -593,15 +611,23 @@ mod tests {
             .open_read(path)
             .unwrap()
             .slice(2..content.len());
-        for _ in 0..2 {
-            // Nested offsets reach both the hotcache and storage correctly.
-            for range in [0..2, 2..4, 4..6, 3..3] {
-                let mut stream = file.slice(range.clone()).read_bytes_stream().await.unwrap();
-                let mut bytes = Vec::new();
-                stream.read_to_end(&mut bytes).await.unwrap();
-                assert_eq!(bytes, &content[range.start + 2..range.end + 2]);
-            }
+        // Cached bytes differ from storage. A partial hit still reads the complete range from
+        // storage.
+        let ranges = [0..2, 5..7, 2..4, 3..3, 2..4, 3..5];
+        let mut stream = file.read_bytes_batch_stream(Box::new(ranges.into_iter()));
+        for expected in [b"23".as_slice(), b"78", b"xx", b"", b"xx", b"56"] {
+            assert_eq!(
+                stream.try_next().await.unwrap().unwrap().as_slice(),
+                expected
+            );
         }
+        assert!(stream.try_next().await.unwrap().is_none());
+
+        // A miss run stays lazy when the backend itself only asks for one range.
+        let ranges =
+            std::iter::once(0..2).chain(std::iter::from_fn(|| panic!("unexpected read-ahead")));
+        let mut stream = file.read_bytes_batch_stream(Box::new(ranges));
+        assert_eq!(stream.try_next().await.unwrap().unwrap().as_slice(), b"23");
     }
 
     #[test]

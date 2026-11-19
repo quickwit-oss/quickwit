@@ -640,13 +640,16 @@ mod tests {
                 Ok(Box::new(reader))
             });
         let mut cache = crate::MockStorageCache::default();
-        let mut cached_bytes = Some(OwnedBytes::new(&b"abc"[..]));
-        cache.expect_get().times(2).returning(move |path, range| {
-            assert_eq!(path, Path::new("split"));
-            assert_eq!(range, 102..105);
-            // Hit on the first read, miss on the second. Any insertion fails the test.
-            cached_bytes.take()
-        });
+        let mut cached_reader = Some(&b"abc"[..]);
+        cache
+            .expect_get_slice_stream()
+            .times(2)
+            .returning(move |path, range| {
+                assert_eq!(path, Path::new("split"));
+                assert_eq!(range, 102..105);
+                // Hit on the first read, miss on the second. Any insertion fails the test.
+                Some(Box::new(cached_reader.take()?))
+            });
         let storage = BundleStorage {
             storage: Arc::new(crate::cache::StorageWithCache {
                 storage: Arc::new(backend),
