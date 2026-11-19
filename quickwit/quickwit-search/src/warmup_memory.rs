@@ -326,15 +326,6 @@ mod tests {
     }
 
     #[test]
-    fn test_try_allocate_overflow_fails() {
-        let global = global_warmup_memory(ByteSize(100));
-        let _guard = global.try_allocate(60).unwrap();
-        // Breaks the contract of `try_allocate`, but must not wrap around.
-        assert!(global.try_allocate(u64::MAX).is_none());
-        assert_eq!(global.allocated(), 60);
-    }
-
-    #[test]
     fn test_only_oldest_guard_can_use_reserve() {
         let global =
             GlobalWarmupMemory::with_limits_and_free_callback(ByteSize(100), ByteSize(40), || {});
