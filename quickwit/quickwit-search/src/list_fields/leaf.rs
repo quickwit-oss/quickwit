@@ -26,8 +26,8 @@ use quickwit_storage::{OwnedBytes, Storage};
 use tracing::instrument;
 
 use crate::leaf::open_split_bundle;
-use crate::list_fields::counts::LeafFieldCounts;
 use crate::list_fields::patterns::FieldPatterns;
+use crate::list_fields::split_counts::SplitCountsByField;
 use crate::list_fields::{field_list_size_limit, sort_and_dedup};
 use crate::search_thread_pool;
 use crate::service::SearcherContext;
@@ -58,7 +58,7 @@ pub async fn leaf_list_fields(
     }
     let field_patterns = FieldPatterns::from_strs(field_patterns_strs)?;
 
-    let mut splits = stream::iter(split_footers)
+    let mut fields_by_split = stream::iter(split_footers)
         .map(async |split_footer| {
             let bytes = get_fields_metadata(&split_footer, &searcher_ctx, storage.clone()).await?;
             anyhow::Ok((split_footer.split_id, bytes))
@@ -73,17 +73,19 @@ pub async fn leaf_list_fields(
         })
         .try_buffer_unordered(MAX_CONCURRENT_DECODES);
 
-    let mut counts = LeafFieldCounts::default();
-    while let Some(entries) = splits.try_next().await? {
-        counts = search_thread_pool()
-            .run_cpu_intensive(move || counts.with_split(entries))
+    let mut split_counts = SplitCountsByField::default();
+    while let Some(fields) = fields_by_split.try_next().await? {
+        split_counts = search_thread_pool()
+            .run_cpu_intensive(move || split_counts.count_split(fields))
             .await
-            .context("failed to count fields in split")?;
+            .context("failed to count splits containing each field")?;
     }
     let entries = search_thread_pool()
-        .run_cpu_intensive(move || counts.into_entries(&index_id, field_list_size_limit(limit)))
+        .run_cpu_intensive(move || {
+            split_counts.fields_in_most_splits(&index_id, field_list_size_limit(limit))
+        })
         .await
-        .context("failed to select fields")?;
+        .context("failed to select fields by split count")?;
     Ok(ListFieldsResponse { entries })
 }
 

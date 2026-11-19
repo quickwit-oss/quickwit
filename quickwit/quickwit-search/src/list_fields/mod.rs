@@ -13,10 +13,10 @@
 // limitations under the License.
 
 mod cache;
-mod counts;
 mod leaf;
 mod patterns;
 mod root;
+mod split_counts;
 
 use std::cmp::Ordering;
 
