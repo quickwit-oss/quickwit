@@ -224,9 +224,13 @@ mod tests {
                 files: [(PathBuf::from("file"), 3..9)].into_iter().collect(),
             },
         };
-        let directory = crate::DebugProxyDirectory::wrap(crate::CachingDirectory::new_unbounded(
-            Arc::new(bundle),
-        ));
+        // A stream must read the underlying bundle even if the directory cache has these bytes.
+        let cache = quickwit_storage::ByteRangeCache::with_infinite_capacity();
+        cache
+            .get_file_cache(Path::new("file"))
+            .put_slice(2..4, quickwit_storage::OwnedBytes::new(b"xx".as_slice()));
+        let directory =
+            crate::DebugProxyDirectory::wrap(crate::CachingDirectory::new(Arc::new(bundle), cache));
         let file = directory.open_read(Path::new("file")).unwrap().slice(1..4);
         let ranges = [1..3, 0..1, 3..3, 1..3]
             .into_iter()
