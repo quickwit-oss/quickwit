@@ -47,6 +47,10 @@ pub const DEFAULT_QW_CONFIG_PATH: &str = "config/quickwit.yaml";
 /// Highest Chitchat protocol version accepted by Quickwit configuration.
 pub const MAX_GOSSIP_PROTOCOL_VERSION: u8 = 1;
 
+/// Upper bound of the default `warmup_single_split_max_allocation`, for large warmup memory
+/// budgets.
+const DEFAULT_WARMUP_SINGLE_SPLIT_MAX_ALLOCATION_CAP: ByteSize = ByteSize::gb(4);
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RestConfig {
@@ -437,8 +441,8 @@ pub struct SearcherConfig {
     /// Maximum warmup memory a single split search can reserve. A split search that would need
     /// more fails, even if the searcher has warmup memory left.
     ///
-    /// Defaults to `max(warmup_single_split_initial_allocation, warmup_memory_budget / 4)`: use
-    /// [`SearcherConfig::effective_warmup_single_split_max_allocation`] to read it.
+    /// Defaults to `max(warmup_single_split_initial_allocation, min(4GB, warmup_memory_budget /
+    /// 4))`: use [`SearcherConfig::effective_warmup_single_split_max_allocation`] to read it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub warmup_single_split_max_allocation: Option<ByteSize>,
     /// Lambda configuration for serverless leaf search execution.
@@ -685,15 +689,16 @@ impl SearcherConfig {
     }
     /// Maximum warmup memory a single split search can reserve:
     /// `warmup_single_split_max_allocation` if set, otherwise
-    /// `max(warmup_single_split_initial_allocation, warmup_memory_budget / 4)`.
+    /// `max(warmup_single_split_initial_allocation, min(4GB, warmup_memory_budget / 4))`.
     ///
     /// Never above `warmup_memory_budget` for a config that was validated.
     pub fn effective_warmup_single_split_max_allocation(&self) -> ByteSize {
         if let Some(warmup_single_split_max_allocation) = self.warmup_single_split_max_allocation {
             warmup_single_split_max_allocation
         } else {
+            let quarter_budget = ByteSize(self.warmup_memory_budget.as_u64() / 4);
             self.warmup_single_split_initial_allocation
-                .max(ByteSize(self.warmup_memory_budget.as_u64() / 4))
+                .max(quarter_budget.min(DEFAULT_WARMUP_SINGLE_SPLIT_MAX_ALLOCATION_CAP))
         }
     }
     pub fn validate(&self) -> anyhow::Result<()> {
@@ -1157,6 +1162,20 @@ mod tests {
         assert_eq!(
             searcher_config.effective_warmup_single_split_max_allocation(),
             ByteSize::gb(2)
+        );
+        searcher_config.validate().unwrap();
+    }
+
+    #[test]
+    fn test_searcher_config_warmup_single_split_max_allocation_default_large_budget() {
+        // A quarter of the budget (25GB) is above the 4GB cap.
+        let searcher_config = SearcherConfig {
+            warmup_memory_budget: ByteSize::gb(100),
+            ..Default::default()
+        };
+        assert_eq!(
+            searcher_config.effective_warmup_single_split_max_allocation(),
+            ByteSize::gb(4)
         );
         searcher_config.validate().unwrap();
     }
