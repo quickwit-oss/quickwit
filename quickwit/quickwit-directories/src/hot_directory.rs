@@ -420,22 +420,17 @@ impl FileHandle for FileSliceWithCache {
         });
         let ranges = Arc::new(Mutex::new(ranges.peekable()));
         async_stream::try_stream! {
-            loop {
-                let next = ranges.lock().unwrap().next();
-                let first_uncached_range = match next {
-                    Some((range, None)) => range,
-                    Some(((_, tag), Some(bytes))) => {
-                        yield (bytes, tag);
-                        continue;
-                    }
-                    None => break,
-                };
+            for ((range, tag), cached_bytes) in std::iter::from_fn(|| ranges.lock().unwrap().next()) {
+                if let Some(bytes) = cached_bytes {
+                    yield (bytes, tag);
+                    continue;
+                }
                 // The download iterator owns a handle to the shared cursor. It stops at the next
                 // cached range so the outer stream can yield that range in order.
                 let cursor = ranges.clone();
                 let misses = std::iter::from_fn(move || cursor.lock().unwrap()
                     .next_if(|(_, hit)| hit.is_none()).map(|(range, _)| range));
-                let ranges_to_download = std::iter::once(first_uncached_range).chain(misses);
+                let ranges_to_download = std::iter::once((range, tag)).chain(misses);
                 let mut stream = self.underlying.stream_ranges(Box::new(ranges_to_download));
                 while let Some((bytes, tag)) = stream.try_next().await? {
                     yield (bytes, tag);

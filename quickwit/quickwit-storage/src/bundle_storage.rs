@@ -473,6 +473,11 @@ impl BundleFileRanges {
     }
 }
 
+fn range_in_bundle(file_start: u64, range: Range<usize>) -> Range<usize> {
+    let start = file_start as usize;
+    start + range.start..start + range.end
+}
+
 #[async_trait]
 impl Storage for BundleStorage {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
@@ -515,12 +520,8 @@ impl Storage for BundleStorage {
         path: &Path,
         range: Range<usize>,
     ) -> crate::StorageResult<OwnedBytes> {
-        let file_range = self.file_range(path)?;
-        let new_range =
-            file_range.start as usize + range.start..file_range.start as usize + range.end;
-        self.storage
-            .get_slice(&self.bundle_filepath, new_range)
-            .await
+        let range = range_in_bundle(self.file_range(path)?.start, range);
+        self.storage.get_slice(&self.bundle_filepath, range).await
     }
 
     async fn get_slice_into(
@@ -532,11 +533,9 @@ impl Storage for BundleStorage {
         if buffer.is_empty() {
             return Ok(());
         }
-        let file_range = self.file_range(path)?;
-        let new_range =
-            file_range.start as usize + range.start..file_range.start as usize + range.end;
+        let range = range_in_bundle(self.file_range(path)?.start, range);
         self.storage
-            .get_slice_into(&self.bundle_filepath, new_range, buffer)
+            .get_slice_into(&self.bundle_filepath, range, buffer)
             .await
     }
 
@@ -551,7 +550,7 @@ impl Storage for BundleStorage {
                 io::Error::new(io::ErrorKind::InvalidInput, "range exceeds bundled file").into(),
             );
         }
-        let range = file_range.start as usize + range.start..file_range.start as usize + range.end;
+        let range = range_in_bundle(file_range.start, range);
         self.storage
             .get_slice_stream(&self.bundle_filepath, range)
             .await
@@ -651,10 +650,7 @@ mod tests {
                 Some(Box::new(cached_reader.take()?))
             });
         let storage = BundleStorage {
-            storage: Arc::new(crate::cache::StorageWithCache {
-                storage: Arc::new(backend),
-                cache: Arc::new(cache),
-            }),
+            storage: crate::wrap_storage_with_cache(Arc::new(cache), Arc::new(backend)),
             bundle_filepath: PathBuf::from("split"),
             file_ranges: BundleFileRanges {
                 files: HashMap::from([(PathBuf::from("file"), 100..110)]),
