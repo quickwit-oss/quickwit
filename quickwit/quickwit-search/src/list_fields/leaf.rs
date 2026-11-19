@@ -26,8 +26,9 @@ use quickwit_storage::{OwnedBytes, Storage};
 use tracing::{Span, instrument};
 
 use crate::leaf::open_split_bundle;
+use crate::list_fields::counts::LeafFieldCounts;
 use crate::list_fields::patterns::FieldPatterns;
-use crate::list_fields::{merge_entries_with_limit_override, sort_and_dedup};
+use crate::list_fields::{field_list_size_limit, sort_and_dedup};
 use crate::search_thread_pool;
 use crate::service::SearcherContext;
 
@@ -36,6 +37,9 @@ const DYNAMIC_FIELD_PREFIX: &str = "_dynamic.";
 /// Cap on the number of per-split fields-metadata downloads in flight at once within a single
 /// `leaf_list_fields` call.
 const MAX_CONCURRENT_DOWNLOADS: usize = 500;
+
+/// A decoded split can be much larger than its compressed metadata blob.
+const MAX_CONCURRENT_DECODES: usize = 4;
 
 /// `leaf` step of list fields.
 ///
@@ -54,34 +58,7 @@ pub async fn leaf_list_fields(
     }
     let field_patterns = FieldPatterns::from_strs(field_patterns_strs)?;
 
-    let all_entries: Vec<Vec<ListFieldsEntry>> = get_and_process_fields_metadata(
-        &index_id,
-        &field_patterns,
-        split_footers,
-        searcher_ctx,
-        storage,
-    )
-    .await?;
-
-    let merged_entries: Vec<ListFieldsEntry> = merge_fields_metadata(all_entries, limit).await?;
-
-    let response = ListFieldsResponse {
-        entries: merged_entries,
-    };
-    Ok(response)
-}
-
-/// Two-stage pipeline: download blobs with bounded I/O concurrency, then hand each one off to the
-/// CPU pool as soon as it's ready. The CPU stage is left unbounded here because `run_cpu_intensive`
-/// already serializes work through the search thread pool.
-async fn get_and_process_fields_metadata(
-    index_id: &str,
-    field_patterns: &FieldPatterns,
-    split_footers: Vec<SplitIdAndFooterOffsets>,
-    searcher_ctx: Arc<SearcherContext>,
-    storage: Arc<dyn Storage>,
-) -> anyhow::Result<Vec<Vec<ListFieldsEntry>>> {
-    stream::iter(split_footers)
+    let mut splits = stream::iter(split_footers)
         .map(|split_footer| {
             let searcher_ctx = searcher_ctx.clone();
             let storage = storage.clone();
@@ -93,20 +70,25 @@ async fn get_and_process_fields_metadata(
         })
         .buffer_unordered(MAX_CONCURRENT_DOWNLOADS)
         .map_ok(|(split_id, serialized_entries)| {
-            process_fields_metadata(
-                serialized_entries,
-                index_id.to_string(),
-                split_id,
-                field_patterns.clone(),
-            )
+            process_fields_metadata(serialized_entries, split_id, field_patterns.clone())
         })
-        // `usize::MAX` is fine here: the upstream `buffer_unordered` already bounds the number of
-        // items that can have completed and be waiting for CPU work to `MAX_CONCURRENT_DOWNLOADS`,
-        // and `run_cpu_intensive` inside `process_fields_metadata` queues onto the search thread
-        // pool, so the effective CPU parallelism is the pool size — not this value.
-        .try_buffer_unordered(usize::MAX)
-        .try_collect()
+        .try_buffer_unordered(MAX_CONCURRENT_DECODES);
+
+    let mut counts = LeafFieldCounts::default();
+    while let Some(entries) = splits.try_next().await? {
+        counts = search_thread_pool()
+            .run_cpu_intensive(move || {
+                counts.add_split(entries);
+                counts
+            })
+            .await
+            .context("failed to count fields in split")?;
+    }
+    let entries = search_thread_pool()
+        .run_cpu_intensive(move || counts.into_entries(&index_id, field_list_size_limit(limit)))
         .await
+        .context("failed to select fields")?;
+    Ok(ListFieldsResponse { entries })
 }
 
 /// Gets the raw serialized fields metadata blob for a single split, either from the cache or,
@@ -158,7 +140,6 @@ async fn fetch_fields_metadata(
 /// split fanning in here, the pool's workers process splits in parallel.
 async fn process_fields_metadata(
     serialized_entries: OwnedBytes,
-    index_id: IndexId,
     split_id: String,
     field_patterns: FieldPatterns,
 ) -> anyhow::Result<Vec<ListFieldsEntry>> {
@@ -167,7 +148,7 @@ async fn process_fields_metadata(
         .run_cpu_intensive(move || {
             parent_span.in_scope(|| {
                 let entries: Vec<ListFieldsEntry> =
-                    deserialize_fields_metadata(serialized_entries, &index_id, &split_id)?;
+                    deserialize_fields_metadata(serialized_entries, &split_id)?;
                 let filtered_entries = filter_fields_metadata(entries, &field_patterns);
                 Ok(filtered_entries)
             })
@@ -182,7 +163,6 @@ async fn process_fields_metadata(
 #[instrument(skip_all, fields(split_id))]
 fn deserialize_fields_metadata(
     serialized_entries: OwnedBytes,
-    index_id: &str,
     split_id: &str,
 ) -> anyhow::Result<Vec<ListFieldsEntry>> {
     let mut entries = ListFieldsMetadata::deserialize(serialized_entries)
@@ -193,11 +173,6 @@ fn deserialize_fields_metadata(
         if list_field_entry.field_name == FIELD_PRESENCE_FIELD_NAME {
             return false;
         }
-        list_field_entry.index_ids = vec![index_id.to_string()];
-        // On-disk entries describe exactly one split. The count is initialized while reading so
-        // the split metadata wire format remains compatible with existing splits.
-        list_field_entry.num_splits = 1;
-
         if list_field_entry
             .field_name
             .starts_with(DYNAMIC_FIELD_PREFIX)
@@ -231,20 +206,6 @@ fn filter_fields_metadata(
         .collect()
 }
 
-#[instrument(skip_all, fields(num_splits = all_entries.len()))]
-async fn merge_fields_metadata(
-    all_entries: Vec<Vec<ListFieldsEntry>>,
-    limit: Option<u32>,
-) -> crate::Result<Vec<ListFieldsEntry>> {
-    let parent_span = Span::current();
-    search_thread_pool()
-        .run_cpu_intensive(move || {
-            parent_span.in_scope(|| merge_entries_with_limit_override(all_entries, limit))
-        })
-        .await
-        .context("failed to merge single split list fields")?
-}
-
 #[cfg(test)]
 mod tests {
     use quickwit_proto::search::ListFieldsType;
@@ -275,7 +236,7 @@ mod tests {
     #[test]
     fn deserialize_fields_metadata_strips_field_presence() {
         let bytes = serialize(vec![entry(FIELD_PRESENCE_FIELD_NAME), entry("user.name")]);
-        let fields = deserialize_fields_metadata(bytes, "test-index", "test-split").unwrap();
+        let fields = deserialize_fields_metadata(bytes, "test-split").unwrap();
         assert_eq!(fields.len(), 1);
         assert_eq!(fields[0].field_name, "user.name");
     }
@@ -284,7 +245,7 @@ mod tests {
     fn deserialize_fields_metadata_removes_dynamic_prefix() {
         // The serialized blob is sorted by (name, type); `_dynamic.foo` < `user.name`.
         let bytes = serialize(vec![entry("user.name"), entry("_dynamic.foo")]);
-        let fields = deserialize_fields_metadata(bytes, "test-index", "test-split").unwrap();
+        let fields = deserialize_fields_metadata(bytes, "test-split").unwrap();
         let field_names: Vec<&str> = fields
             .iter()
             .map(|field| field.field_name.as_str())
@@ -292,18 +253,61 @@ mod tests {
         assert_eq!(field_names, ["foo", "user.name"]);
     }
 
-    #[test]
-    fn deserialize_fields_metadata_inserts_index_id() {
-        let bytes = serialize(vec![entry("user.name")]);
-        let fields = deserialize_fields_metadata(bytes, "test-index", "test-split").unwrap();
-        assert_eq!(fields[0].index_ids, ["test-index"]);
+    #[tokio::test]
+    async fn leaf_list_fields_ranks_after_counting_all_splits() {
+        let searcher = Arc::new(SearcherContext::for_test());
+        let mut splits = Vec::new();
+        for i in 0..24 {
+            let mut common = entry("_dynamic.match.z");
+            common.searchable = i % 2 == 0;
+            common.aggregatable = false;
+            let mut tied = if i % 2 == 0 {
+                entry_typed("match.z", ListFieldsType::U64)
+            } else {
+                entry("match.a")
+            };
+            tied.aggregatable = i % 3 == 0;
+            let split_id = format!("split-{i}");
+            let bytes = serialize(vec![
+                entry("ignored"),
+                entry(&format!("match.{i}")),
+                common,
+                tied,
+            ]);
+            searcher.list_fields_cache.put(split_id.clone(), bytes);
+            splits.push(SplitIdAndFooterOffsets {
+                split_id,
+                ..Default::default()
+            });
+        }
+        let response = leaf_list_fields(
+            "index".into(),
+            &["match.*".into()],
+            splits,
+            Some(2),
+            searcher,
+            Arc::new(quickwit_storage::RamStorage::default()),
+        )
+        .await
+        .unwrap();
+        // Both match.a and the U64 variant of match.z occur in 12 splits; the name breaks the tie.
+        let mut first = entry("match.a");
+        first.num_splits = 12;
+        first.index_ids = vec!["index".into()];
+        first.non_aggregatable_index_ids = first.index_ids.clone();
+        let mut second = entry("match.z");
+        second.num_splits = 24;
+        second.index_ids = first.index_ids.clone();
+        second.non_searchable_index_ids = first.index_ids.clone();
+        second.aggregatable = false;
+        assert_eq!(response.entries, [first, second]);
     }
 
     #[test]
     fn deserialize_fields_metadata_dedups_after_prefix_rewrite() {
         // Both `_dynamic.foo` and `foo` collapse to `foo` after stripping the prefix.
         let bytes = serialize(vec![entry("_dynamic.foo"), entry("foo")]);
-        let fields = deserialize_fields_metadata(bytes, "test-index", "test-split").unwrap();
+        let fields = deserialize_fields_metadata(bytes, "test-split").unwrap();
         assert_eq!(fields.len(), 1);
         assert_eq!(fields[0].field_name, "foo");
     }
@@ -317,7 +321,7 @@ mod tests {
             entry("user.name"),
             entry_typed("status", ListFieldsType::Str),
         ]);
-        let fields = deserialize_fields_metadata(bytes, "test-index", "test-split").unwrap();
+        let fields = deserialize_fields_metadata(bytes, "test-split").unwrap();
         let field_pairs: Vec<(&str, i32)> = fields
             .iter()
             .map(|field| (field.field_name.as_str(), field.field_type))
@@ -343,7 +347,7 @@ mod tests {
             entry_typed("_dynamic.b", ListFieldsType::Str),
             entry_typed("a", ListFieldsType::Str),
         ]);
-        let fields = deserialize_fields_metadata(bytes, "test-index", "test-split").unwrap();
+        let fields = deserialize_fields_metadata(bytes, "test-split").unwrap();
         let field_pairs: Vec<(&str, i32)> = fields
             .iter()
             .map(|field| (field.field_name.as_str(), field.field_type))

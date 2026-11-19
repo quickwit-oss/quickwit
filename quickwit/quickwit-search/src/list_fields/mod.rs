@@ -13,6 +13,7 @@
 // limitations under the License.
 
 mod cache;
+mod counts;
 mod leaf;
 mod patterns;
 mod root;
