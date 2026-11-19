@@ -21,7 +21,7 @@ use quickwit_directories::{MemoryReservation, MemoryReserver, OutOfMemoryError};
 use tokio::sync::Notify;
 
 use crate::metrics::LEAF_SEARCH_SPLIT_WARMUP_OUT_OF_MEMORY_TOTAL;
-use crate::warmup_memory::WarmupMemoryGuard;
+use crate::warmup_memory::{WaitingReadRegistration, WarmupMemoryGuard};
 
 /// Growth factor of a split's memory reservation, as `GROWTH_NUMERATOR / GROWTH_DENOMINATOR`.
 ///
@@ -110,6 +110,7 @@ impl MemoryReserver for SplitWarmupMemory {
     ///
     /// Waits while the global warmup memory is full. This cannot deadlock: the oldest split search
     /// never waits (see `GlobalWarmupMemory`), and the other ones wait for it to free its memory.
+    /// While it waits, the read is registered as waiting, so no new split search starts.
     /// Fails right away if the reservation would go over the per-split limit.
     ///
     /// Cancel-safe: if the future is dropped while waiting, nothing is reserved.
@@ -117,6 +118,8 @@ impl MemoryReserver for SplitWarmupMemory {
         &self,
         num_bytes: u64,
     ) -> Result<MemoryReservation<'_>, OutOfMemoryError> {
+        // Created on the first failed attempt. Dropped when this future completes or is dropped.
+        let mut waiting_read_registration: Option<WaitingReadRegistration> = None;
         loop {
             // Registered before trying, so that memory freed between the attempt and the `.await`
             // still wakes us up.
@@ -137,6 +140,12 @@ impl MemoryReserver for SplitWarmupMemory {
                 }
                 // Not enough memory left in the global warmup memory: waits for memory to be
                 // freed, then tries again.
+                if waiting_read_registration.is_none() {
+                    // A new split search may have taken memory freed between the failed attempt
+                    // and the registration: tries again right away.
+                    waiting_read_registration = Some(state.reservation.register_waiting_read());
+                    continue;
+                }
             }
             memory_freed.await;
         }
@@ -471,6 +480,21 @@ mod tests {
         // Neither the reservation nor the global memory changed.
         assert_eq!(split_memory.reserved_num_bytes(), 10 * MB);
         assert_eq!(global.allocated(), 20 * MB);
+    }
+
+    #[tokio::test]
+    async fn test_waiting_read_blocks_new_split_searches() {
+        let global = global_warmup_memory_with_split_max(100, 50);
+        let _oldest_split_memory = split_warmup_memory(&global, 40 * MB);
+        // 40MB + 10MB fill the 100MB - 50MB the non-oldest split searches can use.
+        let split_memory = split_warmup_memory(&global, 10 * MB);
+        let mut reserve_fut = Box::pin(split_memory.reserve_memory(11 * MB));
+        assert!(futures::poll!(&mut reserve_fut).is_pending());
+        // A new split search of 0 bytes would fit, but the waiting read goes first.
+        assert!(global.try_allocate(0).is_none());
+        // Dropping the waiting read unregisters it.
+        drop(reserve_fut);
+        let _guard = global.try_allocate(0).unwrap();
     }
 
     #[tokio::test]

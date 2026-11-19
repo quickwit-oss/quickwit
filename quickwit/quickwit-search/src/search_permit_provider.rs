@@ -82,8 +82,8 @@ pub enum SearchPermitMessage {
         /// permits.
         permit_resp_tx: oneshot::Sender<Vec<SearchPermitFuture>>,
     },
-    /// Sent by the [`GlobalWarmupMemory`] callback each time memory is freed or a split search
-    /// ends, so that pending permits can be granted.
+    /// Sent by the [`GlobalWarmupMemory`] callback each time memory is freed, a split search ends,
+    /// or no read waits for memory anymore, so that pending permits can be granted.
     ///
     /// The memory is already freed when this message is sent.
     MemoryFreed,
@@ -248,9 +248,10 @@ struct SearchPermitActor {
     /// Memory reserved by all granted permits. It also enforces the per-split limit.
     ///
     /// Permits are granted with [`GlobalWarmupMemory::try_allocate`]. Split searches grow their
-    /// reservation during the warmup without going through the actor. Each time memory is freed
-    /// or a split search ends, the `GlobalWarmupMemory` callback sends a `MemoryFreed` message, so
-    /// that the actor tries again.
+    /// reservation during the warmup without going through the actor. While one of them waits for
+    /// memory, no permit is granted. Each time memory is freed, a split search ends, or no read
+    /// waits for memory anymore, the `GlobalWarmupMemory` callback sends a `MemoryFreed` message,
+    /// so that the actor tries again.
     warmup_memory: GlobalWarmupMemory,
     /// Sum of [`SplitSearchTaskMetadata::job_cost`] for all queued and active tasks.
     ///

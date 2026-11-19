@@ -29,6 +29,13 @@
 //! So the memory held by the other split searches is at most `limit - split_max_allocation`, and
 //! the oldest split search can always grow to `split_max_allocation`. It completes, drops its
 //! guard, and the next split search becomes the oldest one.
+//!
+//! # Running split searches first
+//!
+//! While a read of a running split search waits for memory, no new split search starts (see
+//! [`WarmupMemoryGuard::register_waiting_read`]). Otherwise, the memory freed would be shared
+//! between new split searches and the running ones, and more and more split searches would hold
+//! some memory while waiting for more.
 
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -71,16 +78,19 @@ struct GlobalWarmupMemoryState {
     /// Ids of the live guards. The smallest one is the oldest split search.
     live_guard_ids: BTreeSet<u64>,
     next_guard_id: u64,
+    /// Number of reads of running split searches waiting for memory. While it is not 0,
+    /// `try_allocate` fails.
+    num_waiting_reads: usize,
 }
 
 impl GlobalWarmupMemory {
     /// Creates a warmup memory that never allocates more than `limit`. A single guard never holds
     /// more than `split_max_allocation`, as long as callers respect the contract of `try_allocate`.
     ///
-    /// `on_memory_freed` is called each time memory is freed or a guard is dropped, after the
-    /// memory is freed. The search permit actor uses it to try granting pending permits again. It
-    /// is called from the thread that frees the memory, possibly while a lock is held, so it must
-    /// be quick and must not block.
+    /// `on_memory_freed` is called each time memory is freed, a guard is dropped, or no read waits
+    /// for memory anymore, after the state is updated. The search permit actor uses it to try
+    /// granting pending permits again. It is called from the thread that updates the state,
+    /// possibly while a lock is held, so it must be quick and must not block.
     ///
     /// # Panics
     ///
@@ -99,6 +109,7 @@ impl GlobalWarmupMemory {
             allocated: 0,
             live_guard_ids: BTreeSet::new(),
             next_guard_id: 0,
+            num_waiting_reads: 0,
         };
         let inner = GlobalWarmupMemoryInner {
             state: Mutex::new(state),
@@ -120,7 +131,7 @@ impl GlobalWarmupMemory {
     }
 
     /// Allocates `num_bytes` for a new split search. Returns `None` if there is not enough memory
-    /// left right now.
+    /// left right now, or if a read of a running split search is waiting for memory.
     ///
     /// The new guard is the youngest one. If there is no other live guard, it is the oldest one
     /// and can use the whole limit. The memory is freed when the guard is dropped.
@@ -130,6 +141,10 @@ impl GlobalWarmupMemory {
     /// the per-split limit, and fails as soon as it needs more memory.
     pub fn try_allocate(&self, num_bytes: u64) -> Option<WarmupMemoryGuard> {
         let mut state = self.lock_state();
+        if state.num_waiting_reads > 0 {
+            // The memory freed goes to the running split searches first.
+            return None;
+        }
         let limit = if state.live_guard_ids.is_empty() {
             self.inner.limit
         } else {
@@ -229,6 +244,15 @@ impl WarmupMemoryGuard {
         self.global.inner.memory_freed_notify.clone()
     }
 
+    /// Registers a read of this split search as waiting for memory. While a read is registered, no
+    /// new split search starts. The read is unregistered when the returned value is dropped.
+    pub fn register_waiting_read(&self) -> WaitingReadRegistration {
+        self.global.lock_state().num_waiting_reads += 1;
+        WaitingReadRegistration {
+            global: self.global.clone(),
+        }
+    }
+
     /// Frees memory so that this guard only holds `new_num_bytes`.
     ///
     /// # Panics
@@ -289,6 +313,28 @@ impl Drop for WarmupMemoryGuard {
         // Even if the guard held no memory, the oldest guard may have changed, which lets the
         // other guards allocate more.
         self.global.notify_memory_freed();
+    }
+}
+
+/// A read waiting for memory, created by [`WarmupMemoryGuard::register_waiting_read`].
+///
+/// Unregistered on drop. Dropping the last one calls the `on_memory_freed` callback, so that the
+/// search permit actor starts new split searches again.
+#[must_use = "dropping a waiting read registration unregisters it right away"]
+pub(crate) struct WaitingReadRegistration {
+    global: GlobalWarmupMemory,
+}
+
+impl Drop for WaitingReadRegistration {
+    fn drop(&mut self) {
+        let is_last_waiting_read = {
+            let mut state = self.global.lock_state();
+            state.num_waiting_reads -= 1;
+            state.num_waiting_reads == 0
+        };
+        if is_last_waiting_read {
+            (self.global.inner.on_memory_freed)();
+        }
     }
 }
 
@@ -436,6 +482,28 @@ mod tests {
         // This creates a reference cycle, which is fine in a test.
         global_cell.set(global.clone()).ok().unwrap();
         (global, allocated_on_callbacks)
+    }
+
+    #[test]
+    fn test_waiting_read_blocks_new_split_searches() {
+        let (global, allocated_on_callbacks) =
+            global_warmup_memory_recording_callbacks(ByteSize(100));
+        let guard = global.try_allocate(10).unwrap();
+        let waiting_read_1 = guard.register_waiting_read();
+        let waiting_read_2 = guard.register_waiting_read();
+        // Dropped so that the whole limit is available. In practice, a guard outlives its waiting
+        // reads.
+        drop(guard);
+        assert_eq!(*allocated_on_callbacks.lock().unwrap(), vec![0]);
+        // There is memory left, but it goes to the waiting reads first.
+        assert!(global.try_allocate(1).is_none());
+        drop(waiting_read_1);
+        assert!(global.try_allocate(1).is_none());
+        assert_eq!(*allocated_on_callbacks.lock().unwrap(), vec![0]);
+        // Unregistering the last waiting read wakes up the permit actor.
+        drop(waiting_read_2);
+        assert_eq!(*allocated_on_callbacks.lock().unwrap(), vec![0, 0]);
+        let _other_guard = global.try_allocate(1).unwrap();
     }
 
     #[test]
