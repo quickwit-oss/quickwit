@@ -26,6 +26,7 @@ use crate::storage::SendableAsync;
 use crate::{BulkDeleteError, ListObjectsStream, OwnedBytes, Storage, StorageResult};
 
 /// Use with care, StorageWithCache is read-only.
+/// Streaming reads reuse cache hits and forward misses without insertion.
 pub struct StorageWithCache {
     pub storage: Arc<dyn Storage>,
     pub cache: Arc<dyn StorageCache>,
@@ -76,7 +77,7 @@ impl Storage for StorageWithCache {
         if buffer.is_empty() {
             return Ok(());
         }
-        // Read through the cache. Streaming would bypass it.
+        // Use buffered reads so cache misses populate the cache.
         let bytes = self.get_slice(path, range).await?;
         buffer.copy_from_slice(&bytes);
         Ok(())
@@ -85,12 +86,12 @@ impl Storage for StorageWithCache {
     async fn get_slice_stream(
         &self,
         path: &Path,
-        _range: Range<usize>,
+        range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        unimplemented!(
-            "StorageWithCache does not support streamed read yet. Failed to get {:?}",
-            path
-        )
+        if let Some(reader) = self.cache.get_slice_stream(path, range.clone()).await {
+            return Ok(reader);
+        }
+        self.storage.get_slice_stream(path, range).await
     }
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {

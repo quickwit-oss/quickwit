@@ -18,6 +18,7 @@ use std::sync::Arc;
 use std::{fmt, io};
 
 use async_trait::async_trait;
+use futures::stream::BoxStream;
 use quickwit_storage::{ByteRangeCache, FileByteRangeCache};
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, OwnedBytes};
@@ -131,6 +132,7 @@ impl MemoryReserver for NoopMemoryReserver {
 }
 
 /// The caching directory is a simple cache that wraps another directory.
+/// Streaming reads bypass cache lookups, insertion, and memory reservations.
 #[derive(Clone)]
 pub struct CachingDirectory {
     underlying: Arc<dyn Directory>,
@@ -226,6 +228,13 @@ impl FileHandle for CachingFileHandle {
         let num_added_bytes = self.cache.put_slice(byte_range, read_bytes.clone());
         read_reservation.keep(num_added_bytes);
         Ok(read_bytes)
+    }
+
+    fn stream_ranges(
+        &self,
+        ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
+    ) -> BoxStream<'_, io::Result<OwnedBytes>> {
+        self.underlying_filehandle.stream_ranges(ranges)
     }
 }
 
@@ -482,6 +491,63 @@ mod tests {
         file_handle.read_bytes_async(0..5).await.unwrap();
         assert_eq!(memory_reserver.reserved(), 5);
         assert_eq!(debug_proxy_directory.drain_read_operations().count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_automaton_bitset_does_not_fill_directory_cache() -> tantivy::Result<()> {
+        use rand::SeedableRng;
+        use rand::distr::{Alphanumeric, SampleString};
+        use tantivy::schema::{STRING, Schema};
+        use tantivy::{Executor, Index, IndexWriter, TantivyDocument, doc};
+        use tantivy_fst::Regex;
+        use tantivy_fst::automaton::AlwaysMatch;
+
+        let directory = RamDirectory::create();
+        let mut schema = Schema::builder();
+        let field = schema.add_text_field("field", STRING);
+        let index = Index::create(directory.clone(), schema.build(), Default::default())?;
+        let mut writer: IndexWriter = index.writer_with_num_threads(1, 64_000_000)?;
+        writer.add_document(doc!(field => "a"))?;
+        // Put more than one decode batch of dictionary blocks between the two sparse hits.
+        let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+        let mut doc = TantivyDocument::default();
+        for _ in 0..16_000 {
+            doc.add_text(
+                field,
+                format!("m{}", Alphanumeric.sample_string(&mut rng, 128)),
+            );
+        }
+        writer.add_document(doc)?;
+        writer.add_document(doc!(field => "z"))?;
+        writer.commit()?;
+
+        let cache = ByteRangeCache::with_infinite_capacity();
+        let budget = 32 * 1024 * 1024;
+        let reserver = LimitedMemoryReserver::new(budget);
+        let directory = CachingDirectory::new(Arc::new(directory), cache.clone())
+            .with_memory_reserver(reserver.clone());
+        let index = Index::open(directory)?;
+        let searcher = index.reader()?.searcher();
+        let segment = searcher.segment_reader(0);
+        let reader = segment.inverted_index(field)?;
+        // Opening the index caches metadata. Leave no budget for dictionary or posting reads.
+        let initial_bytes = cache.get_num_bytes();
+        let _reservation = reserver
+            .try_reserve_memory(budget - reserver.reserved())
+            .unwrap();
+        let executor = Executor::single_thread();
+        let sparse = reader
+            .create_bitset_for_automaton(Regex::new("a|z").unwrap(), segment.max_doc(), &executor)
+            .await?;
+        assert_eq!(sparse.len(), 2);
+        assert!(sparse.contains(0) && sparse.contains(2));
+        assert_eq!(cache.get_num_bytes(), initial_bytes);
+        let all = reader
+            .create_bitset_for_automaton(AlwaysMatch, segment.max_doc(), &executor)
+            .await?;
+        assert_eq!(all.len(), 3);
+        assert_eq!(cache.get_num_bytes(), initial_bytes);
+        Ok(())
     }
 
     #[tokio::test]

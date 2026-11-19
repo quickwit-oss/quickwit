@@ -93,6 +93,13 @@ impl BundleStorage {
         self.file_ranges.files.keys()
     }
 
+    fn file_range(&self, path: &Path) -> StorageResult<Range<u64>> {
+        self.file_ranges.get(path).ok_or_else(|| {
+            crate::StorageErrorKind::NotFound
+                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
+        })
+    }
+
     /// Fetches a bundled file from a split.
     ///
     /// Use this only when retrieving a single file from the split. To retrieve multiple files,
@@ -508,10 +515,7 @@ impl Storage for BundleStorage {
         path: &Path,
         range: Range<usize>,
     ) -> crate::StorageResult<OwnedBytes> {
-        let file_range = self.file_ranges.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })?;
+        let file_range = self.file_range(path)?;
         let new_range =
             file_range.start as usize + range.start..file_range.start as usize + range.end;
         self.storage
@@ -528,10 +532,7 @@ impl Storage for BundleStorage {
         if buffer.is_empty() {
             return Ok(());
         }
-        let file_range = self.file_ranges.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })?;
+        let file_range = self.file_range(path)?;
         let new_range =
             file_range.start as usize + range.start..file_range.start as usize + range.end;
         self.storage
@@ -542,16 +543,22 @@ impl Storage for BundleStorage {
     async fn get_slice_stream(
         &self,
         path: &Path,
-        _range: Range<usize>,
+        range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        Err(unsupported_operation(&[path]))
+        let file_range = self.file_range(path)?;
+        if range.start > range.end || range.end as u64 > file_range.end - file_range.start {
+            return Err(
+                io::Error::new(io::ErrorKind::InvalidInput, "range exceeds bundled file").into(),
+            );
+        }
+        let range = file_range.start as usize + range.start..file_range.start as usize + range.end;
+        self.storage
+            .get_slice_stream(&self.bundle_filepath, range)
+            .await
     }
 
     async fn get_all(&self, path: &Path) -> crate::StorageResult<OwnedBytes> {
-        let file_range = self.file_ranges.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })?;
+        let file_range = self.file_range(path)?;
         self.storage
             .get_slice(
                 &self.bundle_filepath,
@@ -577,10 +584,7 @@ impl Storage for BundleStorage {
     }
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
-        let file_range = self.file_ranges.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })?;
+        let file_range = self.file_range(path)?;
         Ok(file_range.end - file_range.start)
     }
 
@@ -620,6 +624,82 @@ mod tests {
     use crate::{CountingStorage, PutPayload, RamStorageBuilder, SplitPayloadBuilder};
 
     const DEFAULT_SPLIT_TAIL_WINDOW_NUM_BYTES: u64 = 1024 * 1024;
+
+    #[tokio::test]
+    async fn test_stream_maps_bundle_range_and_uses_cache_hits() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let (reader, mut writer) = tokio::io::duplex(1);
+        let mut backend = crate::MockStorage::default();
+        backend
+            .expect_get_slice_stream()
+            .times(1)
+            .return_once(|path, range| {
+                assert_eq!(path, Path::new("split"));
+                assert_eq!(range, 102..105);
+                Ok(Box::new(reader))
+            });
+        let mut cache = crate::MockStorageCache::default();
+        let mut cached_reader = Some(&b"abc"[..]);
+        cache
+            .expect_get_slice_stream()
+            .times(2)
+            .returning(move |path, range| {
+                assert_eq!(path, Path::new("split"));
+                assert_eq!(range, 102..105);
+                // Hit on the first read, miss on the second. Any insertion fails the test.
+                Some(Box::new(cached_reader.take()?))
+            });
+        let storage = BundleStorage {
+            storage: Arc::new(crate::cache::StorageWithCache {
+                storage: Arc::new(backend),
+                cache: Arc::new(cache),
+            }),
+            bundle_filepath: PathBuf::from("split"),
+            file_ranges: BundleFileRanges {
+                files: HashMap::from([(PathBuf::from("file"), 100..110)]),
+            },
+        };
+        let error = storage
+            .get_slice_stream(Path::new("file"), 9..11)
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error.kind(), crate::StorageErrorKind::Io);
+        assert_eq!(
+            std::error::Error::source(&error)
+                .unwrap()
+                .downcast_ref::<io::Error>()
+                .unwrap()
+                .kind(),
+            io::ErrorKind::InvalidInput
+        );
+        let error = storage
+            .get_slice_stream(Path::new("missing"), 0..1)
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(io::Error::from(error).kind(), io::ErrorKind::NotFound);
+        let mut cached = storage
+            .get_slice_stream(Path::new("file"), 2..5)
+            .await
+            .unwrap();
+        let mut bytes = Vec::new();
+        cached.read_to_end(&mut bytes).await.unwrap();
+        assert_eq!(bytes, b"abc");
+
+        let mut stream = storage
+            .get_slice_stream(Path::new("file"), 2..5)
+            .await
+            .unwrap();
+        writer.write_all(b"a").await.unwrap();
+        assert_eq!(stream.read_u8().await.unwrap(), b'a');
+        drop(stream);
+        assert_eq!(
+            writer.write_all(b"b").await.unwrap_err().kind(),
+            io::ErrorKind::BrokenPipe
+        );
+    }
 
     #[tokio::test]
     async fn bundle_storage_locates_footer_from_object_storage() {

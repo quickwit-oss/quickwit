@@ -18,7 +18,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, io};
 
+mod batch_stream;
+
 use async_trait::async_trait;
+use futures::stream::BoxStream;
 use quickwit_common::uri::Uri;
 use quickwit_storage::{OwnedBytes, Storage};
 use tantivy::directory::FileHandle;
@@ -63,6 +66,13 @@ impl FileHandle for StorageDirectoryFileHandle {
             .get_slice(&self.path, byte_range)
             .await?;
         Ok(object_bytes)
+    }
+
+    fn stream_ranges(
+        &self,
+        ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
+    ) -> BoxStream<'_, io::Result<OwnedBytes>> {
+        batch_stream::read_ranges(self.storage_directory.storage.as_ref(), &self.path, ranges)
     }
 }
 
@@ -139,4 +149,58 @@ impl Directory for StorageDirectory {
     }
 
     crate::read_only_directory!();
+}
+
+#[cfg(test)]
+mod tests {
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use futures::TryStreamExt;
+    use quickwit_storage::{MockStorage, StorageErrorKind};
+    use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
+
+    use super::*;
+
+    struct FailingReader;
+
+    impl AsyncRead for FailingReader {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+            _buffer: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            Poll::Ready(Err(io::ErrorKind::ConnectionReset.into()))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_stream_propagates_open_and_read_errors() {
+        let mut storage = MockStorage::default();
+        storage
+            .expect_get_slice_stream()
+            .times(2)
+            .returning(|_, range| {
+                if range.start == 0 {
+                    return Err(
+                        StorageErrorKind::NotFound.with_error(anyhow::anyhow!("missing file"))
+                    );
+                }
+                Ok(Box::new(io::Cursor::new([5]).chain(FailingReader)))
+            });
+        let directory = StorageDirectory::new(Arc::new(storage));
+        let handle = directory.get_file_handle(Path::new("file")).unwrap();
+        let mut missing = handle.stream_ranges(Box::new(std::iter::once(0..1)));
+        assert_eq!(
+            missing.try_next().await.unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
+        let mut stream = handle.stream_ranges(Box::new([5..6, 6..20].into_iter()));
+        assert_eq!(stream.try_next().await.unwrap().unwrap().as_slice(), &[5]);
+        assert_eq!(
+            stream.try_next().await.unwrap_err().kind(),
+            io::ErrorKind::ConnectionReset
+        );
+        assert!(stream.try_next().await.unwrap().is_none());
+    }
 }

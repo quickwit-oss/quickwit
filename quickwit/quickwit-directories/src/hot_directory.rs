@@ -15,11 +15,12 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::{fmt, io};
 
 use anyhow::{Context, bail};
 use async_trait::async_trait;
+use futures::stream::{BoxStream, StreamExt, TryStreamExt};
 use quickwit_storage::VersionedComponent;
 use serde::{Deserialize, Serialize};
 use tantivy::directory::error::OpenReadError;
@@ -404,6 +405,45 @@ impl FileHandle for FileSliceWithCache {
         }
         self.underlying.read_bytes_slice_async(byte_range).await
     }
+
+    fn stream_ranges(
+        &self,
+        ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
+    ) -> BoxStream<'_, io::Result<OwnedBytes>> {
+        if self.static_cache.index.slices.is_empty() {
+            return self.underlying.stream_ranges(ranges);
+        }
+        let cache = self.static_cache.clone();
+        let ranges = ranges.map(move |range| {
+            let hit = cache.try_read_bytes(range.clone());
+            (range, hit)
+        });
+        let ranges = Arc::new(Mutex::new(ranges.peekable()));
+        async_stream::try_stream! {
+            loop {
+                let next = ranges.lock().unwrap().next();
+                let first_uncached_range = match next {
+                    Some((range, None)) => range,
+                    Some((_, Some(bytes))) => {
+                        yield bytes;
+                        continue;
+                    }
+                    None => break,
+                };
+                // The inner iterator must be owned. Share the cursor so it can pull consecutive
+                // misses on demand and leave the next cache hit queued for the outer stream.
+                let cursor = ranges.clone();
+                let misses = std::iter::from_fn(move || cursor.lock().unwrap()
+                    .next_if(|(_, hit)| hit.is_none()).map(|(range, _)| range));
+                let ranges_to_download = std::iter::once(first_uncached_range).chain(misses);
+                let mut stream = self.underlying.stream_ranges(Box::new(ranges_to_download));
+                while let Some(bytes) = stream.try_next().await? {
+                    yield bytes;
+                }
+            }
+        }
+        .boxed()
+    }
 }
 
 impl fmt::Debug for FileSliceWithCache {
@@ -554,6 +594,44 @@ mod tests {
     use tantivy::{Index, TantivyDocument};
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_stream_uses_hotcache() {
+        use futures::TryStreamExt;
+
+        let path = Path::new("test.file");
+        let content = b"0123456789abcdef";
+        let directory = RamDirectory::default();
+        directory.atomic_write(path, content).unwrap();
+        let mut hotcache = StaticDirectoryCacheBuilder::default();
+        hotcache
+            .add_file(path, content.len() as u64)
+            .add_bytes(b"xx", 4);
+        let mut hotcache_bytes = Vec::new();
+        hotcache.write(&mut hotcache_bytes).unwrap();
+        let hot_directory = HotDirectory::open(directory, OwnedBytes::new(hotcache_bytes)).unwrap();
+        let file = hot_directory
+            .open_read(path)
+            .unwrap()
+            .slice(2..content.len());
+        // Cached bytes differ from storage. A partial hit still reads the complete range from
+        // storage.
+        let ranges = [0..2, 5..7, 2..4, 3..3, 2..4, 3..5];
+        let mut stream = file.stream_ranges(Box::new(ranges.into_iter()));
+        for expected in [b"23".as_slice(), b"78", b"xx", b"", b"xx", b"56"] {
+            assert_eq!(
+                stream.try_next().await.unwrap().unwrap().as_slice(),
+                expected
+            );
+        }
+        assert!(stream.try_next().await.unwrap().is_none());
+
+        // A miss run stays lazy when the backend itself only asks for one range.
+        let ranges =
+            std::iter::once(0..2).chain(std::iter::from_fn(|| panic!("unexpected read-ahead")));
+        let mut stream = file.stream_ranges(Box::new(ranges));
+        assert_eq!(stream.try_next().await.unwrap().unwrap().as_slice(), b"23");
+    }
 
     #[test]
     fn test_empty_slice_cache_index() -> tantivy::Result<()> {
