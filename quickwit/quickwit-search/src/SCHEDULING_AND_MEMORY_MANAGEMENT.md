@@ -67,7 +67,7 @@ This logic in itself is sufficient to bound the warm up cache memory usage to ou
 However, this gives us no control on which leaf request will get OOMed.
 
 Building an automaton bitset streams dictionary blocks and then posting lists through
-`FileHandle::read_bytes_batch_stream`, bypassing the ephemeral byte cache and its memory
+`FileHandle::stream_ranges`, bypassing the ephemeral byte cache and its memory
 reservations. Tantivy releases dictionary blocks after enumerating each batch. The storage
 directory groups consecutive forward ranges into one storage read (up to 4 MiB between ranges,
 16 MiB per span and 16,384 ranges). It opens one span at a time, discards gaps and yields each

@@ -45,9 +45,9 @@ pub(super) struct StreamDebouncer {
 type StreamSender = mpsc::Sender<io::Result<Bytes>>;
 
 struct StreamGroup {
-    deadline: Instant,
+    join_deadline: Instant,
     // The producer owns the receiver so its termination also fails pending opens.
-    readers: mpsc::UnboundedSender<StreamSender>,
+    new_readers: mpsc::UnboundedSender<StreamSender>,
     // Only callers hold the group alive, including while awaiting the backend open.
     task: JoinHandle<()>,
 }
@@ -95,20 +95,22 @@ impl StreamDebouncer {
         let mut registry = self.groups.lock().unwrap();
         let (groups, inserts_since_cleanup) = &mut *registry;
         if let Some(group) = groups.get(&key).and_then(Weak::upgrade)
-            && Instant::now() < group.deadline
+            && Instant::now() < group.join_deadline
         {
-            match group.readers.send(reader) {
+            match group.new_readers.send(reader) {
                 Ok(()) => return group,
                 Err(error) => reader = error.0, // The producer closed the group meanwhile.
             }
         }
-        let deadline = Instant::now() + COLLECT_READERS_FOR;
-        let (readers, receiver) = mpsc::unbounded_channel();
-        readers.send(reader).expect("receiver is still owned here");
-        let task = tokio::spawn(share_stream(storage, key.clone(), deadline, receiver));
+        let join_deadline = Instant::now() + COLLECT_READERS_FOR;
+        let (new_readers, receiver) = mpsc::unbounded_channel();
+        new_readers
+            .send(reader)
+            .expect("receiver is still owned here");
+        let task = tokio::spawn(share_stream(storage, key.clone(), join_deadline, receiver));
         let group = Arc::new(StreamGroup {
-            deadline,
-            readers,
+            join_deadline,
+            new_readers,
             task,
         });
         groups.insert(key, Arc::downgrade(&group));
@@ -125,15 +127,15 @@ impl StreamDebouncer {
 async fn share_stream<T: Storage>(
     storage: Arc<T>,
     key: DebouncerKey,
-    deadline: Instant,
-    mut readers: mpsc::UnboundedReceiver<StreamSender>,
+    join_deadline: Instant,
+    mut new_readers: mpsc::UnboundedReceiver<StreamSender>,
 ) {
-    tokio::time::sleep_until(deadline).await;
+    tokio::time::sleep_until(join_deadline).await;
     // Closing admissions also rejects a sender racing with the deadline check.
-    readers.close();
+    new_readers.close();
     let stream = storage.get_slice_stream(&key.0, key.1).await;
     let mut senders = Vec::new();
-    while let Some(reader) = readers.recv().await {
+    while let Some(reader) = new_readers.recv().await {
         // StorageError round-trips through io::Error without losing its kind or retry metadata.
         let opened = stream
             .as_ref()

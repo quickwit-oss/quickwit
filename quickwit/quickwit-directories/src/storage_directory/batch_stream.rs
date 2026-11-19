@@ -23,33 +23,33 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader};
 
 // Trade small gaps for fewer storage requests. Bound both the bytes requested from storage
 // and the metadata collected before yielding, even for millions of adjacent one-byte lists.
-const MAX_GAP: usize = 4 * 1024 * 1024;
-const MAX_SPAN: usize = 16 * 1024 * 1024;
-const MAX_RANGES: usize = 16 * 1024;
+const MAX_GAP_BYTES: usize = 4 * 1024 * 1024;
+const MAX_MERGED_READ_BYTES: usize = 16 * 1024 * 1024;
+const MAX_RANGES_PER_READ: usize = 16 * 1024;
 
 /// Add forward, disjoint ranges to the first nonempty range. Overlaps (including duplicates)
 /// start a new read: keeping input order then requires neither sorting nor a replay buffer.
-fn plan_read(
+fn coalesce_ranges(
     first: Range<usize>,
     ranges: &mut Peekable<impl Iterator<Item = Range<usize>>>,
-    requested: &mut Vec<Range<usize>>,
+    requested_ranges: &mut Vec<Range<usize>>,
 ) -> Range<usize> {
-    let mut span = first.clone();
-    requested.clear();
-    requested.push(first);
-    while requested.len() < MAX_RANGES {
+    let mut download_range = first.clone();
+    requested_ranges.clear();
+    requested_ranges.push(first);
+    while requested_ranges.len() < MAX_RANGES_PER_READ {
         let Some(next) = ranges.next_if(|next| {
             !next.is_empty()
-                && next.start >= span.end
-                && next.start - span.end <= MAX_GAP
-                && next.end - span.start <= MAX_SPAN
+                && next.start >= download_range.end
+                && next.start - download_range.end <= MAX_GAP_BYTES
+                && next.end - download_range.start <= MAX_MERGED_READ_BYTES
         }) else {
             break;
         };
-        span.end = next.end;
-        requested.push(next);
+        download_range.end = next.end;
+        requested_ranges.push(next);
     }
-    span
+    download_range
 }
 
 /// Discard unwanted bytes from the reader's buffer, without allocating for the gap.
@@ -73,17 +73,17 @@ pub(super) fn read_ranges<'a>(
 ) -> BoxStream<'a, io::Result<OwnedBytes>> {
     async_stream::try_stream! {
         let mut ranges = ranges.peekable();
-        let mut requested = Vec::new();
+        let mut requested_ranges = Vec::new();
         while let Some(first) = ranges.next() {
             if first.is_empty() {
                 yield OwnedBytes::empty();
                 continue;
             }
-            let span = plan_read(first, &mut ranges, &mut requested);
-            let mut offset = span.start;
-            let body = storage.get_slice_stream(path, span).await?;
+            let download_range = coalesce_ranges(first, &mut ranges, &mut requested_ranges);
+            let mut offset = download_range.start;
+            let body = storage.get_slice_stream(path, download_range).await?;
             let mut reader = BufReader::new(body);
-            for range in &requested {
+            for range in &requested_ranges {
                 skip_gap(&mut reader, range.start - offset).await?;
                 let mut bytes = vec![0; range.len()];
                 reader.read_exact(&mut bytes).await?;
@@ -108,26 +108,48 @@ mod tests {
 
     #[test]
     fn planning_limits_gap_span_and_range_count() {
-        let mut requested = Vec::new();
-        let after_gap = 2 + MAX_GAP;
-        let mut ranges = [after_gap..MAX_SPAN, MAX_SPAN..MAX_SPAN + 1]
-            .into_iter()
-            .peekable();
-        assert_eq!(plan_read(0..2, &mut ranges, &mut requested), 0..MAX_SPAN);
-        assert_eq!(requested, [0..2, after_gap..MAX_SPAN]);
-        assert_eq!(ranges.next().unwrap(), MAX_SPAN..MAX_SPAN + 1);
+        let mut requested_ranges = Vec::new();
+        let after_gap = 2 + MAX_GAP_BYTES;
+        let mut ranges = [
+            after_gap..MAX_MERGED_READ_BYTES,
+            MAX_MERGED_READ_BYTES..MAX_MERGED_READ_BYTES + 1,
+        ]
+        .into_iter()
+        .peekable();
+        assert_eq!(
+            coalesce_ranges(0..2, &mut ranges, &mut requested_ranges),
+            0..MAX_MERGED_READ_BYTES
+        );
+        assert_eq!(requested_ranges, [0..2, after_gap..MAX_MERGED_READ_BYTES]);
+        assert_eq!(
+            ranges.next().unwrap(),
+            MAX_MERGED_READ_BYTES..MAX_MERGED_READ_BYTES + 1
+        );
 
         let mut ranges = (1..).map(|start| start..start + 1).peekable();
-        assert_eq!(plan_read(0..1, &mut ranges, &mut requested), 0..MAX_RANGES);
-        assert_eq!(ranges.next().unwrap(), MAX_RANGES..MAX_RANGES + 1);
+        assert_eq!(
+            coalesce_ranges(0..1, &mut ranges, &mut requested_ranges),
+            0..MAX_RANGES_PER_READ
+        );
+        assert_eq!(
+            ranges.next().unwrap(),
+            MAX_RANGES_PER_READ..MAX_RANGES_PER_READ + 1
+        );
 
-        let mut ranges = std::iter::once(2 + MAX_GAP..3 + MAX_GAP).peekable();
-        assert_eq!(plan_read(0..1, &mut ranges, &mut requested), 0..1);
+        let mut ranges = std::iter::once(2 + MAX_GAP_BYTES..3 + MAX_GAP_BYTES).peekable();
+        assert_eq!(
+            coalesce_ranges(0..1, &mut ranges, &mut requested_ranges),
+            0..1
+        );
         // A single list can be larger than the target span and must still arrive whole.
         let mut ranges = std::iter::empty().peekable();
         assert_eq!(
-            plan_read(0..MAX_SPAN + 1, &mut ranges, &mut requested),
-            0..MAX_SPAN + 1
+            coalesce_ranges(
+                0..MAX_MERGED_READ_BYTES + 1,
+                &mut ranges,
+                &mut requested_ranges
+            ),
+            0..MAX_MERGED_READ_BYTES + 1
         );
     }
 
@@ -176,7 +198,7 @@ mod tests {
             .expect_get_slice_stream()
             .once()
             .return_once(move |_, range| {
-                assert_eq!(range, 0..MAX_SPAN);
+                assert_eq!(range, 0..MAX_MERGED_READ_BYTES);
                 Ok(Box::new(reader))
             });
         let mut stream = read_ranges(&storage, Path::new("file"), Box::new(ranges));
@@ -190,7 +212,7 @@ mod tests {
             .unwrap();
         assert_eq!(bytes.as_slice(), first);
         drop(stream);
-        assert_eq!(pulled.load(Ordering::Relaxed), MAX_RANGES);
+        assert_eq!(pulled.load(Ordering::Relaxed), MAX_RANGES_PER_READ);
         assert_eq!(
             writer.write_all(b"x").await.unwrap_err().kind(),
             io::ErrorKind::BrokenPipe
@@ -205,11 +227,14 @@ mod tests {
         let mut next_start: usize = 0;
         storage
             .expect_get_slice_stream()
-            .times(TOTAL.div_ceil(MAX_SPAN))
+            .times(TOTAL.div_ceil(MAX_MERGED_READ_BYTES))
             .returning(move |_, range| {
-                assert_eq!(range, next_start..TOTAL.min(next_start + MAX_SPAN));
+                assert_eq!(
+                    range,
+                    next_start..TOTAL.min(next_start + MAX_MERGED_READ_BYTES)
+                );
                 next_start = range.end;
-                let marker = (range.start / MAX_SPAN) as u8;
+                let marker = (range.start / MAX_MERGED_READ_BYTES) as u8;
                 Ok(Box::new(tokio::io::repeat(marker).take(range.len() as u64)))
             });
         let ranges = (0..TOTAL).step_by(LIST).map(|start| start..start + LIST);
@@ -217,7 +242,7 @@ mod tests {
         for start in (0..TOTAL).step_by(LIST) {
             let bytes = stream.try_next().await.unwrap().unwrap();
             assert_eq!(bytes.len(), LIST);
-            assert_eq!(bytes[0], (start / MAX_SPAN) as u8);
+            assert_eq!(bytes[0], (start / MAX_MERGED_READ_BYTES) as u8);
         }
         assert!(stream.try_next().await.unwrap().is_none());
     }

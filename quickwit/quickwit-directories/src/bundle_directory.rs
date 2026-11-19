@@ -237,7 +237,7 @@ mod tests {
             .chain(std::iter::from_fn(|| {
                 panic!("dropping the batch should leave later ranges unread")
             }));
-        let mut stream = file.read_bytes_batch_stream(Box::new(ranges));
+        let mut stream = file.stream_ranges(Box::new(ranges));
         for expected in [b"78".as_slice(), b"6", b"", b"78"] {
             assert_eq!(
                 stream.try_next().await.unwrap().unwrap().as_slice(),

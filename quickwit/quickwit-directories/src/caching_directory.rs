@@ -228,11 +228,11 @@ impl FileHandle for CachingFileHandle {
         Ok(read_bytes)
     }
 
-    fn read_bytes_batch_stream(
+    fn stream_ranges(
         &self,
         ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
     ) -> BoxStream<'_, io::Result<OwnedBytes>> {
-        self.underlying_filehandle.read_bytes_batch_stream(ranges)
+        self.underlying_filehandle.stream_ranges(ranges)
     }
 }
 

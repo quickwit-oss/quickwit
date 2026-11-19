@@ -178,11 +178,11 @@ impl<D: Directory> FileHandle for DebugProxyFileHandle<D> {
         Ok(payload)
     }
 
-    fn read_bytes_batch_stream(
+    fn stream_ranges(
         &self,
         ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
     ) -> BoxStream<'_, io::Result<OwnedBytes>> {
-        self.underlying.read_bytes_batch_stream(ranges)
+        self.underlying.stream_ranges(ranges)
     }
 }
 
