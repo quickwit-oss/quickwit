@@ -131,7 +131,7 @@ async fn share_stream<T: Storage>(
     mut new_readers: mpsc::UnboundedReceiver<StreamSender>,
 ) {
     tokio::time::sleep_until(join_deadline).await;
-    // Closing admissions also rejects a sender racing with the deadline check.
+    // Callers that miss this group start a new download group.
     new_readers.close();
     let stream = storage.get_slice_stream(&key.0, key.1).await;
     let mut senders = Vec::new();
