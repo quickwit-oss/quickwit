@@ -408,15 +408,15 @@ impl FileHandle for FileSliceWithCache {
 
     fn stream_ranges(
         &self,
-        ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
-    ) -> BoxStream<'_, io::Result<OwnedBytes>> {
+        ranges: Box<dyn Iterator<Item = (Range<usize>, u64)> + Send>,
+    ) -> BoxStream<'_, io::Result<(OwnedBytes, u64)>> {
         if self.static_cache.index.slices.is_empty() {
             return self.underlying.stream_ranges(ranges);
         }
         let cache = self.static_cache.clone();
-        let ranges = ranges.map(move |range| {
-            let hit = cache.try_read_bytes(range.clone());
-            (range, hit)
+        let ranges = ranges.map(move |(range, tag)| {
+            let cached_bytes = cache.try_read_bytes(range.clone());
+            ((range, tag), cached_bytes)
         });
         let ranges = Arc::new(Mutex::new(ranges.peekable()));
         async_stream::try_stream! {
@@ -424,21 +424,21 @@ impl FileHandle for FileSliceWithCache {
                 let next = ranges.lock().unwrap().next();
                 let first_uncached_range = match next {
                     Some((range, None)) => range,
-                    Some((_, Some(bytes))) => {
-                        yield bytes;
+                    Some(((_, tag), Some(bytes))) => {
+                        yield (bytes, tag);
                         continue;
                     }
                     None => break,
                 };
-                // The inner iterator must be owned. Share the cursor so it can pull consecutive
-                // misses on demand and leave the next cache hit queued for the outer stream.
+                // The download iterator owns a handle to the shared cursor. It stops at the next
+                // cached range so the outer stream can yield that range in order.
                 let cursor = ranges.clone();
                 let misses = std::iter::from_fn(move || cursor.lock().unwrap()
                     .next_if(|(_, hit)| hit.is_none()).map(|(range, _)| range));
                 let ranges_to_download = std::iter::once(first_uncached_range).chain(misses);
                 let mut stream = self.underlying.stream_ranges(Box::new(ranges_to_download));
-                while let Some(bytes) = stream.try_next().await? {
-                    yield bytes;
+                while let Some((bytes, tag)) = stream.try_next().await? {
+                    yield (bytes, tag);
                 }
             }
         }
@@ -616,21 +616,30 @@ mod tests {
             .slice(2..content.len());
         // Cached bytes differ from storage. A partial hit still reads the complete range from
         // storage.
-        let ranges = [0..2, 5..7, 2..4, 3..3, 2..4, 3..5];
+        let ranges = [
+            (0..2, 11),
+            (5..7, 12),
+            (2..4, 13),
+            (3..3, 14),
+            (2..4, 15),
+            (3..5, 16),
+        ];
         let mut stream = file.stream_ranges(Box::new(ranges.into_iter()));
-        for expected in [b"23".as_slice(), b"78", b"xx", b"", b"xx", b"56"] {
-            assert_eq!(
-                stream.try_next().await.unwrap().unwrap().as_slice(),
-                expected
-            );
+        for expected in [b"23".as_slice(), b"78", b"xx", b"", b"xx", b"56"]
+            .into_iter()
+            .zip(11..)
+        {
+            let (bytes, tag) = stream.try_next().await.unwrap().unwrap();
+            assert_eq!((bytes.as_slice(), tag), expected);
         }
         assert!(stream.try_next().await.unwrap().is_none());
 
         // A miss run stays lazy when the backend itself only asks for one range.
-        let ranges =
-            std::iter::once(0..2).chain(std::iter::from_fn(|| panic!("unexpected read-ahead")));
+        let ranges = std::iter::once((0..2, 7))
+            .chain(std::iter::from_fn(|| panic!("unexpected read-ahead")));
         let mut stream = file.stream_ranges(Box::new(ranges));
-        assert_eq!(stream.try_next().await.unwrap().unwrap().as_slice(), b"23");
+        let (bytes, tag) = stream.try_next().await.unwrap().unwrap();
+        assert_eq!((bytes.as_slice(), tag), (b"23".as_slice(), 7));
     }
 
     #[test]

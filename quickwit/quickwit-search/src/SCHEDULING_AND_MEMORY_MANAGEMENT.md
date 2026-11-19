@@ -69,10 +69,10 @@ However, this gives us no control on which leaf request will get OOMed.
 Building an automaton bitset streams dictionary blocks and then posting lists through
 `FileHandle::stream_ranges`, bypassing the ephemeral byte cache and its memory
 reservations. Tantivy releases dictionary blocks after enumerating each batch. The storage
-directory groups consecutive forward ranges into one storage read (up to 4 MiB between ranges,
-16 MiB per span and 16,384 ranges). It opens one span at a time, discards gaps and yields each
-requested range as it arrives. An individual range larger
-than the span limit is read whole. Dropping the stream releases the reader and stops planning.
+directory groups up to 16,384 consecutive forward ranges per download, with at most 4 MiB
+between ranges. It opens one download at a time, discards gaps and yields each range's bytes
+with its tag. Memory for the download depends on the largest requested range and the reader's
+buffers. Dropping the stream releases the reader and stops planning further downloads.
 The hotcache serves hits in order. The disk split cache streams hits in chunks, and storage cache
 misses stream from the backing store without inserting the merged response.
 
