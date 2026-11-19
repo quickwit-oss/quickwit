@@ -20,7 +20,7 @@ use std::{fmt, io};
 
 use anyhow::{Context, bail};
 use async_trait::async_trait;
-use futures::stream::{BoxStream, StreamExt, TryStreamExt};
+use futures::stream::{BoxStream, StreamExt};
 use quickwit_storage::VersionedComponent;
 use serde::{Deserialize, Serialize};
 use tantivy::directory::error::OpenReadError;
@@ -431,9 +431,8 @@ impl FileHandle for FileSliceWithCache {
                 let misses = std::iter::from_fn(move || cursor.lock().unwrap()
                     .next_if(|(_, hit)| hit.is_none()).map(|(range, _)| range));
                 let ranges_to_download = std::iter::once((range, tag)).chain(misses);
-                let mut stream = self.underlying.stream_ranges(Box::new(ranges_to_download));
-                while let Some((bytes, tag)) = stream.try_next().await? {
-                    yield (bytes, tag);
+                for await result in self.underlying.stream_ranges(Box::new(ranges_to_download)) {
+                    yield result?;
                 }
             }
         }
