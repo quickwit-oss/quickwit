@@ -18,7 +18,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, io};
 
+mod batch_stream;
+
 use async_trait::async_trait;
+use futures::stream::BoxStream;
 use quickwit_common::uri::Uri;
 use quickwit_storage::{OwnedBytes, Storage};
 use tantivy::directory::FileHandle;
@@ -65,15 +68,11 @@ impl FileHandle for StorageDirectoryFileHandle {
         Ok(object_bytes)
     }
 
-    async fn read_bytes_stream(
+    fn read_bytes_batch_stream(
         &self,
-        byte_range: Range<usize>,
-    ) -> io::Result<Box<dyn tokio::io::AsyncRead + Send + Unpin>> {
-        self.storage_directory
-            .storage
-            .get_slice_stream(&self.path, byte_range)
-            .await
-            .map_err(io::Error::from)
+        ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
+    ) -> BoxStream<'_, io::Result<OwnedBytes>> {
+        batch_stream::read_ranges(self.storage_directory.storage.as_ref(), &self.path, ranges)
     }
 }
 
@@ -157,6 +156,7 @@ mod tests {
     use std::pin::Pin;
     use std::task::{Context, Poll};
 
+    use futures::TryStreamExt;
     use quickwit_storage::{MockStorage, StorageErrorKind};
     use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
 
@@ -190,13 +190,17 @@ mod tests {
             });
         let directory = StorageDirectory::new(Arc::new(storage));
         let handle = directory.get_file_handle(Path::new("file")).unwrap();
-        let error = handle.read_bytes_stream(0..1).await.err().unwrap();
-        assert_eq!(error.kind(), io::ErrorKind::NotFound);
-        let mut stream = handle.read_bytes_stream(5..20).await.unwrap();
-        assert_eq!(stream.read_u8().await.unwrap(), 5);
+        let mut missing = handle.read_bytes_batch_stream(Box::new(std::iter::once(0..1)));
         assert_eq!(
-            stream.read_u8().await.unwrap_err().kind(),
+            missing.try_next().await.unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
+        let mut stream = handle.read_bytes_batch_stream(Box::new([5..6, 6..20].into_iter()));
+        assert_eq!(stream.try_next().await.unwrap().unwrap().as_slice(), &[5]);
+        assert_eq!(
+            stream.try_next().await.unwrap_err().kind(),
             io::ErrorKind::ConnectionReset
         );
+        assert!(stream.try_next().await.unwrap().is_none());
     }
 }

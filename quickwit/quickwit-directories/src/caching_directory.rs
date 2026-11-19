@@ -18,6 +18,7 @@ use std::sync::Arc;
 use std::{fmt, io};
 
 use async_trait::async_trait;
+use futures::stream::BoxStream;
 use quickwit_storage::{ByteRangeCache, FileByteRangeCache};
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, OwnedBytes};
@@ -227,13 +228,11 @@ impl FileHandle for CachingFileHandle {
         Ok(read_bytes)
     }
 
-    async fn read_bytes_stream(
+    fn read_bytes_batch_stream(
         &self,
-        byte_range: Range<usize>,
-    ) -> io::Result<Box<dyn tokio::io::AsyncRead + Send + Unpin>> {
-        self.underlying_filehandle
-            .read_bytes_stream(byte_range)
-            .await
+        ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
+    ) -> BoxStream<'_, io::Result<OwnedBytes>> {
+        self.underlying_filehandle.read_bytes_batch_stream(ranges)
     }
 }
 
@@ -487,42 +486,27 @@ mod tests {
 
     #[tokio::test]
     async fn test_stream_bypasses_cache_and_memory_reservations() {
-        use tokio::io::AsyncReadExt;
+        use futures::TryStreamExt;
 
         let path = Path::new("test");
         let content = b"hello world";
-        let mut storage = quickwit_storage::MockStorage::default();
-        storage
-            .expect_get_slice()
-            .times(1)
-            .returning(move |read_path, range| {
-                assert_eq!(read_path, path);
-                assert_eq!(range, 0..2);
-                Ok(OwnedBytes::new(&content[..2]))
-            });
-        storage
-            .expect_get_slice_stream()
-            .times(3)
-            .returning(move |read_path, range| {
-                assert_eq!(read_path, path);
-                Ok(Box::new(io::Cursor::new(&content[range])))
-            });
-        let underlying = Arc::new(crate::StorageDirectory::new(Arc::new(storage)));
-        let memory_reserver = LimitedMemoryReserver::new(2);
+        let underlying = debug_proxy_directory_with_file(path, content);
+        let memory_reserver = LimitedMemoryReserver::new(0);
         let cache = ByteRangeCache::with_infinite_capacity();
         let directory = CachingDirectory::new(underlying, cache.clone())
             .with_memory_reserver(memory_reserver.clone());
         let handle = directory.get_file_handle(path).unwrap();
-        handle.read_bytes_async(0..2).await.unwrap();
-
-        // Hits reach the underlying stream. Misses succeed with the cache budget exhausted.
-        for range in [0..2, 2..content.len(), 2..content.len()] {
-            let mut stream = handle.read_bytes_stream(range.clone()).await.unwrap();
-            let mut bytes = Vec::new();
-            stream.read_to_end(&mut bytes).await.unwrap();
-            assert_eq!(bytes, &content[range]);
+        // Distinct cached bytes make a lookup observable. The cache budget is exhausted.
+        cache
+            .get_file_cache(path)
+            .put_slice(0..2, OwnedBytes::new(b"xx".as_slice()));
+        let ranges = [0..2, 2..content.len(), 2..content.len()];
+        let mut stream = handle.read_bytes_batch_stream(Box::new(ranges.clone().into_iter()));
+        for range in ranges {
+            let bytes = stream.try_next().await.unwrap().unwrap();
+            assert_eq!(bytes.as_slice(), &content[range]);
             assert_eq!(cache.get_num_bytes(), 2);
-            assert_eq!(memory_reserver.reserved(), 2);
+            assert_eq!(memory_reserver.reserved(), 0);
         }
         assert!(
             cache
@@ -530,7 +514,8 @@ mod tests {
                 .get_slice(2..content.len())
                 .is_none()
         );
-        assert_eq!(handle.read_bytes(0..2).unwrap().as_slice(), &content[..2]);
+        assert!(stream.try_next().await.unwrap().is_none());
+        assert_eq!(handle.read_bytes(0..2).unwrap().as_slice(), b"xx");
     }
 
     #[tokio::test]

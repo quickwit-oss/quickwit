@@ -216,23 +216,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_bundle_stream_maps_nested_ranges() {
-        use quickwit_storage::MockStorage;
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use futures::TryStreamExt;
 
-        let (reader, mut writer) = tokio::io::duplex(1);
-        let mut storage = MockStorage::default();
-        storage
-            .expect_get_slice_stream()
-            .times(1)
-            .return_once(|path, range| {
-                assert_eq!(path, Path::new("split"));
-                assert_eq!(range, 6..9);
-                Ok(Box::new(reader))
-            });
-        let directory = crate::StorageDirectory::new(Arc::new(storage));
-        let handle = directory.get_file_handle(Path::new("split")).unwrap();
         let bundle = BundleDirectory {
-            file: FileSlice::new_with_num_bytes(handle, 20).slice(2..20),
+            file: FileSlice::from(b"0123456789abcdefghij".as_slice()).slice(2..20),
             file_ranges: BundleFileRanges {
                 files: [(PathBuf::from("file"), 3..9)].into_iter().collect(),
             },
@@ -241,24 +228,20 @@ mod tests {
             Arc::new(bundle),
         ));
         let file = directory.open_read(Path::new("file")).unwrap().slice(1..4);
-        // Opening completes before the producer supplies bytes.
-        let mut stream =
-            tokio::time::timeout(std::time::Duration::from_secs(5), file.read_bytes_stream())
-                .await
-                .unwrap()
-                .unwrap();
-        assert_eq!(directory.drain_read_operations().count(), 0);
-        drop(file);
-        drop(directory);
-        for byte in b"67" {
-            writer.write_all(&[*byte]).await.unwrap();
-            assert_eq!(stream.read_u8().await.unwrap(), *byte);
+        let ranges = [1..3, 0..1, 3..3, 1..3]
+            .into_iter()
+            .chain(std::iter::from_fn(|| {
+                panic!("dropping the batch should leave later ranges unread")
+            }));
+        let mut stream = file.read_bytes_batch_stream(Box::new(ranges));
+        for expected in [b"78".as_slice(), b"6", b"", b"78"] {
+            assert_eq!(
+                stream.try_next().await.unwrap().unwrap().as_slice(),
+                expected
+            );
         }
         drop(stream);
-        assert_eq!(
-            writer.write_all(b"8").await.unwrap_err().kind(),
-            io::ErrorKind::BrokenPipe
-        );
+        assert_eq!(directory.drain_read_operations().count(), 0);
     }
 
     #[tokio::test]

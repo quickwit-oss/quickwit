@@ -57,6 +57,7 @@ arc-swap = "1.9"
 assert-json-diff = "2"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"
+async-stream = "0.3"
 async-trait = "0.1"
 atomic_float = "1.1"
 backtrace = "0.3"
@@ -384,7 +385,7 @@ quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
 quickwit-transport = { path = "quickwit-transport" }
 
 # Stream coalesced postings into automaton bitsets.
-tantivy = { git = "https://github.com/PSeitz/tantivy/", rev = "e66a060db1040d6b23529741483c814172992d49", default-features = false, features = [
+tantivy = { git = "https://github.com/PSeitz/tantivy/", rev = "2f3611e39623fc9e8c78f69900ce70ce3d1c8263", default-features = false, features = [
   "jitexpr",
   "lz4-compression",
   "mmap",
@@ -393,7 +394,7 @@ tantivy = { git = "https://github.com/PSeitz/tantivy/", rev = "e66a060db1040d6b2
   "columnar-zstd-compression",
 ] }
 # Must stay on the same rev as `tantivy`.
-tantivy-common = { git = "https://github.com/PSeitz/tantivy/", rev = "e66a060db1040d6b23529741483c814172992d49" }
+tantivy-common = { git = "https://github.com/PSeitz/tantivy/", rev = "2f3611e39623fc9e8c78f69900ce70ce3d1c8263" }
 tantivy-fst = "0.5"
 
 # This is actually not used directly the goal is to fix the version

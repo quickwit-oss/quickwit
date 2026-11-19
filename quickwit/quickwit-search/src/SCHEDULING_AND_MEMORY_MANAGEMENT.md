@@ -66,9 +66,13 @@ That error is marked as not retryable and will fail sibling search request as we
 This logic in itself is sufficient to bound the warm up cache memory usage to our initial budget.
 However, this gives us no control on which leaf request will get OOMed.
 
-Streaming reads through Tantivy's `FileHandle::read_bytes_stream` bypass the ephemeral byte cache
-and its memory reservations. Storage cache wrappers reuse cached bytes and forward misses without
-inserting entries. Existing immutable hotcache hits can be served directly from memory.
+Automaton postings use `FileHandle::read_bytes_batch_stream`, bypassing the ephemeral byte cache
+and its memory reservations. The storage directory groups consecutive forward requests into one
+storage read (up to 4 MiB between lists, 16 MiB per span and 16,384 lists). It opens one span
+at a time, discards gaps and yields each complete list as it arrives. An individual list larger
+than the span limit is read whole. Dropping the stream releases the reader and stops planning.
+The hotcache serves hits in order. The disk split cache streams hits in chunks, and storage cache
+misses stream from the backing store without inserting the merged response.
 
 For this reason, we also have a `warmup_single_split_max_allocation` that will fail the request if the
 single split allocation would be greater than a given amount (by default, `max(warmup_single_split_initial_allocation, min(4GB, warmup_memory_budget / 4))`); hence increasing

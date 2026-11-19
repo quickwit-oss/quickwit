@@ -21,7 +21,9 @@ use std::sync::{Arc, Mutex};
 
 use quickwit_proto::types::SplitId;
 use tantivy::directory::OwnedBytes;
+use tokio::io::AsyncRead;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio_util::io::StreamReader;
 
 use crate::metrics::{FD_CACHE_METRICS, SingleCacheMetrics};
 
@@ -168,6 +170,20 @@ impl SplitFile {
         Ok(OwnedBytes::new(buf))
     }
 
+    /// Keep the descriptor alive across eviction and use positional reads so streams can share it.
+    pub fn get_range_stream(self, range: Range<usize>) -> impl AsyncRead + Send + Unpin {
+        const CHUNK_SIZE: usize = 1024 * 1024;
+        let chunks = futures::stream::try_unfold((self, range), |(file, range)| async move {
+            if range.is_empty() {
+                return Ok(None);
+            }
+            let end = range.start + range.len().min(CHUNK_SIZE);
+            let bytes = file.get_range(range.start..end).await?;
+            io::Result::Ok(Some((io::Cursor::new(bytes), (file, end..range.end))))
+        });
+        StreamReader::new(Box::pin(chunks))
+    }
+
     pub async fn get_all(&self) -> io::Result<OwnedBytes> {
         self.get_range(0..self.0.num_bytes as usize).await
     }
@@ -283,6 +299,17 @@ mod tests {
         {
             let bytes = split_file.get_range(1..3).await.unwrap();
             assert_eq!(bytes.as_slice(), &content.as_bytes()[1..3]);
+        }
+        {
+            use tokio::io::AsyncReadExt;
+
+            let mut empty = split_file.clone().get_range_stream(3..3);
+            assert_eq!(empty.read(&mut [0]).await.unwrap(), 0);
+            let mut past_eof = split_file.get_range_stream(25..27);
+            assert_eq!(
+                past_eof.read_u8().await.unwrap_err().kind(),
+                std::io::ErrorKind::UnexpectedEof
+            );
         }
     }
 }

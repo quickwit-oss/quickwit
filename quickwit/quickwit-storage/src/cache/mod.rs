@@ -25,6 +25,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 pub use storage_with_cache::StorageWithCache;
+use tokio::io::AsyncRead;
 
 pub use self::byte_range_cache::{ByteRangeCache, FileByteRangeCache};
 pub use self::memory_sized_cache::MemorySizedCache;
@@ -54,6 +55,15 @@ pub fn wrap_storage_with_cache(
 pub trait StorageCache: Send + Sync + 'static {
     /// Try to get a slice from the cache.
     async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes>;
+    /// Try to stream a slice from the cache. Disk caches can read on demand.
+    async fn get_slice_stream(
+        &self,
+        path: &Path,
+        byte_range: Range<usize>,
+    ) -> Option<Box<dyn AsyncRead + Send + Unpin>> {
+        let bytes = self.get(path, byte_range).await?;
+        Some(Box::new(std::io::Cursor::new(bytes)))
+    }
     /// Try to get the entire file.
     async fn get_all(&self, path: &Path) -> Option<OwnedBytes>;
     /// Put a slice of data into the cache.
