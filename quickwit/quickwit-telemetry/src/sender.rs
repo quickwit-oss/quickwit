@@ -99,10 +99,19 @@ pub struct TelemetryLoopHandle {
 
 impl TelemetryLoopHandle {
     /// Stops the telemetry loop, which sends the queued events without waiting for the cooldown,
-    /// and waits for it at most `LAST_REQUEST_TIMEOUT`.
+    /// and cancels it if it takes more than `LAST_REQUEST_TIMEOUT`.
     pub async fn terminate_telemetry(self) {
-        let _ = self.terminate_command_tx.send(());
-        let _ = tokio::time::timeout(LAST_REQUEST_TIMEOUT, self.join_handle).await;
+        let TelemetryLoopHandle {
+            mut join_handle,
+            terminate_command_tx,
+        } = self;
+        let _ = terminate_command_tx.send(());
+        if tokio::time::timeout(LAST_REQUEST_TIMEOUT, &mut join_handle)
+            .await
+            .is_err()
+        {
+            join_handle.abort();
+        }
     }
 }
 
@@ -123,12 +132,26 @@ impl TelemetrySender {
     pub(crate) fn start_loop(&self) -> TelemetryLoopHandle {
         let (terminate_command_tx, mut terminate_command_rx) = oneshot::channel();
         let inner = self.inner.clone();
-        start_monitor_if_server_running_task(inner.clone());
+        let mut running_interval = tokio::time::interval_at(
+            Instant::now() + TELEMETRY_RUNNING_EVENT_INTERVAL,
+            TELEMETRY_RUNNING_EVENT_INTERVAL,
+        );
+        // One event, not one per missed tick, when the process resumes after a pause.
+        running_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
         let join_handle = tokio::spawn(async move {
             loop {
                 tokio::select! {
                     _ = &mut terminate_command_rx => break,
                     _ = inner.events_available.notified() => {}
+                    // Pushed without notifying: the send below picks it up, and a stored
+                    // notification would wake the loop again with nothing to send.
+                    _ = running_interval.tick() => {
+                        inner
+                            .events_state
+                            .lock()
+                            .unwrap()
+                            .push_event(TelemetryEvent::running());
+                    }
                 }
                 inner.send_queued_events().await;
                 tokio::select! {
@@ -149,24 +172,24 @@ impl TelemetrySender {
     }
 }
 
-fn start_monitor_if_server_running_task(inner: Arc<Inner>) {
-    let mut interval = tokio::time::interval_at(
-        Instant::now() + TELEMETRY_RUNNING_EVENT_INTERVAL,
-        TELEMETRY_RUNNING_EVENT_INTERVAL,
-    );
-    // One event, not one per missed tick, when the process resumes after a pause.
-    interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
-    tokio::spawn(async move {
-        loop {
-            interval.tick().await;
-            inner.push_event(TelemetryEvent::running());
-        }
-    });
-}
-
 #[cfg(test)]
 mod tests {
+    use async_trait::async_trait;
+
     use super::*;
+
+    /// Never finishes sending, and drops `cancelled_tx` when the request is cancelled.
+    struct HangingSink {
+        cancelled_tx: Mutex<Option<oneshot::Sender<()>>>,
+    }
+
+    #[async_trait]
+    impl Sink for HangingSink {
+        async fn send_payload(&self, _payload: TelemetryPayload) {
+            let _cancelled_tx = self.cancelled_tx.lock().unwrap().take();
+            std::future::pending::<()>().await;
+        }
+    }
 
     #[test]
     fn test_push_event_drops_events_when_queue_is_full() {
@@ -242,5 +265,23 @@ mod tests {
         let terminate_start = Instant::now();
         loop_handle.terminate_telemetry().await;
         assert!(terminate_start.elapsed() < LAST_REQUEST_TIMEOUT);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_terminate_telemetry_cancels_a_slow_last_request() {
+        let (cancelled_tx, cancelled_rx) = oneshot::channel();
+        let sink = HangingSink {
+            cancelled_tx: Mutex::new(Some(cancelled_tx)),
+        };
+        let telemetry_sender = TelemetrySender::new(QuickwitTelemetryInfo::default(), sink);
+        let loop_handle = telemetry_sender.start_loop();
+        telemetry_sender.send(TelemetryEvent::RunCommand);
+        let terminate_start = Instant::now();
+        loop_handle.terminate_telemetry().await;
+        assert_eq!(terminate_start.elapsed(), LAST_REQUEST_TIMEOUT);
+        tokio::time::timeout(Duration::from_secs(1), cancelled_rx)
+            .await
+            .expect("the last request should be cancelled")
+            .unwrap_err();
     }
 }

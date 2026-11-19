@@ -33,6 +33,8 @@ Only `quickwit run` sends telemetry. Other CLI commands never do.
 
 Each time a node starts, it sends a request right away. After that, it sends at most one request per minute, plus one last request with the pending events when it shuts down. Each request holds up to 10 events.
 
+Delivery is best effort. A request that fails isn't retried, and the last request is cancelled if it takes more than one second. The events in a lost request are lost with it, including the one-time `install` event, along with the request and document counts described below. The statistics are therefore estimates, not complete totals.
+
 Events, each with the time it happened, in seconds since the Unix epoch:
 
 - `install`: the node found no install ID in its data directory and created one. This happens with a new data directory, but also on the first start after upgrading from a release without install IDs, and on the first start after telemetry is turned on.
