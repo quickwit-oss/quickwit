@@ -46,8 +46,6 @@ mod split_warmup_memory;
 mod warmup_memory;
 
 #[cfg(test)]
-mod storage_cache_layer_tests;
-#[cfg(test)]
 mod tests;
 
 pub use collector::QuickwitAggregations;

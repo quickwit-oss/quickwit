@@ -742,7 +742,7 @@ pub async fn serve_quickwit(
         };
 
     // Initialize Lambda invoker if enabled and searcher service is running
-    let mut searcher_context = if node_config.is_service_enabled(QuickwitService::Searcher) {
+    let searcher_context = if node_config.is_service_enabled(QuickwitService::Searcher) {
         if let Some(lambda_config) = &node_config.searcher_config.lambda {
             #[cfg(feature = "lambda")]
             {
@@ -750,11 +750,11 @@ pub async fn serve_quickwit(
                 warn!("offloading to lambda is EXPERIMENTAL. Use at your own risk");
                 let invoker =
                     quickwit_lambda_client::try_get_or_deploy_invoker(lambda_config).await?;
-                SearcherContext::new(
+                Arc::new(SearcherContext::new(
                     node_config.searcher_config.clone(),
                     search_split_cache_opt,
                     Some(invoker),
-                )
+                ))
             }
             #[cfg(not(feature = "lambda"))]
             {
@@ -762,26 +762,17 @@ pub async fn serve_quickwit(
                 bail!("lambda support is statically disabled, but enabled in configuration");
             }
         } else {
-            SearcherContext::new_without_invoker(
+            Arc::new(SearcherContext::new_without_invoker(
                 node_config.searcher_config.clone(),
                 search_split_cache_opt,
-            )
+            ))
         }
     } else {
-        SearcherContext::new_without_invoker(
+        Arc::new(SearcherContext::new_without_invoker(
             node_config.searcher_config.clone(),
             search_split_cache_opt,
-        )
+        ))
     };
-
-    if node_config.is_service_enabled(QuickwitService::Searcher) {
-        searcher_context
-            .initialize_storage_caches(&storage_resolver)
-            .await
-            .context("failed to open searcher storage caches")?;
-    }
-
-    let searcher_context = Arc::new(searcher_context);
 
     let read_replica_metastore_client_opt = local_metastore_server
         .resolve_read_only_client(&cluster, &node_config)

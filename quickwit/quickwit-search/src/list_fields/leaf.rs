@@ -118,11 +118,7 @@ async fn get_fields_metadata(
     searcher_ctx: &SearcherContext,
     storage: Arc<dyn Storage>,
 ) -> anyhow::Result<OwnedBytes> {
-    if let Some(serialized_entries) = searcher_ctx
-        .list_fields_cache
-        .get(&split_footer.split_id)
-        .await
-    {
+    if let Some(serialized_entries) = searcher_ctx.list_fields_cache.get(&split_footer.split_id) {
         return Ok(serialized_entries);
     }
     let serialized_entries = fetch_fields_metadata(searcher_ctx, storage, split_footer).await?;
