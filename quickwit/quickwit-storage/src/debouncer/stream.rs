@@ -23,9 +23,9 @@ use bytes::Bytes;
 use futures::StreamExt;
 use tokio::io::AsyncRead;
 use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tokio_util::io::{ReaderStream, StreamReader};
+use tokio_util::task::AbortOnDropHandle;
 
 use super::{CLEANUP_INTERVAL, DebouncerKey};
 use crate::{Storage, StorageErrorKind, StorageResult};
@@ -45,17 +45,11 @@ pub(super) struct StreamDebouncer {
 type StreamSender = mpsc::Sender<io::Result<Bytes>>;
 
 struct StreamGroup {
+    // Only callers keep the group alive. Abort the producer before dropping the reader channel.
+    _producer: AbortOnDropHandle<()>,
     join_deadline: Instant,
     // The producer owns the receiver so its termination also fails pending opens.
     new_readers: mpsc::UnboundedSender<StreamSender>,
-    // Only callers hold the group alive, including while awaiting the backend open.
-    task: JoinHandle<()>,
-}
-
-impl Drop for StreamGroup {
-    fn drop(&mut self) {
-        self.task.abort();
-    }
 }
 
 impl StreamDebouncer {
@@ -109,9 +103,9 @@ impl StreamDebouncer {
             .expect("receiver is still owned here");
         let task = tokio::spawn(share_stream(storage, key.clone(), join_deadline, receiver));
         let group = Arc::new(StreamGroup {
+            _producer: AbortOnDropHandle::new(task),
             join_deadline,
             new_readers,
-            task,
         });
         groups.insert(key, Arc::downgrade(&group));
         // As with buffered reads, cancelled groups leave weak entries to reclaim periodically.
@@ -340,7 +334,7 @@ mod tests {
                         let (groups, _) = &*debouncer.groups.lock().unwrap();
                         groups.values().find_map(Weak::upgrade).unwrap()
                     };
-                    group.task.abort();
+                    group._producer.abort();
                     if let Some(reader) = &mut reader {
                         assert_eq!(
                             reader.read_u8().await.unwrap_err().to_string(),
