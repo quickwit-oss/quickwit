@@ -71,22 +71,13 @@ struct ReadOperationBuilder {
 }
 
 impl ReadOperationBuilder {
-    pub fn new(path: &Path) -> Self {
+    fn new(path: &Path, offset: usize) -> Self {
         let start_instant = Instant::now();
         let start_date = OffsetDateTime::now_utc();
         ReadOperationBuilder {
             start_date,
             start_instant,
             path: path.to_path_buf(),
-            offset: 0,
-        }
-    }
-
-    pub fn with_offset(self, offset: usize) -> Self {
-        ReadOperationBuilder {
-            start_date: self.start_date,
-            start_instant: self.start_instant,
-            path: self.path,
             offset,
         }
     }
@@ -151,8 +142,7 @@ struct DebugProxyFileHandle<D: Directory> {
 #[async_trait]
 impl<D: Directory> FileHandle for DebugProxyFileHandle<D> {
     fn read_bytes(&self, byte_range: Range<usize>) -> io::Result<OwnedBytes> {
-        let read_operation_builder =
-            ReadOperationBuilder::new(&self.path).with_offset(byte_range.start);
+        let read_operation_builder = ReadOperationBuilder::new(&self.path, byte_range.start);
         let payload = self.underlying.read_bytes(byte_range)?;
         let read_operation = read_operation_builder.terminate(payload.len());
         self.directory.operations.push(read_operation);
@@ -160,8 +150,7 @@ impl<D: Directory> FileHandle for DebugProxyFileHandle<D> {
     }
 
     async fn read_bytes_async(&self, byte_range: Range<usize>) -> io::Result<OwnedBytes> {
-        let read_operation_builder =
-            ReadOperationBuilder::new(&self.path).with_offset(byte_range.start);
+        let read_operation_builder = ReadOperationBuilder::new(&self.path, byte_range.start);
         let payload = self.underlying.read_bytes_async(byte_range).await?;
         let read_operation = read_operation_builder.terminate(payload.len());
         self.directory.operations.push(read_operation);
@@ -203,7 +192,7 @@ impl<D: Directory> Directory for DebugProxyDirectory<D> {
     }
 
     fn atomic_read(&self, path: &Path) -> Result<Vec<u8>, OpenReadError> {
-        let read_operation_builder = ReadOperationBuilder::new(path);
+        let read_operation_builder = ReadOperationBuilder::new(path, 0);
         let payload = self.underlying.atomic_read(path)?;
         let read_operation = read_operation_builder.terminate(payload.len());
         self.operations.push(read_operation);
