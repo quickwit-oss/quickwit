@@ -23,7 +23,7 @@ use quickwit_proto::search::{
 };
 use quickwit_proto::types::IndexId;
 use quickwit_storage::{OwnedBytes, Storage};
-use tracing::{Span, instrument};
+use tracing::instrument;
 
 use crate::leaf::open_split_bundle;
 use crate::list_fields::counts::LeafFieldCounts;
@@ -59,28 +59,24 @@ pub async fn leaf_list_fields(
     let field_patterns = FieldPatterns::from_strs(field_patterns_strs)?;
 
     let mut splits = stream::iter(split_footers)
-        .map(|split_footer| {
-            let searcher_ctx = searcher_ctx.clone();
-            let storage = storage.clone();
-            async move {
-                let serialized_entries: OwnedBytes =
-                    get_fields_metadata(&split_footer, &searcher_ctx, storage).await?;
-                anyhow::Ok((split_footer.split_id, serialized_entries))
-            }
+        .map(async |split_footer| {
+            let bytes = get_fields_metadata(&split_footer, &searcher_ctx, storage.clone()).await?;
+            anyhow::Ok((split_footer.split_id, bytes))
         })
         .buffer_unordered(MAX_CONCURRENT_DOWNLOADS)
-        .map_ok(|(split_id, serialized_entries)| {
-            process_fields_metadata(serialized_entries, split_id, field_patterns.clone())
+        .map_ok(async |(split_id, bytes)| {
+            let patterns = field_patterns.clone();
+            search_thread_pool()
+                .run_cpu_intensive(move || deserialize_matching_fields(bytes, &split_id, &patterns))
+                .await
+                .context("failed to decode split fields")?
         })
         .try_buffer_unordered(MAX_CONCURRENT_DECODES);
 
     let mut counts = LeafFieldCounts::default();
     while let Some(entries) = splits.try_next().await? {
         counts = search_thread_pool()
-            .run_cpu_intensive(move || {
-                counts.add_split(entries);
-                counts
-            })
+            .run_cpu_intensive(move || counts.with_split(entries))
             .await
             .context("failed to count fields in split")?;
     }
@@ -136,34 +132,12 @@ async fn fetch_fields_metadata(
     Ok(serialized_entries)
 }
 
-/// Dispatches deserialization + filtering onto the CPU-intensive thread pool. With one task per
-/// split fanning in here, the pool's workers process splits in parallel.
-async fn process_fields_metadata(
-    serialized_entries: OwnedBytes,
-    split_id: String,
-    field_patterns: FieldPatterns,
-) -> anyhow::Result<Vec<ListFieldsEntry>> {
-    let parent_span = Span::current();
-    search_thread_pool()
-        .run_cpu_intensive(move || {
-            parent_span.in_scope(|| {
-                let entries: Vec<ListFieldsEntry> =
-                    deserialize_fields_metadata(serialized_entries, &split_id)?;
-                let filtered_entries = filter_fields_metadata(entries, &field_patterns);
-                Ok(filtered_entries)
-            })
-        })
-        .await
-        .context("failed to deserialize and filter fields metadata")?
-}
-
-/// Deserialize the fields metadata blob, strip the field presence entry,
-/// rewrite dynamic field names, and enforce the strictly-sorted-by-(name, type) and deduplication
-/// invariants.
+/// Normalize field names before matching patterns. Return one entry per (name, type) in the split.
 #[instrument(skip_all, fields(split_id))]
-fn deserialize_fields_metadata(
+fn deserialize_matching_fields(
     serialized_entries: OwnedBytes,
     split_id: &str,
+    field_patterns: &FieldPatterns,
 ) -> anyhow::Result<Vec<ListFieldsEntry>> {
     let mut entries = ListFieldsMetadata::deserialize(serialized_entries)
         .with_context(|| format!("failed to deserialize fields metadata for split `{split_id}`"))?
@@ -186,24 +160,10 @@ fn deserialize_fields_metadata(
     // Removing the dynamic prefix may have broken the original ordering, so we re-sort and
     // defensively dedup.
     sort_and_dedup(&mut entries);
-    Ok(entries)
-}
-
-/// Filters the list of fields against the given patterns. Order is preserved, so the
-/// strictly-sorted-by-(name, type) invariant is maintained. Patterns match against the
-/// user-visible field names (i.e. after `DYNAMIC_FIELD_PREFIX` has been stripped).
-#[instrument(skip_all)]
-fn filter_fields_metadata(
-    list_fields_entries: Vec<ListFieldsEntry>,
-    field_patterns: &FieldPatterns,
-) -> Vec<ListFieldsEntry> {
-    if field_patterns.is_empty() {
-        return list_fields_entries;
+    if !field_patterns.is_empty() {
+        entries.retain(|entry| field_patterns.matches_any(&entry.field_name));
     }
-    list_fields_entries
-        .into_iter()
-        .filter(|entry| field_patterns.matches_any(&entry.field_name))
-        .collect()
+    Ok(entries)
 }
 
 #[cfg(test)]
@@ -233,10 +193,17 @@ mod tests {
         OwnedBytes::new(ListFieldsMetadata { entries }.serialize())
     }
 
+    fn matching_fields(entries: Vec<ListFieldsEntry>, patterns: &[String]) -> Vec<ListFieldsEntry> {
+        let patterns = FieldPatterns::from_strs(patterns).unwrap();
+        deserialize_matching_fields(serialize(entries), "test-split", &patterns).unwrap()
+    }
+
     #[test]
     fn deserialize_fields_metadata_strips_field_presence() {
-        let bytes = serialize(vec![entry(FIELD_PRESENCE_FIELD_NAME), entry("user.name")]);
-        let fields = deserialize_fields_metadata(bytes, "test-split").unwrap();
+        let fields = matching_fields(
+            vec![entry(FIELD_PRESENCE_FIELD_NAME), entry("user.name")],
+            &[],
+        );
         assert_eq!(fields.len(), 1);
         assert_eq!(fields[0].field_name, "user.name");
     }
@@ -244,8 +211,7 @@ mod tests {
     #[test]
     fn deserialize_fields_metadata_removes_dynamic_prefix() {
         // The serialized blob is sorted by (name, type); `_dynamic.foo` < `user.name`.
-        let bytes = serialize(vec![entry("user.name"), entry("_dynamic.foo")]);
-        let fields = deserialize_fields_metadata(bytes, "test-split").unwrap();
+        let fields = matching_fields(vec![entry("user.name"), entry("_dynamic.foo")], &[]);
         let field_names: Vec<&str> = fields
             .iter()
             .map(|field| field.field_name.as_str())
@@ -306,8 +272,7 @@ mod tests {
     #[test]
     fn deserialize_fields_metadata_dedups_after_prefix_rewrite() {
         // Both `_dynamic.foo` and `foo` collapse to `foo` after stripping the prefix.
-        let bytes = serialize(vec![entry("_dynamic.foo"), entry("foo")]);
-        let fields = deserialize_fields_metadata(bytes, "test-split").unwrap();
+        let fields = matching_fields(vec![entry("_dynamic.foo"), entry("foo")], &[]);
         assert_eq!(fields.len(), 1);
         assert_eq!(fields[0].field_name, "foo");
     }
@@ -315,13 +280,15 @@ mod tests {
     #[test]
     fn deserialize_fields_metadata_dedups_by_name_and_type() {
         // Same field name with different types must NOT be deduped; the sort key is (name, type).
-        let bytes = serialize(vec![
-            entry_typed("status", ListFieldsType::U64),
-            entry_typed("status", ListFieldsType::Bool),
-            entry("user.name"),
-            entry_typed("status", ListFieldsType::Str),
-        ]);
-        let fields = deserialize_fields_metadata(bytes, "test-split").unwrap();
+        let fields = matching_fields(
+            vec![
+                entry_typed("status", ListFieldsType::U64),
+                entry_typed("status", ListFieldsType::Bool),
+                entry("user.name"),
+                entry_typed("status", ListFieldsType::Str),
+            ],
+            &[],
+        );
         let field_pairs: Vec<(&str, i32)> = fields
             .iter()
             .map(|field| (field.field_name.as_str(), field.field_type))
@@ -342,12 +309,14 @@ mod tests {
         // `_dynamic.b` collapses to `b`, so after the rewrite we should see, in order:
         // (`a`, Str), (`b`, Str), (`b`, U64). Build the input out of name-sort order to
         // make sure the post-rewrite re-sort is actually doing the work.
-        let bytes = serialize(vec![
-            entry_typed("_dynamic.b", ListFieldsType::U64),
-            entry_typed("_dynamic.b", ListFieldsType::Str),
-            entry_typed("a", ListFieldsType::Str),
-        ]);
-        let fields = deserialize_fields_metadata(bytes, "test-split").unwrap();
+        let fields = matching_fields(
+            vec![
+                entry_typed("_dynamic.b", ListFieldsType::U64),
+                entry_typed("_dynamic.b", ListFieldsType::Str),
+                entry_typed("a", ListFieldsType::Str),
+            ],
+            &[],
+        );
         let field_pairs: Vec<(&str, i32)> = fields
             .iter()
             .map(|field| (field.field_name.as_str(), field.field_type))
@@ -365,24 +334,19 @@ mod tests {
     #[test]
     fn filter_fields_metadata_returns_all_when_empty_patterns() {
         let fields = vec![entry("a"), entry("b")];
-        let patterns = FieldPatterns::from_strs(&[]).unwrap();
-        let filtered = filter_fields_metadata(fields.clone(), &patterns);
-        assert_eq!(filtered, fields);
+        assert_eq!(matching_fields(fields.clone(), &[]), fields);
     }
 
     #[test]
     fn filter_fields_metadata_keeps_only_matching_fields() {
         let fields = vec![
-            entry("service.name"),
+            entry("_dynamic.service.name"),
             entry("user.name"),
             entry("service.id"),
         ];
-        let patterns = FieldPatterns::from_strs(&["service.*".to_string()]).unwrap();
-        let filtered = filter_fields_metadata(fields, &patterns);
-        let field_names: Vec<&str> = filtered
-            .iter()
-            .map(|field| field.field_name.as_str())
-            .collect();
-        assert_eq!(field_names, ["service.name", "service.id"]);
+        assert_eq!(
+            matching_fields(fields, &["service.*".into()]),
+            [entry("service.id"), entry("service.name")]
+        );
     }
 }

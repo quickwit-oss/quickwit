@@ -33,7 +33,7 @@ struct SplitCounts {
 
 impl LeafFieldCounts {
     /// The split's normalized entries must be unique by (name, type).
-    pub fn add_split(&mut self, entries: Vec<ListFieldsEntry>) {
+    pub fn with_split(mut self, entries: Vec<ListFieldsEntry>) -> Self {
         for entry in entries {
             let counts = self
                 .by_name_and_type
@@ -43,6 +43,7 @@ impl LeafFieldCounts {
             counts.searchable += u64::from(entry.searchable);
             counts.aggregatable += u64::from(entry.aggregatable);
         }
+        self
     }
 
     pub fn into_entries(self, index_id: &str, limit: usize) -> Vec<ListFieldsEntry> {
