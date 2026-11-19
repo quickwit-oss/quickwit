@@ -140,16 +140,6 @@ impl<D: Directory> DebugProxyDirectory<D> {
     pub fn drain_read_operations(&self) -> impl Iterator<Item = ReadOperation> + '_ {
         self.operations.drain()
     }
-
-    /// Adds a new operation
-    fn register(&self, read_op: ReadOperation) {
-        self.operations.push(read_op);
-    }
-
-    /// Adds a new operation in an async fashion.
-    async fn register_async(&self, read_op: ReadOperation) {
-        self.operations.push(read_op);
-    }
 }
 
 struct DebugProxyFileHandle<D: Directory> {
@@ -165,7 +155,7 @@ impl<D: Directory> FileHandle for DebugProxyFileHandle<D> {
             ReadOperationBuilder::new(&self.path).with_offset(byte_range.start);
         let payload = self.underlying.read_bytes(byte_range)?;
         let read_operation = read_operation_builder.terminate(payload.len());
-        self.directory.register(read_operation);
+        self.directory.operations.push(read_operation);
         Ok(payload)
     }
 
@@ -174,7 +164,7 @@ impl<D: Directory> FileHandle for DebugProxyFileHandle<D> {
             ReadOperationBuilder::new(&self.path).with_offset(byte_range.start);
         let payload = self.underlying.read_bytes_async(byte_range).await?;
         let read_operation = read_operation_builder.terminate(payload.len());
-        self.directory.register_async(read_operation).await;
+        self.directory.operations.push(read_operation);
         Ok(payload)
     }
 
@@ -216,7 +206,7 @@ impl<D: Directory> Directory for DebugProxyDirectory<D> {
         let read_operation_builder = ReadOperationBuilder::new(path);
         let payload = self.underlying.atomic_read(path)?;
         let read_operation = read_operation_builder.terminate(payload.len());
-        self.register(read_operation);
+        self.operations.push(read_operation);
         Ok(payload.to_vec())
     }
 
