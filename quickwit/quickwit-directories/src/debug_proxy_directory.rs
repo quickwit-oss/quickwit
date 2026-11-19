@@ -180,8 +180,8 @@ impl<D: Directory> FileHandle for DebugProxyFileHandle<D> {
 
     fn stream_ranges(
         &self,
-        ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
-    ) -> BoxStream<'_, io::Result<OwnedBytes>> {
+        ranges: Box<dyn Iterator<Item = (Range<usize>, u64)> + Send>,
+    ) -> BoxStream<'_, io::Result<(OwnedBytes, u64)>> {
         self.underlying.stream_ranges(ranges)
     }
 }
