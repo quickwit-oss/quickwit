@@ -138,6 +138,8 @@ impl RpcName for GetOrCreateOpenShardsRequest {
     }
 }
 
+pub const ADVISE_RESET_SHARDS_V2: u32 = 2;
+
 impl RpcName for AdviseResetShardsRequest {
     fn rpc_name() -> &'static str {
         "advise_reset_shards"

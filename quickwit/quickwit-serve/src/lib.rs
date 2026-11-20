@@ -1117,6 +1117,7 @@ fn ingester_service_layer_stack(
         .stack_retain_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_truncate_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_close_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
+        .stack_advertise_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_decommission_layer(quickwit_common::tower::OneTaskPerCallLayer)
 }
 

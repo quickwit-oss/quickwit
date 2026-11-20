@@ -24,6 +24,7 @@ mod mrecord;
 mod mrecordlog_utils;
 mod publish_tracker;
 mod rate_meter;
+mod reconcile;
 mod router;
 mod routing_table;
 mod state;
