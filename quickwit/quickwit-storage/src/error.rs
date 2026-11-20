@@ -90,7 +90,7 @@ impl From<StorageError> for io::Error {
 
 /// Generic StorageError.
 #[derive(Debug, Clone, Error)]
-#[error("storage error(kind={kind:?}, source={source})")]
+#[error("storage error(kind={kind:?})")]
 #[allow(missing_docs)]
 pub struct StorageError {
     pub kind: StorageErrorKind,
@@ -117,6 +117,17 @@ impl StorageError {
     /// Returns the corresponding `StorageErrorKind` for this error.
     pub fn kind(&self) -> StorageErrorKind {
         self.kind
+    }
+
+    /// Returns the message of the underlying error wrapped by this storage error.
+    ///
+    /// The `Display` implementation of `StorageError` does not include the
+    /// underlying error's message: the underlying error is exposed as the
+    /// error source instead, so renderings of the error chain do not repeat
+    /// it. Callers that need to embed the message in a string, for instance
+    /// when converting to a string-based error type, should use this method.
+    pub fn source_message(&self) -> String {
+        self.source.to_string()
     }
 
     /// Attaches a server-suggested retry delay to this error.
@@ -207,5 +218,33 @@ impl fmt::Display for BulkDeleteError {
             self.unattempted.len()
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_storage_error_chain_reports_source_once() {
+        let storage_error = StorageErrorKind::NotFound
+            .with_error(anyhow::anyhow!("the specified bucket does not exist"));
+        let rendered_chain = format!("{:?}", anyhow::Error::from(storage_error));
+        assert_eq!(
+            rendered_chain
+                .matches("the specified bucket does not exist")
+                .count(),
+            1,
+            "the source message should appear exactly once in the rendered chain, got: \
+             {rendered_chain}"
+        );
+    }
+
+    #[test]
+    fn test_storage_error_display_and_source_message() {
+        let storage_error =
+            StorageErrorKind::Internal.with_error(anyhow::anyhow!("something went wrong"));
+        assert_eq!(storage_error.to_string(), "storage error(kind=Internal)");
+        assert_eq!(storage_error.source_message(), "something went wrong");
     }
 }

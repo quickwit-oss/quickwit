@@ -37,7 +37,11 @@ fn convert_error(index_id: &str, storage_error: StorageError) -> MetastoreError 
         },
         _ => MetastoreError::Internal {
             message: "failed to get index files".to_string(),
-            cause: storage_error.to_string(),
+            cause: format!(
+                "storage error(kind={:?}, source={})",
+                storage_error.kind(),
+                storage_error.source_message()
+            ),
         },
     }
 }
@@ -133,7 +137,11 @@ pub(super) async fn delete_index(storage: &dyn Storage, index_id: &str) -> Metas
                     storage.uri(),
                     metastore_filepath.display()
                 ),
-                cause: storage_error.to_string(),
+                cause: format!(
+                    "storage error(kind={:?}, source={})",
+                    storage_error.kind(),
+                    storage_error.source_message()
+                ),
             },
         })?;
     Ok(())
