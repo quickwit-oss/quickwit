@@ -189,6 +189,13 @@ POST api/v1/indexes
 
 Create an index by posting an `IndexConfig` payload. The API accepts JSON with `content-type: application/json` and YAML with `content-type: application/yaml`.
 
+#### Query parameters
+
+| Variable              | Type   | Description                                                                                                                                                                                                                         | Default value |
+|-----------------------|--------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------|
+| `overwrite`           | `bool` | Delete the index and all its data first if it already exists.                                                                                                                                                                      | `false`       |
+| `add_default_sources` | `bool` | Add the sources Quickwit creates for every index: `_ingest-api-source`, `_ingest-source` and `_cli-ingest-source`. Set it to `false` for an index fed only by sources you add afterwards (Kafka, Pulsar...): such an index cannot receive documents through the ingest API. | `true`        |
+
 #### POST payload
 
 | Variable            | Type               | Description                                                                                                           | Default value                         |

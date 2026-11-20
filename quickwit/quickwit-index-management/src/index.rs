@@ -114,10 +114,16 @@ impl IndexService {
     }
 
     /// Creates an index from `IndexConfig`.
+    ///
+    /// With `add_default_sources: false`, the index is created without the sources Quickwit
+    /// otherwise adds to every index (`_ingest-api-source`, `_ingest-source`,
+    /// `_cli-ingest-source`), for indexes fed exclusively by sources added afterwards (Kafka,
+    /// Pulsar, ...). Such an index cannot receive documents through the ingest API.
     pub async fn create_index(
         &mut self,
         index_config: IndexConfig,
         overwrite: bool,
+        add_default_sources: bool,
     ) -> Result<IndexMetadata, IndexServiceError> {
         validate_storage_uri(&self.storage_resolver, &index_config)
             .await
@@ -141,12 +147,15 @@ impl IndexService {
 
         let index_config_json = serde_utils::to_json_str(&index_config)?;
 
-        // Add default sources.
-        let source_configs_json = vec![
-            serde_utils::to_json_str(&SourceConfig::ingest_api_default())?,
-            serde_utils::to_json_str(&SourceConfig::ingest_v2())?,
-            serde_utils::to_json_str(&SourceConfig::cli())?,
-        ];
+        let source_configs_json = if add_default_sources {
+            vec![
+                serde_utils::to_json_str(&SourceConfig::ingest_api_default())?,
+                serde_utils::to_json_str(&SourceConfig::ingest_v2())?,
+                serde_utils::to_json_str(&SourceConfig::cli())?,
+            ]
+        } else {
+            Vec::new()
+        };
         let create_index_request = CreateIndexRequest {
             index_config_json,
             source_configs_json,
@@ -609,7 +618,7 @@ mod tests {
         let index_uri = "ram://indexes/test-index";
         let index_config = IndexConfig::for_test(index_id, index_uri);
         let index_metadata_0 = index_service
-            .create_index(index_config.clone(), false)
+            .create_index(index_config.clone(), false, true)
             .await
             .unwrap();
         assert_eq!(index_metadata_0.index_id(), index_id);
@@ -628,7 +637,7 @@ mod tests {
         );
 
         let error = index_service
-            .create_index(index_config.clone(), false)
+            .create_index(index_config.clone(), false, true)
             .await
             .unwrap_err();
         let IndexServiceError::Metastore(inner_error) = error else {
@@ -639,12 +648,33 @@ mod tests {
         );
 
         let index_metadata_1 = index_service
-            .create_index(index_config, true)
+            .create_index(index_config, true, true)
             .await
             .unwrap();
         assert_eq!(index_metadata_1.index_id(), index_id);
         assert_eq!(index_metadata_1.index_uri(), &index_uri);
         assert!(index_metadata_0.index_uid != index_metadata_1.index_uid);
+    }
+
+    #[tokio::test]
+    async fn test_create_index_without_default_sources() {
+        let metastore = metastore_for_test();
+        let storage_resolver = StorageResolver::for_test();
+        let mut index_service = IndexService::new(metastore.clone(), storage_resolver);
+        let index_config = IndexConfig::for_test("test-index", "ram://indexes/test-index");
+        let index_metadata = index_service
+            .create_index(index_config, false, false)
+            .await
+            .unwrap();
+        assert!(index_metadata.sources.is_empty());
+
+        let index_metadata = metastore
+            .index_metadata(IndexMetadataRequest::for_index_id("test-index".to_string()))
+            .await
+            .unwrap()
+            .deserialize_index_metadata()
+            .unwrap();
+        assert!(index_metadata.sources.is_empty());
     }
 
     #[tokio::test]
@@ -664,7 +694,7 @@ mod tests {
         let index_uri = "ram://indexes/test-index";
         let index_config = IndexConfig::for_test(index_id, index_uri);
         let index_uid = index_service
-            .create_index(index_config.clone(), false)
+            .create_index(index_config.clone(), false, true)
             .await
             .unwrap()
             .index_uid;
@@ -687,7 +717,7 @@ mod tests {
         let index_uri = "ram://indexes/test-index";
         let mut index_config = IndexConfig::for_test(index_id, index_uri);
         let index_uid = index_service
-            .create_index(index_config.clone(), false)
+            .create_index(index_config.clone(), false, true)
             .await
             .unwrap()
             .index_uid;
@@ -723,7 +753,7 @@ mod tests {
         let index_uri = "ram://indexes/test-index";
         let index_config = IndexConfig::for_test(index_id, index_uri);
         let index_uid = index_service
-            .create_index(index_config.clone(), false)
+            .create_index(index_config.clone(), false, true)
             .await
             .unwrap()
             .index_uid;
