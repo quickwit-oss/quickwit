@@ -48,12 +48,12 @@ impl MetastoreState {
                 IndexStatus::Creating => (index_id, LazyIndexStatus::Creating),
                 IndexStatus::Deleting => (index_id, LazyIndexStatus::Deleting),
                 IndexStatus::Active => {
-                    let lazy_index = LazyFileBackedIndex::new(
+                    let lazy_index = Arc::new(LazyFileBackedIndex::new(
                         storage.clone(),
                         index_id.clone(),
                         polling_interval_opt,
                         None,
-                    );
+                    ));
                     (index_id, LazyIndexStatus::Active(lazy_index))
                 }
             })
