@@ -214,7 +214,7 @@ File-backed metastore doesn't have any node level configuration. You can configu
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| `min_connections` | Minimum number of connections to maintain in the pool at all times. | `0` |
+| `min_connections` | Minimum number of connections to maintain in the pool at all times. Must be less than or equal to `max_connections`. | `0` |
 | `max_connections` | Maximum number of connections to maintain in the pool. | `10` |
 | `acquire_connection_timeout` | Maximum amount of time to spend waiting for an available connection before aborting a query. | `10s` |
 | `idle_connection_timeout` | Maximum idle duration before closing individual connections. | `10min` |
@@ -316,6 +316,9 @@ This section contains the configuration options for a Searcher.
 | `split_footer_cache_capacity` | Split footer in memory cache (it is essentially the hotcache) capacity on a Searcher.| `500M` |
 | `partial_request_cache_capacity` | Partial request in memory cache capacity on a Searcher. Cache intermediate state for a request, possibly making subsequent requests faster. It can be disabled by setting the size to `0`. | `64M` |
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
+| `warmup_memory_budget` | Maximum amount of memory that split searches can use for their warmup data (the parts of the splits downloaded before searching them) on a Searcher. Concurrent split searches share it. | `100G` |
+| `warmup_single_split_initial_allocation` | Memory reserved for a split search when it starts, for a split of 10M documents (smaller splits reserve proportionally less). A split search waits until this memory is available. Its reservation then grows as data is downloaded, within `warmup_memory_budget` and `warmup_single_split_max_allocation`. Must be lower or equal to `warmup_memory_budget`, and to `warmup_single_split_max_allocation` if set. | `300M` |
+| `warmup_single_split_max_allocation` | Maximum amount of warmup memory a single split search can reserve. A split search that would need more fails, even if the Searcher has warmup memory left: this makes the query that needs too much memory fail first, instead of other queries. Must be lower or equal to `warmup_memory_budget`. | `max(warmup_single_split_initial_allocation, min(4GB, warmup_memory_budget / 4))` |
 | `split_cache` | Searcher split cache configuration options defined in the section below. Cache disabled if unspecified. | |
 | `request_timeout_secs` | The time before a search request is cancelled. This should match the timeout of the stack calling into quickwit if there is one set.  | `30` |
 | `use_metastore_read_replica` | If true, routes read-only metastore requests from searchers to nodes running the `metastore_read_replica` service. Searchers require at least one `metastore_read_replica` node at startup and do not fall back to the primary metastore. | `false` |

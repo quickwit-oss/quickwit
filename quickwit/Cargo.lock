@@ -1290,7 +1290,7 @@ dependencies = [
  "quanta 0.12.6",
  "rustc-hash",
  "rustop",
- "tantivy-query-grammar 0.26.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tantivy-query-grammar 0.26.0",
  "unicode-width 0.1.14",
  "yansi",
 ]
@@ -4561,17 +4561,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "inherent"
-version = "1.0.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bee2c455ca60511a054699102d40ce7153621cb2429558f9eaa600e4499b5984"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.9",
-]
-
-[[package]]
 name = "inout"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4722,6 +4711,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "jiff-sqlx"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cad0aaf716e798876e02217ae420bd730370a175ffd59870018c4aa4daa1513e"
+dependencies = [
+ "jiff",
+ "sqlx-core",
+ "sqlx-postgres",
+]
+
+[[package]]
 name = "jiff-static"
 version = "0.2.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4751,7 +4751,7 @@ dependencies = [
 [[package]]
 name = "jitexpr"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e1acb3e0112f2b4819946aa4ea5742bf429853d8#e1acb3e0112f2b4819946aa4ea5742bf429853d8"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0aa896fe29417107ad0bbab502c1a9fd1077f272#0aa896fe29417107ad0bbab502c1a9fd1077f272"
 dependencies = [
  "cranelift",
  "cranelift-jit",
@@ -6212,7 +6212,7 @@ checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
 [[package]]
 name = "ownedbytes"
 version = "0.9.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e1acb3e0112f2b4819946aa4ea5742bf429853d8#e1acb3e0112f2b4819946aa4ea5742bf429853d8"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0aa896fe29417107ad0bbab502c1a9fd1077f272#0aa896fe29417107ad0bbab502c1a9fd1077f272"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -8085,7 +8085,7 @@ dependencies = [
  "regex",
  "regex-syntax",
  "sea-query",
- "sea-query-binder",
+ "sea-query-sqlx",
  "serde",
  "serde_json",
  "serde_with",
@@ -8236,8 +8236,8 @@ dependencies = [
  "quickwit-proto",
  "quickwit-serve",
  "reqwest 0.13.5",
- "reqwest-middleware 0.5.2",
- "reqwest-retry 0.9.1",
+ "reqwest-middleware",
+ "reqwest-retry",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -8275,6 +8275,7 @@ dependencies = [
  "quickwit-query",
  "quickwit-storage",
  "rand 0.10.3",
+ "rustc-hash",
  "serde",
  "serde_json",
  "siphasher",
@@ -9026,7 +9027,6 @@ dependencies = [
  "encoding_rs",
  "futures-core",
  "futures-util",
- "h2 0.4.20",
  "http 1.5.0",
  "http-body 1.1.0",
  "http-body-util",
@@ -9040,7 +9040,6 @@ dependencies = [
  "pin-project-lite",
  "quinn",
  "rustls 0.23.46",
- "rustls-native-certs",
  "rustls-pki-types",
  "serde",
  "serde_json",
@@ -9070,6 +9069,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-util",
+ "h2 0.4.20",
  "http 1.5.0",
  "http-body 1.1.0",
  "http-body-util",
@@ -9103,21 +9103,6 @@ dependencies = [
 
 [[package]]
 name = "reqwest-middleware"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57f17d28a6e6acfe1733fe24bcd30774d13bffa4b8a22535b4c8c98423088d4e"
-dependencies = [
- "anyhow",
- "async-trait",
- "http 1.5.0",
- "reqwest 0.12.28",
- "serde",
- "thiserror 1.0.69",
- "tower-service",
-]
-
-[[package]]
-name = "reqwest-middleware"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07bc3f1384cffa4f274dad2d4ddd73aed32fed8f786d96c6be8aa4e5fd3c3b58"
@@ -9133,26 +9118,6 @@ dependencies = [
 
 [[package]]
 name = "reqwest-retry"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "105747e3a037fe5bf17458d794de91149e575b6183fc72c85623a44abb9683f5"
-dependencies = [
- "anyhow",
- "async-trait",
- "futures",
- "getrandom 0.2.17",
- "http 1.5.0",
- "hyper 1.12.0",
- "reqwest 0.12.28",
- "reqwest-middleware 0.4.2",
- "retry-policies",
- "thiserror 2.0.21",
- "tokio",
- "wasmtimer",
-]
-
-[[package]]
-name = "reqwest-retry"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe2412db2af7d2268e7a5406be0431f37d9eb67ff390f35b395716f5f06c2eaa"
@@ -9164,7 +9129,7 @@ dependencies = [
  "http 1.5.0",
  "hyper 1.12.0",
  "reqwest 0.13.5",
- "reqwest-middleware 0.5.2",
+ "reqwest-middleware",
  "retry-policies",
  "thiserror 2.0.21",
  "tokio",
@@ -9601,29 +9566,19 @@ dependencies = [
 
 [[package]]
 name = "sea-query"
-version = "0.32.7"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a5d1c518eaf5eda38e5773f902b26ab6d5e9e9e2bb2349ca6c64cf96f80448c"
+checksum = "546040c653a705e60ec65ecd3191a809603734bebbc225775916dea9ae409b31"
 dependencies = [
- "inherent",
+ "itoa",
  "sea-query-derive",
 ]
 
 [[package]]
-name = "sea-query-binder"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0019f47430f7995af63deda77e238c17323359af241233ec768aba1faea7608"
-dependencies = [
- "sea-query",
- "sqlx",
-]
-
-[[package]]
 name = "sea-query-derive"
-version = "0.4.3"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bae0cbad6ab996955664982739354128c58d16e126114fe88c2a493642502aab"
+checksum = "a0b0f466921cdd3cf4b89d5c3ac2173dba89a873ab395b123a645de181ec7537"
 dependencies = [
  "darling 0.20.11",
  "heck 0.4.1",
@@ -9631,6 +9586,17 @@ dependencies = [
  "quote",
  "syn 2.0.119",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "sea-query-sqlx"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c5fec1459e5c033d0602853834cee904e8fcb16a121c8b614de17bea478a756c"
+dependencies = [
+ "jiff-sqlx",
+ "sea-query",
+ "sqlx",
 ]
 
 [[package]]
@@ -10714,7 +10680,7 @@ checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 [[package]]
 name = "tantivy"
 version = "0.27.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e1acb3e0112f2b4819946aa4ea5742bf429853d8#e1acb3e0112f2b4819946aa4ea5742bf429853d8"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0aa896fe29417107ad0bbab502c1a9fd1077f272#0aa896fe29417107ad0bbab502c1a9fd1077f272"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -10756,7 +10722,7 @@ dependencies = [
  "tantivy-columnar",
  "tantivy-common",
  "tantivy-fst",
- "tantivy-query-grammar 0.26.0 (git+https://github.com/quickwit-oss/tantivy/?rev=e1acb3e0112f2b4819946aa4ea5742bf429853d8)",
+ "tantivy-query-grammar 0.27.0",
  "tantivy-sstable",
  "tantivy-stacker",
  "tantivy-tokenizer-api",
@@ -10772,16 +10738,16 @@ dependencies = [
 
 [[package]]
 name = "tantivy-bitpacker"
-version = "0.10.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e1acb3e0112f2b4819946aa4ea5742bf429853d8#e1acb3e0112f2b4819946aa4ea5742bf429853d8"
+version = "0.27.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0aa896fe29417107ad0bbab502c1a9fd1077f272#0aa896fe29417107ad0bbab502c1a9fd1077f272"
 dependencies = [
  "bitpacking",
 ]
 
 [[package]]
 name = "tantivy-columnar"
-version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e1acb3e0112f2b4819946aa4ea5742bf429853d8#e1acb3e0112f2b4819946aa4ea5742bf429853d8"
+version = "0.27.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0aa896fe29417107ad0bbab502c1a9fd1077f272#0aa896fe29417107ad0bbab502c1a9fd1077f272"
 dependencies = [
  "downcast-rs",
  "fastdivide",
@@ -10796,8 +10762,8 @@ dependencies = [
 
 [[package]]
 name = "tantivy-common"
-version = "0.11.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e1acb3e0112f2b4819946aa4ea5742bf429853d8#e1acb3e0112f2b4819946aa4ea5742bf429853d8"
+version = "0.27.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0aa896fe29417107ad0bbab502c1a9fd1077f272#0aa896fe29417107ad0bbab502c1a9fd1077f272"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -10832,8 +10798,8 @@ dependencies = [
 
 [[package]]
 name = "tantivy-query-grammar"
-version = "0.26.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e1acb3e0112f2b4819946aa4ea5742bf429853d8#e1acb3e0112f2b4819946aa4ea5742bf429853d8"
+version = "0.27.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0aa896fe29417107ad0bbab502c1a9fd1077f272#0aa896fe29417107ad0bbab502c1a9fd1077f272"
 dependencies = [
  "fnv",
  "nom 7.1.3",
@@ -10844,8 +10810,8 @@ dependencies = [
 
 [[package]]
 name = "tantivy-sstable"
-version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e1acb3e0112f2b4819946aa4ea5742bf429853d8#e1acb3e0112f2b4819946aa4ea5742bf429853d8"
+version = "0.27.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0aa896fe29417107ad0bbab502c1a9fd1077f272#0aa896fe29417107ad0bbab502c1a9fd1077f272"
 dependencies = [
  "futures-util",
  "itertools 0.14.0",
@@ -10857,8 +10823,8 @@ dependencies = [
 
 [[package]]
 name = "tantivy-stacker"
-version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e1acb3e0112f2b4819946aa4ea5742bf429853d8#e1acb3e0112f2b4819946aa4ea5742bf429853d8"
+version = "0.27.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0aa896fe29417107ad0bbab502c1a9fd1077f272#0aa896fe29417107ad0bbab502c1a9fd1077f272"
 dependencies = [
  "murmurhash32",
  "tantivy-common",
@@ -10867,7 +10833,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e1acb3e0112f2b4819946aa4ea5742bf429853d8#e1acb3e0112f2b4819946aa4ea5742bf429853d8"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0aa896fe29417107ad0bbab502c1a9fd1077f272#0aa896fe29417107ad0bbab502c1a9fd1077f272"
 dependencies = [
  "serde",
 ]
@@ -11916,9 +11882,9 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vrl"
-version = "0.37.0"
+version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a862151998a9dba2ef69c72d5d86a1bb4a22890b9b2f9f7109a142d7b9946aff"
+checksum = "4241d28d1df0ab3979373d7a8fdbf09002df248f348b4ef9962ade93c9ac8dbd"
 dependencies = [
  "aes 0.9.3",
  "aes-siv",
@@ -11988,11 +11954,12 @@ dependencies = [
  "rand 0.9.5",
  "regex",
  "relative-path",
- "reqwest 0.12.28",
- "reqwest-middleware 0.4.2",
- "reqwest-retry 0.8.0",
+ "reqwest 0.13.5",
+ "reqwest-middleware",
+ "reqwest-retry",
  "roxmltree 0.21.1",
  "rust_decimal",
+ "rustls 0.23.46",
  "seahash",
  "serde",
  "serde_json",
@@ -12018,7 +11985,7 @@ dependencies = [
  "uuid",
  "woothee",
  "xxhash-rust",
- "zstd 0.13.3",
+ "zstd 0.14.3",
 ]
 
 [[package]]

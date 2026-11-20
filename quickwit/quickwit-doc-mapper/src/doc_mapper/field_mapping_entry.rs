@@ -805,7 +805,7 @@ impl TryFrom<FieldMappingEntryForSerialization> for FieldMappingEntry {
             QuickwitFieldType::parse_type_id(&value.type_id).ok_or_else(|| {
                 format!(
                     "field `{}` has an unknown type: `{}`",
-                    &value.name, &value.type_id
+                    value.name, value.type_id
                 )
             })?;
         let mapping_type = deserialize_mapping_type(

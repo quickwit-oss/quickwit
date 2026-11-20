@@ -207,8 +207,9 @@ rust-embed = "8.13"
 rustc-hash = "2.1"
 rustls = "0.23"
 rustls-pemfile = "2.2"
-sea-query = { version = "0.32" }
-sea-query-binder = { version = "0.7", features = [
+sea-query = { version = "1.0" }
+# sea-query-sqlx 0.8.0 requires sqlx 0.9; 0.8.1 is the sqlx 0.8 release.
+sea-query-sqlx = { version = "0.8.1", features = [
   "postgres-array",
   "runtime-tokio-rustls",
   "sqlx-postgres",
@@ -295,7 +296,7 @@ username = "0.2"
 utoipa = { version = "4.2", features = ["time", "ulid"] }
 unicode-segmentation = "1.13"
 uuid = { version = "1.28", features = ["v4", "serde"] }
-vrl = { version = "0.37", default-features = false, features = [
+vrl = { version = "0.38", default-features = false, features = [
   "compiler",
   "stdlib",
   "value",
@@ -379,7 +380,7 @@ quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
 quickwit-transport = { path = "quickwit-transport" }
 
 # This is the tip of tantivy main.
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e1acb3e0112f2b4819946aa4ea5742bf429853d8", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "0aa896fe29417107ad0bbab502c1a9fd1077f272", default-features = false, features = [
   "jitexpr",
   "lz4-compression",
   "mmap",
@@ -388,7 +389,7 @@ tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e1acb3e0112
   "columnar-zstd-compression",
 ] }
 # Must stay on the same rev as `tantivy`.
-tantivy-common = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e1acb3e0112f2b4819946aa4ea5742bf429853d8" }
+tantivy-common = { git = "https://github.com/quickwit-oss/tantivy/", rev = "0aa896fe29417107ad0bbab502c1a9fd1077f272" }
 tantivy-fst = "0.5"
 
 # This is actually not used directly the goal is to fix the version

@@ -22,6 +22,7 @@ use futures::{Future, StreamExt};
 use quickwit_proto::search::{
     FetchDocsRequest, FetchDocsResponse, GetKvRequest, LeafListFieldsRequest, LeafListTermsRequest,
     LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse, ListFieldsResponse, PutKvRequest,
+    SplitSearchError,
 };
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tracing::{debug, error, info, warn};
@@ -244,13 +245,21 @@ fn merge_intermediate_aggregation(left: &[u8], right: &[u8]) -> crate::Result<Ve
 /// # Quirk
 ///
 /// This is implemented for a retries.
-/// For instance, the set of attempted splits of right is supposed to be the set of failed
-/// list of the left one, so that the list of the overal failed splits is the list of splits on the
-/// `right_response`.
+/// For instance, the set of attempted splits of right is supposed to be the set of retryable
+/// failed splits of the left one, so that the list of the overall failed splits is the list of
+/// non-retryable failed splits of the left one, plus the failed splits of the `right_response`.
 fn merge_original_with_retry_leaf_search_response(
     mut original_response: LeafSearchResponse,
     retry_response: LeafSearchResponse,
 ) -> crate::Result<LeafSearchResponse> {
+    // Non-retryable failed splits were not retried (see `LeafSearchRetryPolicy`), so they are
+    // still failed. The retryable ones were retried: their outcome is in `retry_response`.
+    let mut failed_splits: Vec<SplitSearchError> = original_response
+        .failed_splits
+        .into_iter()
+        .filter(|failed_split| !failed_split.retryable_error)
+        .collect();
+    failed_splits.extend(retry_response.failed_splits);
     original_response
         .partial_hits
         .extend(retry_response.partial_hits);
@@ -276,7 +285,7 @@ fn merge_original_with_retry_leaf_search_response(
         num_hits: original_response.num_hits + retry_response.num_hits,
         num_attempted_splits: original_response.num_attempted_splits
             + retry_response.num_attempted_splits,
-        failed_splits: retry_response.failed_splits,
+        failed_splits,
         partial_hits: original_response.partial_hits,
         num_successful_splits: original_response.num_successful_splits
             + retry_response.num_successful_splits,
@@ -591,6 +600,46 @@ mod tests {
         assert_eq!(merged_leaf_search_response.partial_hits.len(), 2);
         assert_eq!(merged_leaf_search_response.failed_splits.len(), 0);
         Ok(())
+    }
+
+    #[test]
+    fn test_merge_leaf_search_retry_keeps_non_retryable_failed_splits() {
+        let non_retryable_split_error = SplitSearchError {
+            error: "out of warmup memory".to_string(),
+            split_id: "split_1".to_string(),
+            retryable_error: false,
+        };
+        let retryable_split_error = SplitSearchError {
+            error: "error".to_string(),
+            split_id: "split_2".to_string(),
+            retryable_error: true,
+        };
+        let leaf_response = LeafSearchResponse {
+            num_hits: 1,
+            partial_hits: vec![mock_partial_hit("split_3", 3, 1)],
+            failed_splits: vec![non_retryable_split_error.clone(), retryable_split_error],
+            num_attempted_splits: 3,
+            ..Default::default()
+        };
+        let still_failing_split_error = SplitSearchError {
+            error: "error again".to_string(),
+            split_id: "split_2".to_string(),
+            retryable_error: true,
+        };
+        let leaf_response_retry = LeafSearchResponse {
+            failed_splits: vec![still_failing_split_error.clone()],
+            num_attempted_splits: 1,
+            ..Default::default()
+        };
+        let merged_leaf_search_response = merge_original_with_retry_leaf_search_results(
+            Ok(leaf_response),
+            Ok(leaf_response_retry),
+        )
+        .unwrap();
+        assert_eq!(
+            merged_leaf_search_response.failed_splits,
+            vec![non_retryable_split_error, still_failing_split_error]
+        );
     }
 
     #[test]

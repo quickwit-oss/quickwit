@@ -311,14 +311,14 @@ mod tests {
         let batch2 = indexer_msgs[1].downcast_ref::<RawDocBatch>().unwrap();
         let command = indexer_msgs[2].downcast_ref::<Command>().unwrap();
         assert_eq!(
-            format!("{:?}", &batch1.checkpoint_delta),
+            format!("{:?}", batch1.checkpoint_delta),
             format!(
                 "∆({}:{})",
                 uri, "(00000000000000000000..00000000000005242895]"
             )
         );
         assert_eq!(
-            format!("{:?}", &batch2.checkpoint_delta),
+            format!("{:?}", batch2.checkpoint_delta),
             format!(
                 "∆({}:{})",
                 uri, "(00000000000005242895..~00000000000005397105]"

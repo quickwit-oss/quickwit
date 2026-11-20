@@ -165,7 +165,6 @@ pub(crate) async fn elastic_bulk_ingest_v2(
     )
 }
 
-#[allow(clippy::result_large_err)]
 fn make_elastic_bulk_response_v2(
     ingest_response_v2: IngestResponseV2,
     mut per_subrequest_doc_handles: HashMap<u32, Vec<DocHandle>>,
@@ -348,7 +347,6 @@ fn make_elastic_bulk_response_v2(
     Ok(bulk_response)
 }
 
-#[allow(clippy::result_large_err)]
 fn remove_doc_handles(
     per_subrequest_doc_handles: &mut HashMap<u32, Vec<DocHandle>>,
     subrequest_id: u32,
@@ -627,7 +625,7 @@ mod tests {
         let es_error: ElasticsearchError = serde_json::from_slice(response.body()).unwrap();
         assert_eq!(es_error.status, StatusCode::BAD_REQUEST);
 
-        let reason = es_error.error.reason.unwrap();
+        let reason = es_error.error.reason;
         assert_eq!(
             reason,
             "Malformed action/metadata line [1]: expected value at line 1 column 60"
@@ -647,7 +645,7 @@ mod tests {
         let es_error: ElasticsearchError = serde_json::from_slice(response.body()).unwrap();
         assert_eq!(es_error.status, StatusCode::BAD_REQUEST);
 
-        let reason = es_error.error.reason.unwrap();
+        let reason = es_error.error.reason;
         assert_eq!(reason, "Validation Failed: 1: no requests added;");
 
         let payload = r#"
@@ -665,7 +663,7 @@ mod tests {
         let es_error: ElasticsearchError = serde_json::from_slice(response.body()).unwrap();
         assert_eq!(es_error.status, StatusCode::BAD_REQUEST);
 
-        let reason = es_error.error.reason.unwrap();
+        let reason = es_error.error.reason;
         assert_eq!(reason, "Validation Failed: 1: index is missing;");
     }
 

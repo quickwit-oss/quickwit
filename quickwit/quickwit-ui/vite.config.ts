@@ -10,7 +10,7 @@ export default {
     port: 3000,
   },
   build: {
-    rollupOptions: {
+    rolldownOptions: {
       onwarn(warning, warn) {
         // Suppress "use client" directive warnings from material-ui
         if (
