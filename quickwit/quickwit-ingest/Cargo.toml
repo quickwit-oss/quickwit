@@ -43,6 +43,7 @@ quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
+quickwit-live-tail = { workspace = true }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]

@@ -30,6 +30,7 @@ pub mod error;
 mod getters;
 pub mod indexing;
 pub mod ingest;
+pub mod live_tail;
 pub mod metastore;
 pub mod search;
 pub mod types;

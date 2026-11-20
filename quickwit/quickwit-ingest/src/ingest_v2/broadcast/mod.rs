@@ -33,7 +33,7 @@ pub use capacity_score::{
 };
 pub use local_shards::{
     BroadcastLocalShardsTask, LocalShardsUpdate, ShardInfo, ShardInfos,
-    setup_local_shards_update_listener,
+    find_ingesters_with_open_shards, setup_local_shards_update_listener,
 };
 
 fn make_key(prefix: &str, source_uid: &SourceUid) -> String {

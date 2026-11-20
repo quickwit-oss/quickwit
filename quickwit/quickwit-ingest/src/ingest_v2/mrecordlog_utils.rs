@@ -52,11 +52,14 @@ pub(super) enum AppendDocBatchError {
 pub(super) async fn append_non_empty_doc_batch(
     mrecordlog: &mut MultiRecordLogAsync,
     queue_id: &QueueId,
-    doc_batch: DocBatchV2,
+    doc_batch: &DocBatchV2,
     force_commit: bool,
 ) -> Result<Position, AppendDocBatchError> {
+    // `append_records` requires an owned iterator. Cloning the batch does not copy the documents,
+    // unlike encoding them as records.
     let append_result = if force_commit {
         let encoded_mrecords = doc_batch
+            .clone()
             .into_docs()
             .map(|(_doc_uid, doc)| MRecord::Doc(doc).encode())
             .chain(once(MRecord::Commit.encode()));
@@ -72,6 +75,7 @@ pub(super) async fn append_non_empty_doc_batch(
             .await
     } else {
         let encoded_mrecords = doc_batch
+            .clone()
             .into_docs()
             .map(|(_doc_uid, doc)| MRecord::Doc(doc).encode());
 
@@ -186,7 +190,7 @@ mod tests {
         let doc_batch = DocBatchV2::for_test(["test-doc-foo"]);
 
         let append_error =
-            append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch.clone(), false)
+            append_non_empty_doc_batch(&mut mrecordlog, &queue_id, &doc_batch, false)
                 .await
                 .unwrap_err();
 
@@ -197,16 +201,14 @@ mod tests {
 
         mrecordlog.create_queue(&queue_id).await.unwrap();
 
-        let position =
-            append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch.clone(), false)
-                .await
-                .unwrap();
+        let position = append_non_empty_doc_batch(&mut mrecordlog, &queue_id, &doc_batch, false)
+            .await
+            .unwrap();
         assert_eq!(position, Position::offset(0u64));
 
-        let position =
-            append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch.clone(), true)
-                .await
-                .unwrap();
+        let position = append_non_empty_doc_batch(&mut mrecordlog, &queue_id, &doc_batch, true)
+            .await
+            .unwrap();
         assert_eq!(position, Position::offset(2u64));
     }
 
@@ -228,9 +230,10 @@ mod tests {
         mrecordlog.create_queue(&queue_id).await.unwrap();
 
         let doc_batch = DocBatchV2::for_test(["test-doc-foo"]);
-        let append_error = append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch, false)
-            .await
-            .unwrap_err();
+        let append_error =
+            append_non_empty_doc_batch(&mut mrecordlog, &queue_id, &doc_batch, false)
+                .await
+                .unwrap_err();
 
         assert!(matches!(append_error, AppendDocBatchError::Io(..)));
 
@@ -275,7 +278,7 @@ mod tests {
         mrecordlog.create_queue(&queue_id).await.unwrap();
 
         let doc_batch = DocBatchV2::for_test(["test-doc-foo"]);
-        append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch, true)
+        append_non_empty_doc_batch(&mut mrecordlog, &queue_id, &doc_batch, true)
             .await
             .unwrap();
 

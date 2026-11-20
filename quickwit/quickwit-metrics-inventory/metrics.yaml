@@ -446,6 +446,18 @@ quickwit_lambda_leaf_search_response_payload_size_bytes:
   module: quickwit_lambda_client::metrics
   kind: histogram
   description: Size of the response payload received from Lambda in bytes.
+quickwit_live_tail_docs_published_total:
+  module: quickwit_live_tail::metrics
+  kind: counter
+  description: Number of documents published by ingesters to live tail sessions.
+quickwit_live_tail_filter_duration_secs:
+  module: quickwit_live_tail::metrics
+  kind: histogram
+  description: Duration of the evaluation of a live tail filter on a batch of documents.
+quickwit_live_tail_filtered_docs_total:
+  module: quickwit_live_tail::metrics
+  kind: counter
+  description: Number of documents evaluated by live tail filters, by outcome.
 quickwit_memory_active_bytes:
   module: quickwit_common::metrics
   kind: gauge

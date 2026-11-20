@@ -31,6 +31,7 @@ use crate::index_api::IndexApi;
 use crate::indexing_api::IndexingApi;
 use crate::ingest_api::{IngestApi, IngestApiSchemas};
 use crate::jaeger_api::JaegerApi;
+use crate::live_tail_api::LiveTailApi;
 use crate::metrics_api::MetricsApi;
 use crate::node_info_handler::NodeInfoApi;
 use crate::otlp_api::OtlpApi;
@@ -96,6 +97,7 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
     docs_base.merge_components_and_paths(MetricsApi::openapi().with_path_prefix("/metrics"));
     docs_base.merge_components_and_paths(NodeInfoApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(SearchApi::openapi().with_path_prefix("/api/v1"));
+    docs_base.merge_components_and_paths(LiveTailApi::openapi().with_path_prefix("/api/v1"));
 
     // Schemas
     docs_base.merge_components_and_paths(MetastoreApiSchemas::openapi());

@@ -69,6 +69,7 @@ quickwit-ingest = { workspace = true }
 quickwit-jaeger = { workspace = true }
 quickwit-janitor = { workspace = true }
 quickwit-lambda-client = { workspace = true, optional = true }
+quickwit-live-tail = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-metrics = { workspace = true }
 quickwit-opentelemetry = { workspace = true }
