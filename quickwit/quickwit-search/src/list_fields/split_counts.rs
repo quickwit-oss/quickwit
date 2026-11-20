@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use itertools::Itertools;
+use std::collections::hash_map::Entry;
+
 use quickwit_proto::search::ListFieldsEntry;
 use rustc_hash::FxHashMap;
 
@@ -30,13 +31,23 @@ struct SplitCounts {
 }
 
 impl SplitCountsByField {
-    /// Count one split. Its fields must be unique by name and type after normalization.
-    pub fn count_split(mut self, fields: Vec<ListFieldsEntry>) -> Self {
+    pub fn len(&self) -> usize {
+        self.by_name_and_type.len()
+    }
+
+    /// Fields must be unique by name and type within this split. Once full, finish counting
+    /// retained fields so their capabilities reflect the entire last split.
+    pub fn count_split(mut self, fields: Vec<ListFieldsEntry>, limit: usize) -> Self {
         for field in fields {
-            let counts = self
+            let has_room = self.len() < limit;
+            let counts = match self
                 .by_name_and_type
                 .entry((field.field_name, field.field_type))
-                .or_default();
+            {
+                Entry::Occupied(entry) => entry.into_mut(),
+                Entry::Vacant(entry) if has_room => entry.insert(SplitCounts::default()),
+                Entry::Vacant(_) => continue,
+            };
             counts.num_splits += 1;
             counts.searchable_splits += u64::from(field.searchable);
             counts.aggregatable_splits += u64::from(field.aggregatable);
@@ -44,21 +55,10 @@ impl SplitCountsByField {
         self
     }
 
-    /// Select up to `limit` fields by split count. Name and type break ties and determine response
-    /// order.
-    pub fn fields_in_most_splits(self, index_id: &str, limit: usize) -> Vec<ListFieldsEntry> {
+    pub fn into_entries(self, index_id: &str) -> Vec<ListFieldsEntry> {
         let mut fields: Vec<_> = self
             .by_name_and_type
             .into_iter()
-            .k_smallest_by(
-                limit,
-                |(left_field, left_counts), (right_field, right_counts)| {
-                    right_counts
-                        .num_splits
-                        .cmp(&left_counts.num_splits)
-                        .then_with(|| left_field.cmp(right_field))
-                },
-            )
             .map(|((field_name, field_type), counts)| {
                 let index_id_if_support_varies = |supporting_splits| {
                     if supporting_splits > 0 && supporting_splits < counts.num_splits {

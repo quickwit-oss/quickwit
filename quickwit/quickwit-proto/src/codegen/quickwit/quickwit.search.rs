@@ -126,6 +126,8 @@ pub struct ListFieldsMetadata {
     #[prost(message, repeated, tag = "1")]
     pub entries: ::prost::alloc::vec::Vec<ListFieldsEntry>,
 }
+/// Counts, capabilities, and index IDs describe the splits examined by the leaves.
+/// Each leaf stops after collecting the effective limit of distinct (name, type) pairs.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListFieldsEntry {
@@ -154,7 +156,7 @@ pub struct ListFieldsEntry {
     pub non_aggregatable_index_ids: ::prost::alloc::vec::Vec<
         ::prost::alloc::string::String,
     >,
-    /// Number of splits whose fields metadata contains this field.
+    /// Number of examined splits whose fields metadata contains this field.
     #[prost(uint64, tag = "8")]
     pub num_splits: u64,
 }

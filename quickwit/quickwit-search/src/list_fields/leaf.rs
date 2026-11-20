@@ -38,7 +38,7 @@ const DYNAMIC_FIELD_PREFIX: &str = "_dynamic.";
 /// `leaf_list_fields` call.
 const MAX_CONCURRENT_DOWNLOADS: usize = 500;
 
-/// A decoded split can be much larger than its compressed metadata blob.
+/// A decoded split's field list can be much larger than its compressed metadata blob.
 const MAX_CONCURRENT_DECODES: usize = 4;
 
 /// `leaf` step of list fields.
@@ -57,6 +57,10 @@ pub async fn leaf_list_fields(
         return Ok(ListFieldsResponse::default());
     }
     let field_patterns = FieldPatterns::from_strs(field_patterns_strs)?;
+    let limit = field_list_size_limit(limit);
+    if limit == 0 {
+        return Ok(ListFieldsResponse::default());
+    }
 
     let mut fields_by_split = stream::iter(split_footers)
         .map(async |split_footer| {
@@ -76,16 +80,18 @@ pub async fn leaf_list_fields(
     let mut split_counts = SplitCountsByField::default();
     while let Some(fields) = fields_by_split.try_next().await? {
         split_counts = search_thread_pool()
-            .run_cpu_intensive(move || split_counts.count_split(fields))
+            .run_cpu_intensive(move || split_counts.count_split(fields, limit))
             .await
             .context("failed to count splits containing each field")?;
+        if split_counts.len() == limit {
+            break;
+        }
     }
+    drop(fields_by_split);
     let entries = search_thread_pool()
-        .run_cpu_intensive(move || {
-            split_counts.fields_in_most_splits(&index_id, field_list_size_limit(limit))
-        })
+        .run_cpu_intensive(move || split_counts.into_entries(&index_id))
         .await
-        .context("failed to select fields by split count")?;
+        .context("failed to build list fields response")?;
     Ok(ListFieldsResponse { entries })
 }
 
@@ -222,26 +228,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn leaf_list_fields_ranks_after_counting_all_splits() {
+    async fn leaf_list_fields_counts_all_splits_below_limit() {
         let searcher = Arc::new(SearcherContext::for_test());
         let mut splits = Vec::new();
         for i in 0..24 {
             let mut common = entry("_dynamic.match.z");
             common.searchable = i % 2 == 0;
             common.aggregatable = false;
-            let mut tied = if i % 2 == 0 {
+            let mut other = if i % 2 == 0 {
                 entry_typed("match.z", ListFieldsType::U64)
             } else {
                 entry("match.a")
             };
-            tied.aggregatable = i % 3 == 0;
+            other.aggregatable = i % 3 == 0;
             let split_id = format!("split-{i}");
-            let bytes = serialize(vec![
-                entry("ignored"),
-                entry(&format!("match.{i}")),
-                common,
-                tied,
-            ]);
+            let bytes = serialize(vec![entry(&format!("ignored.{i}")), common, other]);
             searcher.list_fields_cache.put(split_id.clone(), bytes);
             splits.push(SplitIdAndFooterOffsets {
                 split_id,
@@ -252,13 +253,12 @@ mod tests {
             "index".into(),
             &["match.*".into()],
             splits,
-            Some(2),
+            Some(4),
             searcher,
             Arc::new(quickwit_storage::RamStorage::default()),
         )
         .await
         .unwrap();
-        // Both match.a and the U64 variant of match.z occur in 12 splits; the name breaks the tie.
         let mut first = entry("match.a");
         first.num_splits = 12;
         first.index_ids = vec!["index".into()];
@@ -268,7 +268,77 @@ mod tests {
         second.index_ids = first.index_ids.clone();
         second.non_searchable_index_ids = first.index_ids.clone();
         second.aggregatable = false;
-        assert_eq!(response.entries, [first, second]);
+        let mut third = entry_typed("match.z", ListFieldsType::U64);
+        third.num_splits = 12;
+        third.index_ids = first.index_ids.clone();
+        third.non_aggregatable_index_ids = first.index_ids.clone();
+        assert_eq!(response.entries, [first, second, third]);
+    }
+
+    #[tokio::test]
+    async fn leaf_list_fields_stops_at_limit() {
+        let searcher = Arc::new(SearcherContext::for_test());
+        let mut splits = Vec::new();
+        for split_id in ["one", "two"] {
+            let fields = vec![entry("a"), entry("b"), entry("c")];
+            searcher
+                .list_fields_cache
+                .put(split_id.into(), serialize(fields));
+            splits.push(SplitIdAndFooterOffsets {
+                split_id: split_id.into(),
+                ..Default::default()
+            });
+        }
+        let response = leaf_list_fields(
+            "index".into(),
+            &[],
+            splits,
+            Some(2),
+            searcher,
+            Arc::new(quickwit_storage::RamStorage::default()),
+        )
+        .await
+        .unwrap();
+        // Whichever split finishes first fills the response by itself.
+        let fields: Vec<_> = response
+            .entries
+            .iter()
+            .map(|field| (field.field_name.as_str(), field.num_splits))
+            .collect();
+        assert_eq!(fields, [("a", 1), ("b", 1)]);
+    }
+
+    #[test]
+    fn counts_retained_fields_through_end_of_last_split() {
+        let mut last_z = entry("z");
+        last_z.searchable = false;
+        let fields = SplitCountsByField::default()
+            .count_split(vec![entry("z")], 2)
+            .count_split(vec![entry("a"), entry("b"), last_z], 2)
+            .into_entries("index");
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields[0].field_name, "a");
+        assert_eq!(fields[1].field_name, "z");
+        assert_eq!(fields[1].num_splits, 2);
+        assert_eq!(fields[1].non_searchable_index_ids, ["index"]);
+    }
+
+    #[tokio::test]
+    async fn leaf_list_fields_skips_storage_for_zero_limit() {
+        let response = leaf_list_fields(
+            "index".into(),
+            &[],
+            vec![SplitIdAndFooterOffsets {
+                split_id: "missing".into(),
+                ..Default::default()
+            }],
+            Some(0),
+            Arc::new(SearcherContext::for_test()),
+            Arc::new(quickwit_storage::RamStorage::default()),
+        )
+        .await
+        .unwrap();
+        assert!(response.entries.is_empty());
     }
 
     #[test]
