@@ -108,24 +108,43 @@ enum ShardPlacement {
     Zoned(HashMap<Option<AvailabilityZone>, SourceShardCount>),
 }
 
+/// When enabled, an ingester hosts at most as many shards (open or closed) of a single source as it
+/// has CPUs.
+fn is_per_source_shard_cap_enabled() -> bool {
+    quickwit_common::get_bool_from_env_cached!("QW_ENABLE_PER_SOURCE_SHARD_CAP", false)
+}
+
 struct EligibleIngester {
     node_id: NodeId,
     zone: Option<AvailabilityZone>,
     num_open_shards: AtomicUsize,
+    // `None` when the per-source shard cap is disabled.
+    max_num_shards_per_source: Option<usize>,
 }
 
-/// Find the globally minimally loaded ingester. Break ties with the requested zone, if provided.
+/// Find the globally minimally loaded ingester, skipping ingesters that already host their maximum
+/// number of shards for the source. Break ties with the requested zone, if provided.
 fn pick_least_loaded<'a>(
     eligible_ingesters: &'a [EligibleIngester],
     requested_zone: Option<&AvailabilityZone>,
+    num_shards_for_source: &HashMap<NodeId, usize>,
     rng: &mut ThreadRng,
-) -> &'a EligibleIngester {
+) -> Option<&'a EligibleIngester> {
     assert!(!eligible_ingesters.is_empty());
     let mut min_load = usize::MAX;
     let mut minima = Vec::new();
     let mut same_zone_minima = Vec::new();
 
     for ingester in eligible_ingesters {
+        if let Some(max_num_shards_per_source) = ingester.max_num_shards_per_source
+            && num_shards_for_source
+                .get(&ingester.node_id)
+                .copied()
+                .unwrap_or_default()
+                >= max_num_shards_per_source
+        {
+            continue;
+        }
         let load = ingester.num_open_shards.load(Ordering::Relaxed);
         if load > min_load {
             continue;
@@ -145,9 +164,7 @@ fn pick_least_loaded<'a>(
     } else {
         minima
     };
-    candidates
-        .choose(rng)
-        .expect("Candidates came from the list of eligible ingesters, which is not empty")
+    candidates.choose(rng).copied()
 }
 
 fn all_ingesters_advertise_availability_zone(ingesters: &IngesterPool) -> bool {
@@ -171,6 +188,8 @@ fn eligible_ingesters(
                 .or_default() += 1;
         }
     }
+    let per_source_shard_cap_enabled = is_per_source_shard_cap_enabled();
+
     ingester_pool
         .keys_values()
         .into_iter()
@@ -189,23 +208,62 @@ fn eligible_ingesters(
                 .availability_zone
                 .clone()
                 .filter(|_| zonal_placement_enabled),
+            max_num_shards_per_source: if per_source_shard_cap_enabled {
+                Some(ingester.num_cpus)
+            } else {
+                None
+            },
         })
         .collect()
 }
 
-fn allocate_shards(
+fn allocate_shards<'a>(
     eligible_ingesters: &[EligibleIngester],
-    requested_zone: Option<AvailabilityZone>,
-    num_shards: usize,
-) -> Vec<NodeId> {
+    requested_zone: Option<&AvailabilityZone>,
+    num_shards_to_open_by_source: &'a SourceShardCount,
+    model: &ControlPlaneModel,
+) -> Vec<(&'a SourceUid, NodeId)> {
     let mut rng = rng();
-    let mut ingester_ids = Vec::with_capacity(num_shards);
-    for _ in 0..num_shards {
-        let picked = pick_least_loaded(eligible_ingesters, requested_zone.as_ref(), &mut rng);
-        picked.num_open_shards.fetch_add(1, Ordering::Relaxed);
-        ingester_ids.push(picked.node_id.clone());
+    let mut shard_allocations = Vec::new();
+
+    for (source_uid, &num_shards) in num_shards_to_open_by_source {
+        let mut num_shards_by_ingester = num_shards_by_ingester(model, source_uid);
+
+        for _ in 0..num_shards {
+            let Some(picked) = pick_least_loaded(
+                eligible_ingesters,
+                requested_zone,
+                &num_shards_by_ingester,
+                &mut rng,
+            ) else {
+                info!("no eligible ingesters for shard allocation");
+                break;
+            };
+            picked.num_open_shards.fetch_add(1, Ordering::Relaxed);
+            *num_shards_by_ingester
+                .entry(picked.node_id.clone())
+                .or_default() += 1;
+            shard_allocations.push((source_uid, picked.node_id.clone()));
+        }
     }
-    ingester_ids
+    shard_allocations
+}
+
+fn num_shards_by_ingester(
+    model: &ControlPlaneModel,
+    source_uid: &SourceUid,
+) -> HashMap<NodeId, usize> {
+    let mut num_shards_by_ingester: HashMap<NodeId, usize> = HashMap::new();
+
+    let Some(shard_entries) = model.get_shards_for_source(source_uid) else {
+        return num_shards_by_ingester;
+    };
+    for shard_entry in shard_entries.values() {
+        *num_shards_by_ingester
+            .entry(NodeId::from_str(&shard_entry.ingester_id))
+            .or_default() += 1;
+    }
+    num_shards_by_ingester
 }
 
 fn distribute_shards_across_zones(
@@ -892,16 +950,15 @@ impl IngestController {
         // By now, we've asserted that there's at least one eligible ingester. We have to have
         // something to open a shard on.
         assert!(!eligible_ingesters.is_empty());
-        let ingester_ids = allocate_shards(eligible_ingesters, requested_zone, num_shards_to_open);
-
-        let source_uids_with_multiplicity = num_shards_to_open_by_source
-            .iter()
-            .flat_map(|(source_uid, &num_shards)| std::iter::repeat_n(source_uid, num_shards));
-
+        let shard_allocations = allocate_shards(
+            eligible_ingesters,
+            requested_zone.as_ref(),
+            &num_shards_to_open_by_source,
+            model,
+        );
         let mut init_shard_subrequests: Vec<InitShardSubrequest> = Vec::new();
 
-        for (subrequest_id, (source_uid, ingester_id)) in
-            source_uids_with_multiplicity.zip(ingester_ids).enumerate()
+        for (subrequest_id, (source_uid, ingester_id)) in shard_allocations.into_iter().enumerate()
         {
             let shard_id = ShardId::from(Ulid::generate());
 
@@ -1456,6 +1513,7 @@ mod tests {
             status,
             availability_zone: availability_zone.map(AvailabilityZone::from),
             generation_id: GenerationId::from(1u64),
+            num_cpus: 0,
         }
     }
 
@@ -1468,6 +1526,7 @@ mod tests {
             node_id: NodeId::from_str(node_id),
             zone: zone.map(AvailabilityZone::from),
             num_open_shards: AtomicUsize::new(num_open_shards),
+            max_num_shards_per_source: None,
         }
     }
 
@@ -1870,6 +1929,7 @@ mod tests {
                 status: IngesterStatus::Retiring,
                 availability_zone: None,
                 generation_id: quickwit_cluster::GenerationId::from(1u64),
+                num_cpus: 0,
             },
         );
         let open_shard_opt =
@@ -2068,15 +2128,41 @@ mod tests {
         assert_eq!(initial_loads.get("test-ingester-1"), Some(&2));
         assert_eq!(initial_loads.get("test-ingester-3"), Some(&0));
 
-        assert!(allocate_shards(&eligible_ingesters, None, 0).is_empty());
-        let ingester_ids = allocate_shards(&eligible_ingesters, None, 4);
+        // `QW_ENABLE_PER_SOURCE_SHARD_CAP` is not set: ingesters are not capped.
+        assert!(
+            eligible_ingesters
+                .iter()
+                .all(|ingester| ingester.max_num_shards_per_source.is_none())
+        );
+
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: source_id.clone(),
+        };
+        let num_shards_to_open_by_source = HashMap::from([(source_uid.clone(), 0)]);
+        assert!(
+            allocate_shards(
+                &eligible_ingesters,
+                None,
+                &num_shards_to_open_by_source,
+                &model
+            )
+            .is_empty()
+        );
+        let num_shards_to_open_by_source = HashMap::from([(source_uid, 4)]);
+        let shard_allocations = allocate_shards(
+            &eligible_ingesters,
+            None,
+            &num_shards_to_open_by_source,
+            &model,
+        );
 
         // Ingester 2 is unavailable. Ingester 1 already has 2 open shards, ingester 3 has none, so
         // shards are allocated to balance the load between ingester 1 and ingester 3: ingester 3
         // ends up with 3 more shards and ingester 1 with 1 more.
-        assert_eq!(ingester_ids.len(), 4);
+        assert_eq!(shard_allocations.len(), 4);
         let mut num_shards_by_ingester_id: HashMap<&str, usize> = HashMap::new();
-        for ingester_id in &ingester_ids {
+        for (_source_uid, ingester_id) in &shard_allocations {
             *num_shards_by_ingester_id
                 .entry(ingester_id.as_str())
                 .or_default() += 1;
@@ -2450,6 +2536,7 @@ mod tests {
                     status: IngesterStatus::Ready,
                     availability_zone: Some(AvailabilityZone::from(zone)),
                     generation_id: GenerationId::from(1u64),
+                    num_cpus: 0,
                 },
             );
         }
@@ -3945,8 +4032,18 @@ mod tests {
         if initial_num_shards.is_empty() {
             return;
         }
-        let ingester_ids = allocate_shards(&eligible_ingesters, None, num_shards);
-        assert_eq!(ingester_ids.len(), num_shards);
+        let source_uid = SourceUid {
+            index_uid: IndexUid::for_test("test-index", 0),
+            source_id: "test-source".to_string(),
+        };
+        let num_shards_to_open_by_source = HashMap::from([(source_uid, num_shards)]);
+        let shard_allocations = allocate_shards(
+            &eligible_ingesters,
+            None,
+            &num_shards_to_open_by_source,
+            &ControlPlaneModel::default(),
+        );
+        assert_eq!(shard_allocations.len(), num_shards);
         let mut current_num_shards_by_ingester_id: HashMap<NodeId, usize> = initial_num_shards
             .iter()
             .enumerate()
@@ -3957,7 +4054,7 @@ mod tests {
                 )
             })
             .collect();
-        for ingester in ingester_ids {
+        for (_source_uid, ingester) in shard_allocations {
             let min_num_shards = current_num_shards_by_ingester_id
                 .values()
                 .copied()
@@ -4015,7 +4112,14 @@ mod tests {
             eligible_ingester("ingester-c", Some("az-c"), 1),
         ];
         let az_b = AvailabilityZone::from("az-b");
-        let picked = pick_least_loaded(&tied_ingesters, Some(&az_b), &mut rng);
+        let no_shards_for_source = HashMap::new();
+        let picked = pick_least_loaded(
+            &tied_ingesters,
+            Some(&az_b),
+            &no_shards_for_source,
+            &mut rng,
+        )
+        .unwrap();
         assert_eq!(picked.node_id, "ingester-b");
 
         let uneven_ingesters = vec![
@@ -4024,10 +4128,105 @@ mod tests {
             eligible_ingester("ingester-c", Some("az-c"), 2),
         ];
         let az_a = AvailabilityZone::from("az-a");
-        let picked = pick_least_loaded(&uneven_ingesters, Some(&az_a), &mut rng);
+        let picked = pick_least_loaded(
+            &uneven_ingesters,
+            Some(&az_a),
+            &no_shards_for_source,
+            &mut rng,
+        )
+        .unwrap();
         assert_eq!(picked.node_id, "ingester-b");
-        let picked = pick_least_loaded(&uneven_ingesters, None, &mut rng);
+        let picked =
+            pick_least_loaded(&uneven_ingesters, None, &no_shards_for_source, &mut rng).unwrap();
         assert_eq!(picked.node_id, "ingester-b");
+    }
+
+    #[test]
+    fn test_pick_least_loaded_skips_ingesters_at_shard_cap() {
+        let mut rng = rand::rng();
+        let mut ingesters = vec![
+            eligible_ingester("ingester-a", None, 0),
+            eligible_ingester("ingester-b", None, 5),
+        ];
+        for ingester in &mut ingesters {
+            ingester.max_num_shards_per_source = Some(2);
+        }
+        // Ingester A is the least loaded but already hosts 2 shards of the source.
+        let num_shards_for_source = HashMap::from([(NodeId::from_str("ingester-a"), 2)]);
+        let picked = pick_least_loaded(&ingesters, None, &num_shards_for_source, &mut rng).unwrap();
+        assert_eq!(picked.node_id, "ingester-b");
+
+        let num_shards_for_source = HashMap::from([
+            (NodeId::from_str("ingester-a"), 2),
+            (NodeId::from_str("ingester-b"), 2),
+        ]);
+        assert!(pick_least_loaded(&ingesters, None, &num_shards_for_source, &mut rng).is_none());
+    }
+
+    #[test]
+    fn test_allocate_shards_caps_shards_per_source() {
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let capped_source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: "capped-source".to_string(),
+        };
+        let other_source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: "other-source".to_string(),
+        };
+        // Ingester 1 hosts an open and a closed shard of the capped source: closed shards count
+        // toward the cap because they keep their indexing pipeline until they are fully indexed.
+        let shards = [ShardState::Open, ShardState::Closed]
+            .into_iter()
+            .enumerate()
+            .map(|(shard_id, shard_state)| Shard {
+                index_uid: Some(index_uid.clone()),
+                source_id: capped_source_uid.source_id.clone(),
+                shard_id: Some(ShardId::from(shard_id as u64)),
+                shard_state: shard_state as i32,
+                ingester_id: "test-ingester-1".to_string(),
+                ..Default::default()
+            })
+            .collect();
+        let mut model = ControlPlaneModel::default();
+        model.insert_shards(&index_uid, &capped_source_uid.source_id, shards);
+
+        let mut eligible_ingesters = vec![
+            eligible_ingester("test-ingester-1", None, 1),
+            eligible_ingester("test-ingester-2", None, 0),
+        ];
+        for ingester in &mut eligible_ingesters {
+            ingester.max_num_shards_per_source = Some(2);
+        }
+        let num_shards_to_open_by_source = HashMap::from([
+            (capped_source_uid.clone(), 5),
+            (other_source_uid.clone(), 2),
+        ]);
+        let shard_allocations = allocate_shards(
+            &eligible_ingesters,
+            None,
+            &num_shards_to_open_by_source,
+            &model,
+        );
+
+        // The capped source only fits 2 more shards, both on ingester 2.
+        let capped_source_ingester_ids: Vec<&NodeId> = shard_allocations
+            .iter()
+            .filter(|(source_uid, _)| **source_uid == capped_source_uid)
+            .map(|(_, ingester_id)| ingester_id)
+            .collect();
+        assert_eq!(capped_source_ingester_ids.len(), 2);
+        assert!(
+            capped_source_ingester_ids
+                .iter()
+                .all(|ingester_id| **ingester_id == "test-ingester-2")
+        );
+        // The other source in the same batch is not affected.
+        let num_other_source_shards = shard_allocations
+            .iter()
+            .filter(|(source_uid, _)| **source_uid == other_source_uid)
+            .count();
+        assert_eq!(num_other_source_shards, 2);
     }
 
     #[test]
@@ -4108,6 +4307,7 @@ mod tests {
                 status: IngesterStatus::Ready,
                 availability_zone: None,
                 generation_id: quickwit_cluster::GenerationId::from(1u64),
+                num_cpus: 0,
             };
             ingester_pool.insert(NodeId::from_str(ingester_id), ingester);
         }
@@ -4126,6 +4326,7 @@ mod tests {
                 status: IngesterStatus::Retiring,
                 availability_zone: None,
                 generation_id: quickwit_cluster::GenerationId::from(1u64),
+                num_cpus: 0,
             };
             ingester_pool.insert(NodeId::from_str(ingester_id), ingester);
         }
@@ -4267,6 +4468,7 @@ mod tests {
                     status: IngesterStatus::Decommissioned,
                     availability_zone: None,
                     generation_id: quickwit_cluster::GenerationId::from(1u64),
+                    num_cpus: 0,
                 };
                 ingester_pool.insert(NodeId::from_str(ingester_id), ingester);
             }
