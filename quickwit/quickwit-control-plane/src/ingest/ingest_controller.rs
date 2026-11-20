@@ -56,11 +56,12 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{Level, debug, enabled, error, info, instrument, warn};
 use ulid::Ulid;
 
-use super::scaling_arbiter::ScalingArbiter;
+use super::scaling_arbiter::{ScalingArbiter, ScalingMode};
+use super::scaling_permits::ScalingPermits;
 use crate::control_plane::ControlPlane;
 use crate::ingest::wait_handle::WaitHandle;
 use crate::metrics::REBALANCE_SHARDS;
-use crate::model::{ControlPlaneModel, ScalingMode, ShardEntry, ShardStats};
+use crate::model::{ControlPlaneModel, ShardEntry, ShardStats};
 
 const CLOSE_SHARDS_REQUEST_TIMEOUT: Duration = if cfg!(test) {
     Duration::from_millis(50)
@@ -304,6 +305,7 @@ pub struct IngestController {
     // This semaphore ensures that only one rebalance operation is performed at a time.
     rebalance_semaphore: Arc<Semaphore>,
     scaling_arbiter: ScalingArbiter,
+    scaling_permits: ScalingPermits,
 }
 
 impl fmt::Debug for IngestController {
@@ -401,6 +403,7 @@ impl IngestController {
             rebalance_semaphore: Arc::new(Semaphore::new(1)),
             stats: IngestControllerStats::default(),
             scaling_arbiter: ScalingArbiter::new(ingest_api_config),
+            scaling_permits: ScalingPermits::new(ingest_api_config),
         }
     }
 
@@ -733,9 +736,9 @@ impl IngestController {
         progress: &Progress,
         num_shards_to_open: usize,
     ) -> MetastoreResult<()> {
-        if !model
-            .acquire_scaling_permits(&source_uid, ScalingMode::Up(num_shards_to_open))
-            .unwrap_or(false)
+        if !self
+            .scaling_permits
+            .acquire(&source_uid, ScalingMode::Up(num_shards_to_open))
         {
             return Ok(());
         }
@@ -756,7 +759,8 @@ impl IngestController {
                 if opened_shards.is_empty() {
                     // We did not manage to create the shard.
                     // We can release our permit.
-                    model.release_scaling_permits(&source_uid, ScalingMode::Up(num_shards_to_open));
+                    self.scaling_permits
+                        .release(&source_uid, ScalingMode::Up(num_shards_to_open));
                     warn!(
                         index_uid=%source_uid.index_uid,
                         source_id=%source_uid.source_id,
@@ -780,7 +784,8 @@ impl IngestController {
                     source_id=%source_uid.source_id,
                     "scaling up number of shards to {new_num_open_shards} failed: {metastore_error:?}"
                 );
-                model.release_scaling_permits(&source_uid, ScalingMode::Up(num_shards_to_open));
+                self.scaling_permits
+                    .release(&source_uid, ScalingMode::Up(num_shards_to_open));
                 Err(metastore_error)
             }
         }
@@ -976,7 +981,7 @@ impl IngestController {
     /// Attempts to decrease the number of shards. This operation is rate limited to avoid closing
     /// shards too aggressively. As a result, this method may not close any shard.
     async fn try_scale_down_shards(
-        &self,
+        &mut self,
         source_uid: SourceUid,
         shard_stats: ShardStats,
         min_shards: NonZeroUsize,
@@ -988,10 +993,7 @@ impl IngestController {
         if shard_stats.num_open_shards <= min_shards.get() {
             return Ok(());
         }
-        if !model
-            .acquire_scaling_permits(&source_uid, ScalingMode::Down)
-            .unwrap_or(false)
-        {
+        if !self.scaling_permits.acquire(&source_uid, ScalingMode::Down) {
             return Ok(());
         }
         let new_num_open_shards = shard_stats.num_open_shards - 1;
@@ -1002,12 +1004,12 @@ impl IngestController {
             "scaling down number of shards to {new_num_open_shards}"
         );
         let Some((ingester_id, shard_id)) = find_scale_down_candidate(&source_uid, model) else {
-            model.release_scaling_permits(&source_uid, ScalingMode::Down);
+            self.scaling_permits.release(&source_uid, ScalingMode::Down);
             return Ok(());
         };
         info!("scaling down shard {shard_id} from {ingester_id}");
         let Some(ingester) = self.ingester_pool.get(&ingester_id) else {
-            model.release_scaling_permits(&source_uid, ScalingMode::Down);
+            self.scaling_permits.release(&source_uid, ScalingMode::Down);
             return Ok(());
         };
         let shard_pkeys = vec![ShardPKey {
@@ -1022,7 +1024,7 @@ impl IngestController {
             .await
         {
             warn!("failed to scale down number of shards: {error}");
-            model.release_scaling_permits(&source_uid, ScalingMode::Down);
+            self.scaling_permits.release(&source_uid, ScalingMode::Down);
             return Ok(());
         }
         model.close_shards(&source_uid, &[shard_id]);
@@ -1181,7 +1183,7 @@ impl IngestController {
         {
             // We temporarily disable the ability the scale down the number of shards for
             // the source to avoid closing the shards we just opened.
-            model.drain_scaling_permits(source_uid, ScalingMode::Down);
+            self.scaling_permits.drain_scale_down_permits(source_uid);
         }
         let close_shards_fut = self.close_shards(shards_to_close);
         let mailbox_clone = mailbox.clone();
@@ -3004,7 +3006,7 @@ mod tests {
         let metastore = MetastoreServiceClient::mocked();
         let ingester_pool = IngesterPool::default();
 
-        let controller = IngestController::new(
+        let mut controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
             &IngestApiConfig::default(),

@@ -14,6 +14,7 @@
 
 pub(crate) mod ingest_controller;
 mod scaling_arbiter;
+mod scaling_permits;
 mod wait_handle;
 
 pub use ingest_controller::IngestController;

@@ -36,7 +36,7 @@ use quickwit_proto::metastore::{
     MetastoreServiceClient, SourceType, ToggleSourceRequest,
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
-pub(super) use shard_table::{ScalingMode, ShardEntry, ShardLocations, ShardStats, ShardTable};
+pub(super) use shard_table::{ShardEntry, ShardLocations, ShardStats, ShardTable};
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::metrics::INDEXES_TOTAL;
@@ -405,25 +405,6 @@ impl ControlPlaneModel {
             "deleting shards"
         );
         self.shard_table.delete_shards(source_uid, shard_ids);
-    }
-
-    pub fn acquire_scaling_permits(
-        &mut self,
-        source_uid: &SourceUid,
-        scaling_mode: ScalingMode,
-    ) -> Option<bool> {
-        self.shard_table
-            .acquire_scaling_permits(source_uid, scaling_mode)
-    }
-
-    pub fn drain_scaling_permits(&mut self, source_uid: &SourceUid, scaling_mode: ScalingMode) {
-        self.shard_table
-            .drain_scaling_permits(source_uid, scaling_mode)
-    }
-
-    pub fn release_scaling_permits(&mut self, source_uid: &SourceUid, scaling_mode: ScalingMode) {
-        self.shard_table
-            .release_scaling_permits(source_uid, scaling_mode)
     }
 
     // Quickwit 0.9 uses the ingest v2 source by default. For indexes created prior to 0.9, we need
