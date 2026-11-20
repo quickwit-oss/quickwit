@@ -81,7 +81,7 @@ use quickwit_compaction::{
     wait_for_compactor_decommission,
 };
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig, disable_ingest_v1};
+use quickwit_config::{IngestApiConfig, NodeConfig, disable_ingest_v1};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerPool, IndexerPoolEntry};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
@@ -425,7 +425,6 @@ async fn start_control_plane_if_needed(
             universe,
             event_broker,
             self_node_id,
-            cluster.clone(),
             indexer_pool.clone(),
             ingester_pool.clone(),
             primary_metastore_client.clone(),
@@ -1383,24 +1382,16 @@ async fn setup_control_plane(
     universe: &Universe,
     event_broker: &EventBroker,
     self_node_id: NodeId,
-    cluster: Cluster,
     indexer_pool: IndexerPool,
     ingester_pool: IngesterPool,
     metastore: MetastoreServiceClient,
     default_index_root_uri: Uri,
     ingest_api_config: &IngestApiConfig,
 ) -> anyhow::Result<Mailbox<ControlPlane>> {
-    let cluster_id = cluster.cluster_id().to_string();
-    let cluster_config = ClusterConfig {
-        cluster_id,
-        auto_create_indexes: true,
-        default_index_root_uri,
-        shard_throughput_limit: ingest_api_config.shard_throughput_limit,
-        shard_scale_up_factor: ingest_api_config.shard_scale_up_factor,
-    };
     let (control_plane_mailbox, _control_plane_handle, mut readiness_rx) = ControlPlane::spawn(
         universe,
-        cluster_config,
+        default_index_root_uri,
+        ingest_api_config,
         self_node_id,
         indexer_pool,
         ingester_pool,

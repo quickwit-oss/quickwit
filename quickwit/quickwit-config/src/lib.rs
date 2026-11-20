@@ -25,7 +25,6 @@ use quickwit_common::uri::Uri;
 use quickwit_proto::types::NodeIdRef;
 use regex::Regex;
 
-mod cluster_config;
 mod config_value;
 mod docs_clustering;
 mod index_config;
@@ -40,7 +39,6 @@ mod source_config;
 mod storage_config;
 mod templating;
 
-pub use cluster_config::ClusterConfig;
 pub use docs_clustering::{
     ClusteringMethod, ClusteringPolicy, DocsClusteringConfig, FingerprintPolicy, JsonPath,
 };

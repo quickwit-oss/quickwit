@@ -23,8 +23,9 @@ use quickwit_cluster::{
 };
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_common::tower::{Change, Pool};
+use quickwit_common::uri::Uri;
 use quickwit_config::{
-    ClusterConfig, KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams,
+    IngestApiConfig, KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams,
 };
 use quickwit_indexing::IndexingService;
 use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
@@ -35,9 +36,9 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::NodeId;
 use serde_json::json;
 
-use crate::IndexerPoolEntry;
 use crate::control_plane::{CONTROL_PLAN_LOOP_INTERVAL, ControlPlane};
 use crate::indexing_scheduler::MIN_DURATION_BETWEEN_SCHEDULING;
+use crate::{IndexerPoolEntry, TEST_DEFAULT_INDEX_ROOT_URI};
 
 fn index_metadata_for_test(index_id: &str, source_id: &str, num_pipelines: usize) -> IndexMetadata {
     let mut index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/test-index");
@@ -137,13 +138,11 @@ async fn start_control_plane(
         test_indexer_change_stream(cluster.change_stream(), indexing_clients);
     indexer_pool.listen_for_changes(indexer_change_stream);
 
-    let mut cluster_config = ClusterConfig::for_test();
-    cluster_config.cluster_id = cluster.cluster_id().to_string();
-
     let self_node_id = cluster.self_node_id().to_owned();
     let (control_plane_mailbox, _control_plane_handle, _is_ready_rx) = ControlPlane::spawn(
         universe,
-        cluster_config,
+        Uri::for_test(TEST_DEFAULT_INDEX_ROOT_URI),
+        &IngestApiConfig::default(),
         self_node_id,
         indexer_pool,
         ingester_pool,

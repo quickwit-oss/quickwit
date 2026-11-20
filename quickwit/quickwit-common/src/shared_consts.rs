@@ -88,5 +88,11 @@ pub const DEFAULT_SHARD_BURST_LIMIT: ByteSize = ByteSize::mib(50);
 /// A compromise between "exponential" scale up and moderate shard count increase.
 pub const DEFAULT_SHARD_SCALE_UP_FACTOR: f32 = 1.5;
 
+pub const DEFAULT_SHARD_SCALE_UP_SHORT_TERM_RATIO: f32 = 0.8;
+
+pub const DEFAULT_SHARD_SCALE_UP_LONG_TERM_RATIO: f32 = 0.3;
+
+pub const DEFAULT_SHARD_SCALE_DOWN_RATIO: f32 = 0.2;
+
 // (Just a reexport).
 pub use bytesize::MIB;
