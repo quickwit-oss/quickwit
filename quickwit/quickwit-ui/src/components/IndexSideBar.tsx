@@ -13,7 +13,11 @@
 // limitations under the License.
 
 import styled from "@emotion/styled";
-import { ChevronRight, KeyboardArrowDown } from "@mui/icons-material";
+import {
+  ChevronLeft,
+  ChevronRight,
+  KeyboardArrowDown,
+} from "@mui/icons-material";
 import {
   Autocomplete,
   Box,
@@ -39,6 +43,11 @@ const IndexBarWrapper = styled("div")({
   flexDirection: "column",
   borderRight: "1px solid rgba(0, 0, 0, 0.12)",
   overflow: "auto",
+
+  '&[data-collapsed="true"]': {
+    flex: "0 0 48px",
+    maxWidth: "48px",
+  },
 });
 
 function IndexAutocomplete(props: IndexMetadataProps) {
@@ -148,65 +157,103 @@ function fieldTypeLabel(fieldMapping: FieldMapping): string {
 
 export function IndexSideBar(props: IndexMetadataProps) {
   const [open, setOpen] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
+
   const fields =
     props.indexMetadata === null
       ? []
       : getAllFields(
           props.indexMetadata.index_config.doc_mapping.field_mappings,
         );
+
   return (
-    <IndexBarWrapper>
-      <Box sx={{ px: 3, py: 2 }}>
-        <Typography variant="body1" mb={1}>
-          Index ID
-        </Typography>
-        <IndexAutocomplete {...props} />
-      </Box>
-      <Box sx={{ paddingLeft: "10px", height: "100%" }}>
-        <IconButton
-          aria-label="expand row"
-          size="small"
-          onClick={() => setOpen(!open)}
+    <IndexBarWrapper data-collapsed={collapsed}>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: collapsed ? "center" : "flex-end",
+          px: 1,
+          py: 0.5,
+        }}
+      >
+        <Tooltip
+          title={
+            collapsed ? "Expand index explorer" : "Collapse index explorer"
+          }
+          arrow
         >
-          {open ? <KeyboardArrowDown /> : <ChevronRight />}
-        </IconButton>
-        Fields
-        {open && (
-          <List
-            dense={true}
-            sx={{ paddingTop: "0", overflowWrap: "break-word" }}
+          <IconButton
+            size="small"
+            aria-label={
+              collapsed ? "Expand index explorer" : "Collapse index explorer"
+            }
+            aria-expanded={!collapsed}
+            onClick={() => setCollapsed((value) => !value)}
           >
-            {fields.map(function (field) {
-              return (
-                <ListItem
-                  key={field.json_path}
-                  secondaryAction={
-                    <IconButton edge="end" aria-label="add"></IconButton>
-                  }
-                  sx={{ paddingLeft: "10px" }}
-                >
-                  <Tooltip
-                    title={field.field_mapping.type}
-                    arrow
-                    placement="left"
-                  >
-                    <Chip
-                      label={fieldTypeLabel(field.field_mapping)}
-                      size="small"
-                      sx={{
-                        marginRight: "10px",
-                        borderRadius: "3px",
-                        fontSize: "0.6rem",
-                      }}
-                    />
-                  </Tooltip>
-                  <ListItemText primary={field.json_path} />
-                </ListItem>
-              );
-            })}
-          </List>
-        )}
+            {collapsed ? <ChevronRight /> : <ChevronLeft />}
+          </IconButton>
+        </Tooltip>
       </Box>
+
+      {!collapsed && (
+        <>
+          <Box sx={{ px: 3, py: 2 }}>
+            <Typography variant="body1" mb={1}>
+              Index ID
+            </Typography>
+            <IndexAutocomplete {...props} />
+          </Box>
+
+          <Box sx={{ paddingLeft: "10px", height: "100%" }}>
+            <IconButton
+              aria-label="expand row"
+              size="small"
+              onClick={() => setOpen(!open)}
+            >
+              {open ? <KeyboardArrowDown /> : <ChevronRight />}
+            </IconButton>
+            Fields
+            {open && (
+              <List
+                dense={true}
+                sx={{
+                  paddingTop: "0",
+                  overflowWrap: "break-word",
+                }}
+              >
+                {fields.map(function (field) {
+                  return (
+                    <ListItem
+                      key={field.json_path}
+                      secondaryAction={
+                        <IconButton edge="end" aria-label="add" />
+                      }
+                      sx={{ paddingLeft: "10px" }}
+                    >
+                      <Tooltip
+                        title={field.field_mapping.type}
+                        arrow
+                        placement="left"
+                      >
+                        <Chip
+                          label={fieldTypeLabel(field.field_mapping)}
+                          size="small"
+                          sx={{
+                            marginRight: "10px",
+                            borderRadius: "3px",
+                            fontSize: "0.6rem",
+                          }}
+                        />
+                      </Tooltip>
+                      <ListItemText primary={field.json_path} />
+                    </ListItem>
+                  );
+                })}
+              </List>
+            )}
+          </Box>
+        </>
+      )}
     </IndexBarWrapper>
   );
 }
