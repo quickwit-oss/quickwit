@@ -55,11 +55,11 @@ pub struct ReadOperation {
     pub path: PathBuf,
     /// If fetching a range of data, the start offset, else 0.
     pub offset: usize,
-    /// The number of bytes fetched.
+    /// The number of bytes fetched
     pub num_bytes: usize,
     /// The date at which the operation was performed (UTC timezone).
     pub start_date: OffsetDateTime,
-    /// The elapsed time to read the bytes.
+    /// The elapsed time to run the read operatioon.
     pub duration: Duration,
 }
 
@@ -71,13 +71,22 @@ struct ReadOperationBuilder {
 }
 
 impl ReadOperationBuilder {
-    fn new(path: &Path, offset: usize) -> Self {
+    pub fn new(path: &Path) -> Self {
         let start_instant = Instant::now();
         let start_date = OffsetDateTime::now_utc();
         ReadOperationBuilder {
             start_date,
             start_instant,
             path: path.to_path_buf(),
+            offset: 0,
+        }
+    }
+
+    pub fn with_offset(self, offset: usize) -> Self {
+        ReadOperationBuilder {
+            start_date: self.start_date,
+            start_instant: self.start_instant,
+            path: self.path,
             offset,
         }
     }
@@ -131,6 +140,16 @@ impl<D: Directory> DebugProxyDirectory<D> {
     pub fn drain_read_operations(&self) -> impl Iterator<Item = ReadOperation> + '_ {
         self.operations.drain()
     }
+
+    /// Adds a new operation
+    fn register(&self, read_op: ReadOperation) {
+        self.operations.push(read_op);
+    }
+
+    /// Adds a new operation in an async fashion.
+    async fn register_async(&self, read_op: ReadOperation) {
+        self.operations.push(read_op);
+    }
 }
 
 struct DebugProxyFileHandle<D: Directory> {
@@ -142,18 +161,20 @@ struct DebugProxyFileHandle<D: Directory> {
 #[async_trait]
 impl<D: Directory> FileHandle for DebugProxyFileHandle<D> {
     fn read_bytes(&self, byte_range: Range<usize>) -> io::Result<OwnedBytes> {
-        let read_operation_builder = ReadOperationBuilder::new(&self.path, byte_range.start);
+        let read_operation_builder =
+            ReadOperationBuilder::new(&self.path).with_offset(byte_range.start);
         let payload = self.underlying.read_bytes(byte_range)?;
         let read_operation = read_operation_builder.terminate(payload.len());
-        self.directory.operations.push(read_operation);
+        self.directory.register(read_operation);
         Ok(payload)
     }
 
     async fn read_bytes_async(&self, byte_range: Range<usize>) -> io::Result<OwnedBytes> {
-        let read_operation_builder = ReadOperationBuilder::new(&self.path, byte_range.start);
+        let read_operation_builder =
+            ReadOperationBuilder::new(&self.path).with_offset(byte_range.start);
         let payload = self.underlying.read_bytes_async(byte_range).await?;
         let read_operation = read_operation_builder.terminate(payload.len());
-        self.directory.operations.push(read_operation);
+        self.directory.register_async(read_operation).await;
         Ok(payload)
     }
 
@@ -192,10 +213,10 @@ impl<D: Directory> Directory for DebugProxyDirectory<D> {
     }
 
     fn atomic_read(&self, path: &Path) -> Result<Vec<u8>, OpenReadError> {
-        let read_operation_builder = ReadOperationBuilder::new(path, 0);
+        let read_operation_builder = ReadOperationBuilder::new(path);
         let payload = self.underlying.atomic_read(path)?;
         let read_operation = read_operation_builder.terminate(payload.len());
-        self.operations.push(read_operation);
+        self.register(read_operation);
         Ok(payload.to_vec())
     }
 
