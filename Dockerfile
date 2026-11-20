@@ -10,7 +10,7 @@ RUN touch .gitignore_for_build_directory \
     && NODE_ENV=production make install build
 
 
-FROM rust:bookworm@sha256:b5efaabfd787a695d2e46b37d3d9c54040e11f4c10bc2e714bbadbfcc0cd6c39 AS bin-builder
+FROM rust:trixie@sha256:223cc32ddca8f3ee90c436dbc94b6b5f052ea7f9653c5201e9612f08ad7d21b8 AS bin-builder
 
 ARG CARGO_FEATURES=release-feature-set
 ARG CARGO_PROFILE=release
@@ -53,7 +53,7 @@ RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CAR
     && find target/$CARGO_PROFILE -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;
 
 
-FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3 AS quickwit
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS quickwit
 
 LABEL org.opencontainers.image.title="Quickwit"
 LABEL maintainer="Quickwit, Inc. <hello@quickwit.io>"
