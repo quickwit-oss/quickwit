@@ -139,18 +139,6 @@ impl SourceConfigForSerialization {
             }
         }
 
-        if self.transform.is_some()
-            && matches!(
-                self.input_format,
-                SourceInputFormat::OtlpLogsJson
-                    | SourceInputFormat::OtlpLogsProtobuf
-                    | SourceInputFormat::OtlpTracesJson
-                    | SourceInputFormat::OtlpTracesProtobuf
-            )
-        {
-            bail!("VRL transforms are not supported for OTLP input formats");
-        }
-
         Ok(SourceConfig {
             source_id: self.source_id,
             num_pipelines,
