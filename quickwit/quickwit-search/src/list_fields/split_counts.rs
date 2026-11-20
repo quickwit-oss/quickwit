@@ -25,9 +25,9 @@ pub(super) struct SplitCountsByField {
 
 #[derive(Default)]
 struct SplitCounts {
-    num_splits: u64,
-    searchable_splits: u64,
-    aggregatable_splits: u64,
+    num_splits: u32,
+    searchable_splits: u32,
+    aggregatable_splits: u32,
 }
 
 impl SplitCountsByField {
@@ -49,8 +49,8 @@ impl SplitCountsByField {
                 Entry::Vacant(_) => continue,
             };
             counts.num_splits += 1;
-            counts.searchable_splits += u64::from(field.searchable);
-            counts.aggregatable_splits += u64::from(field.aggregatable);
+            counts.searchable_splits += u32::from(field.searchable);
+            counts.aggregatable_splits += u32::from(field.aggregatable);
         }
         self
     }
@@ -77,7 +77,7 @@ impl SplitCountsByField {
                     non_aggregatable_index_ids: index_id_if_support_varies(
                         counts.aggregatable_splits,
                     ),
-                    num_splits: counts.num_splits,
+                    num_splits: u64::from(counts.num_splits),
                 }
             })
             .collect();
