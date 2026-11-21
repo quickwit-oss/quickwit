@@ -16,6 +16,7 @@ use std::collections::hash_map::Entry;
 use std::num::NonZeroU32;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -53,7 +54,7 @@ use ulid::Ulid;
 use super::IndexSerializer;
 use super::cooperative_indexing::{CooperativeIndexingCycle, CooperativeIndexingPeriod};
 use crate::docs_clustering::{DocIdClusterer, Fingerprinter};
-use crate::metrics::SPLIT_BUILDERS;
+use crate::metrics::{COMMIT_ON_IDLE_TOTAL, SPLIT_BUILDERS};
 use crate::models::{
     CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, NewPublishLock,
     ProcessedDoc, ProcessedDocBatch, PublishLock,
@@ -62,8 +63,24 @@ use crate::models::{
 // Random partition ID used to gather partitions exceeding the maximum number of partitions.
 pub(crate) const OTHER_PARTITION_ID: u64 = 3264326757911759461u64;
 
+/// Idle grace after which a non-empty workbench whose mailbox has drained is
+/// committed, instead of waiting out the remaining `commit_timeout` deadline
+/// (armed once at workbench creation).
+///
+/// While records keep arriving, the ingest source emits a batch at least every
+/// `EMIT_BATCHES_TIMEOUT` (1 s), so a 3 s drain is a genuine end-of-input signal
+/// and does not fragment steady-state ingest.
+const IDLE_COMMIT_GRACE: Duration = Duration::from_secs(3);
+
 #[derive(Debug)]
 struct CommitTimeout {
+    workbench_id: Ulid,
+}
+
+/// Self-message scheduled by `on_drained_messages` to commit a workbench that
+/// has stayed idle for `IDLE_COMMIT_GRACE`.
+#[derive(Debug)]
+struct CommitOnIdle {
     workbench_id: Ulid,
 }
 
@@ -243,6 +260,8 @@ impl IndexerState {
             memory_usage: GaugeGuard::new(&IN_FLIGHT_INDEX_WRITER, 0.0),
             cooperative_indexing_period,
             split_builders_guard,
+            last_batch_at: Instant::now(),
+            idle_commit_scheduled: false,
         };
         Ok(workbench)
     }
@@ -369,6 +388,19 @@ struct IndexingWorkbench {
     memory_usage: GaugeGuard,
     split_builders_guard: GaugeGuard,
     cooperative_indexing_period: Option<CooperativeIndexingPeriod>,
+    // Instant at which the last batch was indexed into this workbench. Anchors
+    // the idle-commit debounce.
+    last_batch_at: Instant,
+    // Whether a `CommitOnIdle` message is already in flight for this workbench.
+    // Prevents the drain handler from re-scheduling itself on every wake-up.
+    idle_commit_scheduled: bool,
+}
+
+impl IndexingWorkbench {
+    /// A workbench with no split builder has nothing to commit.
+    fn is_empty(&self) -> bool {
+        self.indexed_splits.is_empty() && self.other_indexed_split_opt.is_none()
+    }
 }
 
 pub struct Indexer {
@@ -419,6 +451,20 @@ impl Actor for Indexer {
         let Some(indexing_workbench) = &mut self.indexing_workbench_opt else {
             return Ok(());
         };
+
+        if indexing_workbench.cooperative_indexing_period.is_none() {
+            // Cooperative indexing is off. The workbench's `commit_timeout` was
+            // armed once at creation and is never short-circuited when the
+            // producer stops, so the last workbench would otherwise wait out the
+            // remaining deadline while the pipeline is idle. Commit a non-empty
+            // workbench once its mailbox has drained for `IDLE_COMMIT_GRACE`.
+            if !indexing_workbench.is_empty() && !indexing_workbench.idle_commit_scheduled {
+                indexing_workbench.idle_commit_scheduled = true;
+                let workbench_id = indexing_workbench.workbench_id;
+                ctx.schedule_self_msg(IDLE_COMMIT_GRACE, CommitOnIdle { workbench_id });
+            }
+            return Ok(());
+        }
 
         let Some(cooperative_indexing_period) =
             indexing_workbench.cooperative_indexing_period.take()
@@ -492,6 +538,33 @@ impl Handler<CommitTimeout> for Indexer {
             }
         }
         self.send_to_serializer(CommitTrigger::Timeout, ctx).await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<CommitOnIdle> for Indexer {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        commit_on_idle: CommitOnIdle,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        // Commit only if this is still the same, non-empty workbench and it has
+        // stayed idle for the whole grace (a batch received inside the grace
+        // clears `idle_commit_scheduled` and re-arms on the next drain).
+        let should_commit = self
+            .indexing_workbench_opt
+            .as_ref()
+            .map_or(false, |workbench| {
+                workbench.workbench_id == commit_on_idle.workbench_id
+                    && workbench.last_batch_at.elapsed() >= IDLE_COMMIT_GRACE
+            });
+        if should_commit {
+            COMMIT_ON_IDLE_TOTAL.inc();
+            self.send_to_serializer(CommitTrigger::Drained, ctx).await?;
+        }
         Ok(())
     }
 }
@@ -604,6 +677,10 @@ impl Indexer {
                 ctx,
             )
             .await?;
+        if let Some(workbench) = self.indexing_workbench_opt.as_mut() {
+            workbench.last_batch_at = Instant::now();
+            workbench.idle_commit_scheduled = false;
+        }
         let memory_usage = self.memory_usage();
         if memory_usage >= self.indexer_state.indexing_settings.resources.heap_size {
             self.send_to_serializer(CommitTrigger::MemoryLimit, ctx)
@@ -1164,6 +1241,138 @@ mod tests {
             CommitTrigger::Drained
         );
         assert_eq!(indexed_split_batches[0].splits[0].split_attrs.num_docs, 1);
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_indexer_commits_workbench_on_idle() -> anyhow::Result<()> {
+        let universe = Universe::new();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
+            source_id: "test-source".to_string(),
+            node_id: NodeId::from_str("test-node"),
+            pipeline_uid: PipelineUid::default(),
+        };
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let schema = doc_mapper.schema();
+        let body_field = schema.get_field("body").unwrap();
+        let timestamp_field = schema.get_field("timestamp").unwrap();
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore.expect_publish_splits().never();
+        mock_metastore.expect_last_delete_opstamp().returning(
+            move |_last_delete_opstamp_request| {
+                Ok(LastDeleteOpstampResponse::new(10))
+            },
+        );
+        let indexer = create_indexer_for_test(
+            pipeline_id,
+            doc_mapper,
+            MetastoreServiceClient::from_mock(mock_metastore),
+            TempDirectory::for_test(),
+            IndexingSettings::for_test(),
+            None, // cooperative indexing off -> the idle-commit path is active
+            index_serializer_mailbox,
+            None,
+        );
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
+        indexer_mailbox
+            .send_message(ProcessedDocBatch::new(
+                vec![ProcessedDoc {
+                    doc: doc!(
+                        body_field=>"this is a test document",
+                        timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
+                    ),
+                    fingerprint_opt: None,
+                    timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
+                    partition: 1,
+                    num_bytes: 30,
+                }],
+                SourceCheckpointDelta::from_range(0..1),
+                false,
+            ))
+            .await
+            .unwrap();
+        // No further batch arrives: the workbench must be committed by the
+        // idle-drain trigger, long before the (default 60 s) commit timeout.
+        universe
+            .sleep(IDLE_COMMIT_GRACE + Duration::from_millis(500))
+            .await;
+        let indexed_split_batches: Vec<IndexedSplitBatchBuilder> =
+            index_serializer_inbox.drain_for_test_typed();
+        assert_eq!(indexed_split_batches.len(), 1);
+        assert_eq!(
+            indexed_split_batches[0].commit_trigger,
+            CommitTrigger::Drained
+        );
+        assert_eq!(indexed_split_batches[0].splits[0].split_attrs.num_docs, 1);
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_indexer_debounces_idle_commit_while_batches_arrive() -> anyhow::Result<()> {
+        let universe = Universe::new();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
+            source_id: "test-source".to_string(),
+            node_id: NodeId::from_str("test-node"),
+            pipeline_uid: PipelineUid::default(),
+        };
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let schema = doc_mapper.schema();
+        let body_field = schema.get_field("body").unwrap();
+        let timestamp_field = schema.get_field("timestamp").unwrap();
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore.expect_publish_splits().never();
+        mock_metastore.expect_last_delete_opstamp().returning(
+            move |_last_delete_opstamp_request| {
+                Ok(LastDeleteOpstampResponse::new(10))
+            },
+        );
+        let indexer = create_indexer_for_test(
+            pipeline_id,
+            doc_mapper,
+            MetastoreServiceClient::from_mock(mock_metastore),
+            TempDirectory::for_test(),
+            IndexingSettings::for_test(),
+            None,
+            index_serializer_mailbox,
+            None,
+        );
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
+        let make_batch = |position: u64| {
+            ProcessedDocBatch::new(
+                vec![ProcessedDoc {
+                    doc: doc!(
+                        body_field=>"this is a test document",
+                        timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
+                    ),
+                    fingerprint_opt: None,
+                    timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
+                    partition: 1,
+                    num_bytes: 30,
+                }],
+                SourceCheckpointDelta::from_range(position..position + 1),
+                false,
+            )
+        };
+        indexer_mailbox.send_message(make_batch(0)).await.unwrap();
+        // Second batch inside the grace window: the first `CommitOnIdle` must be
+        // debounced and no drain commit emitted while batches keep arriving.
+        universe.sleep(IDLE_COMMIT_GRACE / 2).await;
+        indexer_mailbox.send_message(make_batch(1)).await.unwrap();
+        universe
+            .sleep(IDLE_COMMIT_GRACE / 2 + Duration::from_millis(500))
+            .await;
+        let indexed_split_batches: Vec<IndexedSplitBatchBuilder> =
+            index_serializer_inbox.drain_for_test_typed();
+        assert!(
+            indexed_split_batches.is_empty(),
+            "idle commit must be debounced while batches keep arriving inside the grace"
+        );
         universe.assert_quit().await;
         Ok(())
     }
