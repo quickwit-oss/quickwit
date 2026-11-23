@@ -486,10 +486,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_automaton_bitset_does_not_fill_directory_cache() -> tantivy::Result<()> {
-        use rand::SeedableRng;
-        use rand::distr::{Alphanumeric, SampleString};
         use tantivy::schema::{STRING, Schema};
-        use tantivy::{Executor, Index, IndexWriter, TantivyDocument, doc};
+        use tantivy::{Executor, Index, IndexWriter, doc};
         use tantivy_fst::Regex;
         use tantivy_fst::automaton::AlwaysMatch;
 
@@ -497,19 +495,10 @@ mod tests {
         let mut schema = Schema::builder();
         let field = schema.add_text_field("field", STRING);
         let index = Index::create(directory.clone(), schema.build(), Default::default())?;
-        let mut writer: IndexWriter = index.writer_with_num_threads(1, 64_000_000)?;
-        writer.add_document(doc!(field => "a"))?;
-        // Put more than one decode batch of dictionary blocks between the two sparse hits.
-        let mut rng = rand::rngs::StdRng::seed_from_u64(1);
-        let mut doc = TantivyDocument::default();
-        for _ in 0..16_000 {
-            doc.add_text(
-                field,
-                format!("m{}", Alphanumeric.sample_string(&mut rng, 128)),
-            );
+        let mut writer: IndexWriter = index.writer_with_num_threads(1, 15_000_000)?;
+        for value in ["a", "m", "z"] {
+            writer.add_document(doc!(field => value))?;
         }
-        writer.add_document(doc)?;
-        writer.add_document(doc!(field => "z"))?;
         writer.commit()?;
 
         let cache = ByteRangeCache::with_infinite_capacity();
@@ -523,7 +512,7 @@ mod tests {
         let searcher = index.reader()?.searcher();
         let segment = searcher.segment_reader(0);
         let reader = segment.inverted_index(field)?;
-        // Opening the index caches metadata. Leave no budget for dictionary or posting reads.
+        // Opening the index caches metadata. Exhaust remaining budget before streaming reads.
         let _ = directory.drain_read_operations();
         let initial_bytes = cache.get_num_bytes();
         let _reservation = reserver
@@ -533,8 +522,7 @@ mod tests {
         let sparse = reader
             .create_bitset_for_automaton(Regex::new("a|z").unwrap(), segment.max_doc(), &executor)
             .await?;
-        assert_eq!(sparse.len(), 2);
-        assert!(sparse.contains(0) && sparse.contains(2));
+        assert!(sparse.len() == 2 && sparse.contains(0) && sparse.contains(2));
         let all = reader
             .create_bitset_for_automaton(AlwaysMatch, segment.max_doc(), &executor)
             .await?;

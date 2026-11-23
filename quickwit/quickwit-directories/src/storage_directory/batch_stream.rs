@@ -61,13 +61,6 @@ impl DeltaEncodedRanges {
         Ok(Some((gap, len)))
     }
 
-    fn reset(&mut self, first: Range<usize>) -> Range<usize> {
-        self.bytes.clear();
-        self.offset = 0;
-        self.push(0, first.len());
-        first
-    }
-
     /// Add up to `max_ranges` nearby ranges to `download_range`.
     /// Overlaps (including duplicates) and backward jumps end the current download so the reader
     /// can yield the requested bytes in input order without seeking.
@@ -95,11 +88,13 @@ impl DeltaEncodedRanges {
 }
 
 async fn coalesce_ranges(
-    first: Range<usize>,
+    mut download_range: Range<usize>,
     mut ranges: PeekableRanges,
     mut encoded_ranges: DeltaEncodedRanges,
 ) -> io::Result<(Range<usize>, PeekableRanges, DeltaEncodedRanges)> {
-    let mut download_range = encoded_ranges.reset(first);
+    encoded_ranges.bytes.clear();
+    encoded_ranges.offset = 0;
+    encoded_ranges.push(0, download_range.len());
     if encoded_ranges.coalesce_up_to(&mut download_range, &mut ranges, INLINE_COALESCE_LIMIT) {
         return Ok((download_range, ranges, encoded_ranges));
     }
@@ -127,13 +122,12 @@ pub(super) fn download_ranges<'a>(
     path: &'a Path,
     ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
 ) -> BoxStream<'a, io::Result<OwnedBytes>> {
-    let initial: (
-        PeekableRanges,
-        DeltaEncodedRanges,
-        Option<BufReader<Box<dyn AsyncRead + Send + Unpin>>>,
-    ) = (ranges.peekable(), DeltaEncodedRanges::default(), None);
     futures::stream::try_unfold(
-        initial,
+        (
+            ranges.peekable(),
+            DeltaEncodedRanges::default(),
+            None::<BufReader<Box<dyn AsyncRead + Send + Unpin>>>,
+        ),
         move |(mut ranges, mut encoded_ranges, mut active_download)| async move {
             loop {
                 if let Some(reader) = &mut active_download {
@@ -185,18 +179,6 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn coalescing_limits_the_gap() {
-        let mut encoded_ranges = DeltaEncodedRanges::default();
-        let second = 2 + MAX_GAP_BYTES..3 + MAX_GAP_BYTES;
-        let third = second.end + MAX_GAP_BYTES + 1..second.end + MAX_GAP_BYTES + 2;
-        let mut ranges = [second.clone(), third.clone()].into_iter().peekable();
-        let mut download_range = encoded_ranges.reset(0..2);
-        assert!(encoded_ranges.coalesce_up_to(&mut download_range, &mut ranges, usize::MAX));
-        assert_eq!(download_range, 0..second.end);
-        assert_eq!(ranges.next().unwrap(), third);
-    }
-
     #[tokio::test]
     async fn emits_in_order_across_gaps_overlaps_and_empty_ranges() {
         let content = b"0123456789abcdef";
@@ -216,26 +198,52 @@ mod tests {
             Box::new(ranges.clone().into_iter()),
         );
         for range in ranges {
+            assert_eq!(
+                stream.try_next().await.unwrap().unwrap().as_slice(),
+                &content[range]
+            );
+        }
+        assert!(stream.try_next().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn coalesces_up_to_gap_limit_and_offloads_large_batches() {
+        const LIST: usize = 16;
+        const NUM_DENSE: usize = INLINE_COALESCE_LIMIT + CPU_POOL_COALESCE_BATCH + 2;
+        let dense_end = NUM_DENSE * LIST;
+        let at_limit = dense_end + MAX_GAP_BYTES..dense_end + MAX_GAP_BYTES + LIST;
+        let past_limit = at_limit.end + MAX_GAP_BYTES + 1..at_limit.end + MAX_GAP_BYTES + 1 + LIST;
+        let mut expected_downloads = [0..at_limit.end, past_limit.clone()].into_iter();
+        let mut storage = MockStorage::default();
+        storage
+            .expect_get_slice_stream()
+            .times(2)
+            .returning(move |_, range| {
+                assert_eq!(range, expected_downloads.next().unwrap());
+                Ok(Box::new(tokio::io::repeat(7u8).take(range.len() as u64)))
+            });
+        let ranges = (0..NUM_DENSE)
+            .map(|i| i * LIST..(i + 1) * LIST)
+            .chain([at_limit, past_limit]);
+        let mut stream = download_ranges(&storage, Path::new("file"), Box::new(ranges));
+        for _ in 0..NUM_DENSE + 2 {
             let bytes = stream.try_next().await.unwrap().unwrap();
-            assert_eq!(bytes.as_slice(), &content[range]);
+            assert_eq!((bytes.len(), bytes[0]), (LIST, 7));
         }
         assert!(stream.try_next().await.unwrap().is_none());
     }
 
     #[tokio::test]
     async fn yields_first_range_before_download_finishes_and_drop_closes_reader() {
-        // Send only the first list. Waiting for the whole download would stall the stream.
-        let list_size = 1024;
-        let first_batch = 100;
+        let (list_size, first_batch) = (1024, 100);
         let after_gap = first_batch * list_size + MAX_GAP_BYTES + 1;
         let pulled = Arc::new(AtomicUsize::new(0));
         let count = pulled.clone();
         let ranges = (0..first_batch)
             .map(move |i| i * list_size..(i + 1) * list_size)
-            .chain(std::iter::once(after_gap..after_gap + list_size))
-            .map(move |range| {
+            .chain([after_gap..after_gap + list_size])
+            .inspect(move |_| {
                 count.fetch_add(1, Ordering::Relaxed);
-                range
             });
         let (reader, mut writer) = tokio::io::duplex(list_size);
         let mut storage = MockStorage::default();
@@ -248,6 +256,7 @@ mod tests {
             });
         let mut stream = download_ranges(&storage, Path::new("file"), Box::new(ranges));
         assert_eq!(pulled.load(Ordering::Relaxed), 0);
+        // Send only the first range; waiting for the whole download would stall.
         let first = vec![42u8; list_size];
         writer.write_all(&first).await.unwrap();
         let bytes = tokio::time::timeout(std::time::Duration::from_secs(5), stream.try_next())
@@ -257,34 +266,11 @@ mod tests {
             .unwrap();
         assert_eq!(bytes.as_slice(), first);
         drop(stream);
-        // Peeked one range past the first download to see the gap.
         assert_eq!(pulled.load(Ordering::Relaxed), first_batch + 1);
         assert_eq!(
             writer.write_all(b"x").await.unwrap_err().kind(),
             io::ErrorKind::BrokenPipe
         );
-    }
-
-    #[tokio::test]
-    async fn dense_ranges_share_one_download() {
-        const TOTAL: usize = 250 * 1024 * 1024;
-        const LIST: usize = 4 * 1024;
-        let mut storage = MockStorage::default();
-        storage
-            .expect_get_slice_stream()
-            .once()
-            .returning(move |_, range| {
-                assert_eq!(range, 0..TOTAL);
-                Ok(Box::new(tokio::io::repeat(7u8).take(range.len() as u64)))
-            });
-        let ranges = (0..TOTAL).step_by(LIST).map(|start| start..start + LIST);
-        let mut stream = download_ranges(&storage, Path::new("file"), Box::new(ranges));
-        for _ in (0..TOTAL).step_by(LIST) {
-            let bytes = stream.try_next().await.unwrap().unwrap();
-            assert_eq!(bytes.len(), LIST);
-            assert_eq!(bytes[0], 7);
-        }
-        assert!(stream.try_next().await.unwrap().is_none());
     }
 
     #[tokio::test]
@@ -304,7 +290,7 @@ mod tests {
             missing.try_next().await.unwrap_err().kind(),
             io::ErrorKind::NotFound
         );
-        // Truncated in gap (start=1, 4 bytes available) and in list (start=2, 9 bytes available).
+        // Truncated in gap (start=1, 4 bytes) and in range (start=2, 9 bytes).
         for start in [1, 2] {
             let mut stream = download_ranges(
                 &storage,
