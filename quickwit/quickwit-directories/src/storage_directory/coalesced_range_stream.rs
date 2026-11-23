@@ -13,13 +13,14 @@
 // limitations under the License.
 
 use std::io;
+use std::iter::Peekable;
 use std::ops::Range;
 use std::path::Path;
 
-use futures::stream::{BoxStream, StreamExt};
+use futures::stream::{BoxStream, StreamExt, TryStreamExt};
 use quickwit_storage::{OwnedBytes, Storage};
 use tantivy_common::VInt;
-use tokio::io::{AsyncRead, AsyncReadExt, BufReader};
+use tokio::io::{AsyncReadExt, BufReader};
 
 // Bridge byte gaps up to this size into the same download to issue fewer storage requests.
 const MAX_GAP_BYTES: usize = 4 * 1024 * 1024;
@@ -34,27 +35,52 @@ const COALESCE_YIELD_INTERVAL: usize = 4_096;
 /// per range to ~2-3 bytes.
 #[derive(Default)]
 struct DeltaEncodedRanges {
-    encoded_bytes: Vec<u8>,
-    decode_pos: usize,
+    bytes: Vec<u8>,
+    read_pos: usize,
 }
 
 impl DeltaEncodedRanges {
-    fn push(&mut self, gap: usize, len: usize) {
-        VInt(gap as u64).serialize_into_vec(&mut self.encoded_bytes);
-        VInt(len as u64).serialize_into_vec(&mut self.encoded_bytes);
+    fn push_back(&mut self, gap: usize, len: usize) {
+        VInt(gap as u64).serialize_into_vec(&mut self.bytes);
+        VInt(len as u64).serialize_into_vec(&mut self.bytes);
     }
 
-    fn decode_next(&mut self) -> io::Result<Option<(usize, usize)>> {
-        let mut remaining = &self.encoded_bytes[self.decode_pos..];
+    fn pop_front(&mut self) -> Option<(usize, usize)> {
+        let mut remaining = &self.bytes[self.read_pos..];
         if remaining.is_empty() {
-            return Ok(None);
+            return None;
         }
         let start_len = remaining.len();
-        let gap = VInt::deserialize_u64(&mut remaining)? as usize;
-        let len = VInt::deserialize_u64(&mut remaining)? as usize;
-        self.decode_pos += start_len - remaining.len();
-        Ok(Some((gap, len)))
+        let gap = VInt::deserialize_u64(&mut remaining).expect("valid VInt") as usize;
+        let len = VInt::deserialize_u64(&mut remaining).expect("valid VInt") as usize;
+        self.read_pos += start_len - remaining.len();
+        Some((gap, len))
     }
+}
+
+/// Coalesce consecutive nearby ranges into one download. Overlaps (including
+/// duplicates) and backward jumps end this download so the reader yields
+/// requested bytes in input order without seeking.
+async fn coalesce_ranges(
+    ranges: &mut Peekable<impl Iterator<Item = Range<usize>>>,
+) -> Option<(Range<usize>, DeltaEncodedRanges)> {
+    let mut download_range = ranges.next()?;
+    let mut encoded_ranges = DeltaEncodedRanges::default();
+    encoded_ranges.push_back(0, download_range.len());
+    let mut num_coalesced = 0;
+    while let Some(next_range) = ranges.peek()
+        && let Some(gap) = next_range.start.checked_sub(download_range.end)
+        && gap <= MAX_GAP_BYTES
+    {
+        encoded_ranges.push_back(gap, next_range.len());
+        download_range.end = next_range.end;
+        ranges.next();
+        num_coalesced += 1;
+        if num_coalesced % COALESCE_YIELD_INTERVAL == 0 {
+            tokio::task::yield_now().await;
+        }
+    }
+    Some((download_range, encoded_ranges))
 }
 
 /// Download nearby ranges together and yield each range's bytes in input order.
@@ -63,55 +89,35 @@ pub(super) fn download_ranges<'a>(
     path: &'a Path,
     ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
 ) -> BoxStream<'a, io::Result<OwnedBytes>> {
-    futures::stream::try_unfold(
-        (
-            ranges.peekable(),
-            DeltaEncodedRanges::default(),
-            None::<BufReader<Box<dyn AsyncRead + Send + Unpin>>>,
-        ),
-        move |(mut ranges, mut encoded_ranges, active_download)| async move {
-            let (mut reader, gap, len) = match (active_download, encoded_ranges.decode_next()?) {
-                (Some(reader), Some((gap, len))) => (reader, gap, len),
-                (previous_download, _) => {
-                    drop(previous_download);
-                    let Some(mut download_range) = ranges.next() else {
-                        return Ok(None);
-                    };
-                    let first_len = download_range.len();
-                    // Coalesce consecutive nearby ranges into one download. Overlaps (including
-                    // duplicates) and backward jumps end this download so the reader yields
-                    // requested bytes in input order without seeking.
-                    encoded_ranges.encoded_bytes.clear();
-                    encoded_ranges.decode_pos = 0;
-                    let mut num_coalesced = 0;
-                    while let Some(next_range) = ranges.peek()
-                        && let Some(gap) = next_range.start.checked_sub(download_range.end)
-                        && gap <= MAX_GAP_BYTES
-                    {
-                        encoded_ranges.push(gap, next_range.len());
-                        download_range.end = next_range.end;
-                        ranges.next();
-                        num_coalesced += 1;
-                        if num_coalesced % COALESCE_YIELD_INTERVAL == 0 {
-                            tokio::task::yield_now().await;
-                        }
-                    }
-                    let stream = storage.get_slice_stream(path, download_range).await?;
-                    (BufReader::new(stream), 0, first_len)
-                }
-            };
-            if gap > 0 {
-                tokio::io::copy_buf(&mut (&mut reader).take(gap as u64), &mut tokio::io::sink())
+    futures::stream::try_unfold(ranges.peekable(), move |mut ranges| async move {
+        let Some((download_range, encoded_ranges)) = coalesce_ranges(&mut ranges).await else {
+            return io::Result::Ok(None);
+        };
+        let stream = storage.get_slice_stream(path, download_range).await?;
+        let download = futures::stream::try_unfold(
+            (BufReader::new(stream), encoded_ranges),
+            |(mut reader, mut encoded_ranges)| async move {
+                let Some((gap, len)) = encoded_ranges.pop_front() else {
+                    return Ok(None);
+                };
+                if gap > 0 {
+                    tokio::io::copy_buf(
+                        &mut (&mut reader).take(gap as u64),
+                        &mut tokio::io::sink(),
+                    )
                     .await?;
-            }
-            let mut range_bytes = vec![0; len];
-            reader.read_exact(&mut range_bytes).await?;
-            Ok(Some((
-                OwnedBytes::new(range_bytes),
-                (ranges, encoded_ranges, Some(reader)),
-            )))
-        },
-    )
+                }
+                let mut range_bytes = vec![0; len];
+                reader.read_exact(&mut range_bytes).await?;
+                Ok(Some((
+                    OwnedBytes::new(range_bytes),
+                    (reader, encoded_ranges),
+                )))
+            },
+        );
+        Ok(Some((download, ranges)))
+    })
+    .try_flatten()
     .boxed()
 }
 
@@ -120,7 +126,6 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use futures::TryStreamExt;
     use quickwit_storage::{MockStorage, StorageErrorKind};
     use tokio::io::AsyncWriteExt;
 
