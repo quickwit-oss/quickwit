@@ -232,15 +232,15 @@ mod tests {
         let directory =
             crate::DebugProxyDirectory::wrap(crate::CachingDirectory::new(Arc::new(bundle), cache));
         let file = directory.open_read(Path::new("file")).unwrap().slice(1..4);
-        let ranges = [(1..3, 9), (0..1, 2), (3..3, 2), (1..3, 7)]
+        let ranges = [1..3, 0..1, 3..3, 1..3]
             .into_iter()
             .chain(std::iter::from_fn(|| {
                 panic!("dropping the batch should leave later ranges unread")
             }));
         let mut stream = file.stream_ranges(Box::new(ranges));
-        for expected in [(b"78".as_slice(), 9), (b"6", 2), (b"", 2), (b"78", 7)] {
-            let (bytes, tag) = stream.try_next().await.unwrap().unwrap();
-            assert_eq!((bytes.as_slice(), tag), expected);
+        for expected in [b"78".as_slice(), b"6", b"", b"78"] {
+            let bytes = stream.try_next().await.unwrap().unwrap();
+            assert_eq!(bytes.as_slice(), expected);
         }
         drop(stream);
         assert_eq!(directory.drain_read_operations().count(), 0);

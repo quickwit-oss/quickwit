@@ -230,8 +230,8 @@ impl FileHandle for CachingFileHandle {
 
     fn stream_ranges(
         &self,
-        ranges: Box<dyn Iterator<Item = (Range<usize>, u64)> + Send>,
-    ) -> BoxStream<'_, io::Result<(OwnedBytes, u64)>> {
+        ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
+    ) -> BoxStream<'_, io::Result<OwnedBytes>> {
         self.underlying_filehandle.stream_ranges(ranges)
     }
 }

@@ -70,8 +70,8 @@ impl FileHandle for StorageDirectoryFileHandle {
 
     fn stream_ranges(
         &self,
-        ranges: Box<dyn Iterator<Item = (Range<usize>, u64)> + Send>,
-    ) -> BoxStream<'_, io::Result<(OwnedBytes, u64)>> {
+        ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
+    ) -> BoxStream<'_, io::Result<OwnedBytes>> {
         batch_stream::download_ranges(self.storage_directory.storage.as_ref(), &self.path, ranges)
     }
 }
@@ -190,14 +190,14 @@ mod tests {
             });
         let directory = StorageDirectory::new(Arc::new(storage));
         let handle = directory.get_file_handle(Path::new("file")).unwrap();
-        let mut missing = handle.stream_ranges(Box::new(std::iter::once((0..1, 1))));
+        let mut missing = handle.stream_ranges(Box::new(std::iter::once(0..1)));
         assert_eq!(
             missing.try_next().await.unwrap_err().kind(),
             io::ErrorKind::NotFound
         );
-        let mut stream = handle.stream_ranges(Box::new([(5..6, 2), (6..20, 3)].into_iter()));
-        let (bytes, tag) = stream.try_next().await.unwrap().unwrap();
-        assert_eq!((bytes.as_slice(), tag), (&[5][..], 2));
+        let mut stream = handle.stream_ranges(Box::new([5..6, 6..20].into_iter()));
+        let bytes = stream.try_next().await.unwrap().unwrap();
+        assert_eq!(bytes.as_slice(), &[5][..]);
         assert_eq!(
             stream.try_next().await.unwrap_err().kind(),
             io::ErrorKind::ConnectionReset
