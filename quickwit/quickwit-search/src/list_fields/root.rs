@@ -40,25 +40,42 @@ use crate::{
     search_thread_pool,
 };
 
-/// Granularity for snapping `start_timestamp` and `end_timestamp` in [`RootListFieldsKey`].
-const TIMESTAMP_SNAP_GRANULARITY_SECS: i64 = 10 * 60;
+/// Granularity for snapping `start_timestamp` (down) and `end_timestamp` (up) in
+/// [`root_list_fields`].
+const TIMESTAMP_SNAP_GRANULARITY_SECS: i64 = 60;
+
+fn snap_timestamp_down(timestamp: i64) -> i64 {
+    timestamp
+        .div_euclid(TIMESTAMP_SNAP_GRANULARITY_SECS)
+        .saturating_mul(TIMESTAMP_SNAP_GRANULARITY_SECS)
+}
+
+fn snap_timestamp_up(timestamp: i64) -> i64 {
+    let remainder = timestamp.rem_euclid(TIMESTAMP_SNAP_GRANULARITY_SECS);
+    if remainder == 0 {
+        timestamp
+    } else {
+        timestamp.saturating_add(TIMESTAMP_SNAP_GRANULARITY_SECS - remainder)
+    }
+}
 
 /// Key identifying equivalent concurrent [`root_list_fields`] requests.
 ///
-/// Timestamps are snapped to [`TIMESTAMP_SNAP_GRANULARITY_SECS`] buckets so concurrent requests
-/// with slightly shifted sliding time windows share one execution.
+/// `start_timestamp` is snapped down and `end_timestamp` is snapped up to
+/// [`TIMESTAMP_SNAP_GRANULARITY_SECS`] boundaries so concurrent requests with slightly shifted
+/// sliding time windows share one execution covering a superset of every caller's range.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct RootListFieldsKey {
     index_id_patterns: Vec<String>,
     field_patterns: Vec<String>,
-    start_timestamp_bucket: Option<i64>,
-    end_timestamp_bucket: Option<i64>,
+    start_timestamp: Option<i64>,
+    end_timestamp: Option<i64>,
     query_ast: Option<String>,
     limit: usize,
 }
 
 impl RootListFieldsKey {
-    fn from_request(request: &ListFieldsRequest) -> Self {
+    fn from_snapped_request(request: &ListFieldsRequest) -> Self {
         let mut index_id_patterns = request.index_id_patterns.clone();
         index_id_patterns.sort_unstable();
         index_id_patterns.dedup();
@@ -68,12 +85,8 @@ impl RootListFieldsKey {
         Self {
             index_id_patterns,
             field_patterns,
-            start_timestamp_bucket: request
-                .start_timestamp
-                .map(|timestamp| timestamp.div_euclid(TIMESTAMP_SNAP_GRANULARITY_SECS)),
-            end_timestamp_bucket: request
-                .end_timestamp
-                .map(|timestamp| timestamp.div_euclid(TIMESTAMP_SNAP_GRANULARITY_SECS)),
+            start_timestamp: request.start_timestamp,
+            end_timestamp: request.end_timestamp,
             query_ast: request.query_ast.clone(),
             limit: field_list_size_limit(request.limit),
         }
@@ -94,18 +107,21 @@ struct IndexMetasForLeafSearch {
 }
 
 /// Performs a distributed list fields request.
-/// 1. Deduplicates identical in-flight requests via `debouncer`.
+/// 1. Snaps `start_timestamp` down and `end_timestamp` up to 1-minute boundaries and deduplicates
+///    identical in-flight requests via `debouncer`.
 /// 2. Sends leaf requests over gRPC to multiple leaf nodes.
 /// 3. Merges the search results.
 /// 4. Builds the response and returns.
 #[instrument(skip_all, fields(index_id_patterns = ?list_fields_req.index_id_patterns))]
 pub async fn root_list_fields(
-    list_fields_req: ListFieldsRequest,
+    mut list_fields_req: ListFieldsRequest,
     cluster_client: &ClusterClient,
     metastore: &MetastoreServiceClient,
     debouncer: &ListFieldsDebouncer,
 ) -> crate::Result<ListFieldsResponse> {
-    let key = RootListFieldsKey::from_request(&list_fields_req);
+    list_fields_req.start_timestamp = list_fields_req.start_timestamp.map(snap_timestamp_down);
+    list_fields_req.end_timestamp = list_fields_req.end_timestamp.map(snap_timestamp_up);
+    let key = RootListFieldsKey::from_snapped_request(&list_fields_req);
     let cluster_client = cluster_client.clone();
     let metastore = metastore.clone();
     debouncer
@@ -284,7 +300,7 @@ mod tests {
     use quickwit_common::ServiceStream;
     use quickwit_indexing::MockSplitBuilder;
     use quickwit_metastore::{
-        IndexMetadata, ListIndexesMetadataResponseExt, ListSplitsResponseExt,
+        IndexMetadata, ListIndexesMetadataResponseExt, ListSplitsRequestExt, ListSplitsResponseExt,
     };
     use quickwit_proto::metastore::{
         ListIndexesMetadataResponse, ListSplitsResponse, MockMetastoreService,
@@ -323,7 +339,11 @@ mod tests {
         mock_metastore
             .expect_list_splits()
             .times(1)
-            .returning(move |_| {
+            .returning(move |request| {
+                let query = request.deserialize_list_splits_query().unwrap();
+                // start snapped down to 1200, end snapped up to 3660.
+                assert_eq!(query.time_range.start, std::ops::Bound::Included(1_200));
+                assert_eq!(query.time_range.end, std::ops::Bound::Excluded(3_660));
                 let split = MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
                     .build();
@@ -365,8 +385,8 @@ mod tests {
                 let request = ListFieldsRequest {
                     index_id_patterns: vec!["test-index".to_string()],
                     field_patterns: vec!["b*".to_string(), "a*".to_string()],
-                    start_timestamp: Some(1_200),
-                    end_timestamp: Some(3_600),
+                    start_timestamp: Some(1_205),
+                    end_timestamp: Some(3_605),
                     query_ast: None,
                     limit: Some(10),
                 };
@@ -376,7 +396,7 @@ mod tests {
 
         started_rx.await.unwrap();
 
-        // Concurrent requests within the same 10-minute timestamp bucket and with reordered
+        // Concurrent requests within the same 1-minute timestamp window and with reordered
         // patterns join the in-flight execution.
         let mut joined_tasks = Vec::new();
         for offset_secs in 1..=5 {
@@ -387,8 +407,8 @@ mod tests {
                 let request = ListFieldsRequest {
                     index_id_patterns: vec!["test-index".to_string()],
                     field_patterns: vec!["a*".to_string(), "b*".to_string(), "a*".to_string()],
-                    start_timestamp: Some(1_200 + offset_secs * 30),
-                    end_timestamp: Some(3_600 + offset_secs * 30),
+                    start_timestamp: Some(1_205 + offset_secs * 10),
+                    end_timestamp: Some(3_605 + offset_secs * 10),
                     query_ast: None,
                     limit: Some(10),
                 };
