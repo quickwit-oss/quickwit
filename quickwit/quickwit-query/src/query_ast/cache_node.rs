@@ -296,7 +296,9 @@ impl Weight for CacheFillerWeight {
 }
 
 /// Wraps regex/wildcard predicates and resolves cache nodes asynchronously before synchronous
-/// query construction and warmup planning. Uninitialized nodes execute without caching.
+/// query construction and warmup planning. When the cache is disabled, only regex/wildcard
+/// predicates are resolved so warmup can still build hitsets while other cache nodes remain
+/// uninitialized.
 pub struct PredicateCacheInjector {
     pub cache: Arc<dyn PredicateCache>,
     pub split_id: String,
@@ -304,6 +306,7 @@ pub struct PredicateCacheInjector {
 
 impl PredicateCacheInjector {
     pub async fn resolve(&self, query_ast: &mut QueryAst) {
+        let cache_enabled = self.cache.is_enabled();
         let mut pending = vec![query_ast];
         let mut lookups = Vec::new();
         while let Some(query_ast) = pending.pop() {
@@ -323,28 +326,39 @@ impl PredicateCacheInjector {
                 ),
                 QueryAst::Boost { underlying, .. } => pending.push(underlying),
                 QueryAst::Cache(cache_node) => {
-                    if let Ok(query) = serde_json::to_string(&cache_node.inner) {
-                        // Borrow only the state so nested cache nodes can be resolved concurrently.
-                        let state = &mut cache_node.state;
-                        lookups.push(async move {
-                            *state = if let Some((segment_id, hits)) =
-                                self.cache.get(self.split_id.clone(), query.clone()).await
-                            {
-                                CacheState::CacheHit(Box::new(CacheEntry { segment_id, hits }))
-                            } else {
-                                CacheState::CacheMiss(CacheFiller {
-                                    cache: self.cache.clone(),
-                                    split_id: self.split_id.clone(),
-                                    query,
-                                })
-                            };
-                        });
-                    }
-                    // Direct automaton predicates already have a cache wrapper.
-                    if !matches!(
+                    let is_automaton = matches!(
                         *cache_node.inner,
                         QueryAst::Regex(_) | QueryAst::Wildcard(_)
-                    ) {
+                    );
+                    if (cache_enabled || is_automaton)
+                        && let Ok(query) = serde_json::to_string(&cache_node.inner)
+                    {
+                        // Borrow only the state so nested cache nodes can be resolved concurrently.
+                        let state = &mut cache_node.state;
+                        if cache_enabled {
+                            lookups.push(async move {
+                                *state = if let Some((segment_id, hits)) =
+                                    self.cache.get(self.split_id.clone(), query.clone()).await
+                                {
+                                    CacheState::CacheHit(Box::new(CacheEntry { segment_id, hits }))
+                                } else {
+                                    CacheState::CacheMiss(CacheFiller {
+                                        cache: self.cache.clone(),
+                                        split_id: self.split_id.clone(),
+                                        query,
+                                    })
+                                };
+                            });
+                        } else {
+                            *state = CacheState::CacheMiss(CacheFiller {
+                                cache: self.cache.clone(),
+                                split_id: self.split_id.clone(),
+                                query,
+                            });
+                        }
+                    }
+                    // Direct automaton predicates already have a cache wrapper.
+                    if !is_automaton {
                         pending.push(&mut cache_node.inner);
                     }
                 }
@@ -369,6 +383,10 @@ impl PredicateCacheInjector {
 // we use a trait to dodge circular dependancies with quickwit-storage
 #[async_trait::async_trait]
 pub trait PredicateCache: Send + Sync + 'static {
+    fn is_enabled(&self) -> bool {
+        true
+    }
+
     async fn get(&self, split_id: String, query_ast_json: String) -> Option<(SegmentId, HitSet)>;
 
     /// Called during synchronous query execution on a CPU thread.
@@ -792,6 +810,58 @@ mod tests {
         states.visit(&ast).unwrap();
         assert_eq!(states.hits, 4);
         assert_eq!(states.misses, 1);
+    }
+
+    #[tokio::test]
+    async fn test_cache_injector_disabled_cache_only_resolves_automatons() {
+        struct DisabledCache;
+        #[async_trait::async_trait]
+        impl PredicateCache for DisabledCache {
+            fn is_enabled(&self) -> bool {
+                false
+            }
+
+            async fn get(&self, _: String, _: String) -> Option<(SegmentId, HitSet)> {
+                panic!("disabled cache must not be queried");
+            }
+
+            fn put(&self, _: String, _: String, _: SegmentId, _: HitSet, _: Duration) {
+                panic!("disabled cache must not be written");
+            }
+        }
+
+        let regex: QueryAst = serde_json::from_value(
+            serde_json::json!({"type": "regex", "field": "body", "regex": "a.*"}),
+        )
+        .unwrap();
+        let mut ast: QueryAst = CacheNode::new(
+            BoolQuery {
+                must: vec![QueryAst::MatchAll, regex.clone()],
+                ..Default::default()
+            }
+            .into(),
+        )
+        .into();
+
+        PredicateCacheInjector {
+            cache: Arc::new(DisabledCache),
+            split_id: "split".to_string(),
+        }
+        .resolve(&mut ast)
+        .await;
+
+        let QueryAst::Cache(outer) = &ast else {
+            panic!("outer cache node must remain");
+        };
+        assert!(matches!(outer.state, CacheState::Uninitialized));
+        let QueryAst::Bool(bool_query) = outer.inner.as_ref() else {
+            panic!("inner bool query must remain");
+        };
+        let QueryAst::Cache(regex_node) = &bool_query.must[1] else {
+            panic!("nested regex must be wrapped");
+        };
+        assert_eq!(*regex_node.inner, regex);
+        assert!(matches!(regex_node.state, CacheState::CacheMiss(_)));
     }
 
     #[test]

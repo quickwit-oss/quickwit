@@ -294,8 +294,8 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRangesAndAutomatons<'b
         if matches!(node.state, CacheState::CacheHit(_)) {
             return Ok(());
         }
-        // Only resolved misses can retain prepared hitsets. Scored and cache-disabled queries
-        // leave nodes uninitialized and need postings for their ordinary query execution.
+        // Only resolved misses can retain prepared hitsets. Scored queries leave nodes
+        // uninitialized and need postings for their ordinary query execution.
         let previous = self.cache_predicates;
         self.cache_predicates = matches!(node.state, CacheState::CacheMiss(_));
         let result = self.visit(&node.inner);

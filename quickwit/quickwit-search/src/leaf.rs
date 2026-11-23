@@ -311,9 +311,9 @@ pub(crate) enum WarmupOutcome {
 /// queue. Callers without a request priority to forward pass [`Priority::default`].
 /// Automaton compilation, postings decoding, and hitset compression also use this priority.
 ///
-/// The warmup plan determines whether to cache complete individual regex/wildcard hitsets
-/// in `predicate_cache` under `split_id`, so execution can avoid another term enumeration.
-/// Queries without predicate caching request postings-only warmup.
+/// The warmup plan determines whether to build complete individual regex/wildcard hitsets
+/// (storing them in `predicate_cache` under `split_id` when enabled), so execution can avoid
+/// another term enumeration. Scored queries request postings-only warmup.
 ///
 /// Returns [`WarmupOutcome::NoMatches`] when a required term proves the split empty,
 /// or [`WarmupOutcome::Ready`] with any prepared hitsets to retain in the executable query.
@@ -649,13 +649,15 @@ async fn warm_up_automatons(
                             let cpu_time = start.elapsed();
                             let mut warmed_hits = WarmedHits::default();
                             for key in cache_keys {
-                                cache.put(
-                                    split_id.clone(),
-                                    key.clone(),
-                                    segment_id,
-                                    hits.clone(),
-                                    cpu_time,
-                                );
+                                if cache.is_enabled() {
+                                    cache.put(
+                                        split_id.clone(),
+                                        key.clone(),
+                                        segment_id,
+                                        hits.clone(),
+                                        cpu_time,
+                                    );
+                                }
                                 warmed_hits.insert(key, (segment_id, hits.clone()));
                             }
                             Ok::<_, SearchError>(warmed_hits)
@@ -846,7 +848,7 @@ async fn leaf_search_single_split(
         job_cost: search_permit.job_cost(),
     };
     let mut query_ast_for_build = query_ast.clone();
-    if !collector.requires_scoring() && ctx.searcher_context.predicate_cache.is_enabled() {
+    if !collector.requires_scoring() {
         PredicateCacheInjector {
             cache: ctx.searcher_context.predicate_cache.clone(),
             split_id: split.split_id.clone(),
@@ -3191,11 +3193,16 @@ mod tests {
 
         struct TestCache {
             shared: Arc<dyn PredicateCache>,
+            enabled: bool,
             admit: bool,
             writes: AtomicUsize,
         }
         #[async_trait]
         impl PredicateCache for TestCache {
+            fn is_enabled(&self) -> bool {
+                self.enabled
+            }
+
             async fn get(&self, split: String, query: String) -> Option<(SegmentId, HitSet)> {
                 self.shared.get(split, query).await
             }
@@ -3224,9 +3231,10 @@ mod tests {
             ("z.*", "z*", vec![]),
             (".*", "*", vec![0, 1, 2, 3]),
         ] {
-            for admit in [false, true] {
+            for (enabled, admit) in [(false, false), (true, false), (true, true)] {
                 let cache = Arc::new(TestCache {
                     shared: SearcherContext::for_test().predicate_cache.clone(),
+                    enabled,
                     admit,
                     writes: AtomicUsize::new(0),
                 });
@@ -3271,7 +3279,8 @@ mod tests {
                         admit.then(|| hits.clone().into_buffer())
                     );
                 }
-                assert_eq!(cache.writes.load(Ordering::Relaxed), 2);
+                let expected_writes = if enabled { 2 } else { 0 };
+                assert_eq!(cache.writes.load(Ordering::Relaxed), expected_writes);
                 let ast = WarmedHitsInjector(hits).transform(ast).unwrap().unwrap();
                 let (query, warmup_info) = doc_mapper
                     .query(searcher.schema().clone(), ast, false)
@@ -3287,7 +3296,7 @@ mod tests {
                         .collect()
                 );
                 // Rebuilding through CacheFillerWeight would attempt another write.
-                assert_eq!(cache.writes.load(Ordering::Relaxed), 2);
+                assert_eq!(cache.writes.load(Ordering::Relaxed), expected_writes);
             }
         }
     }
