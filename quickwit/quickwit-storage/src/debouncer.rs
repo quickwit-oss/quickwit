@@ -87,7 +87,11 @@ impl<K: Hash + Eq + Clone, V: Clone> AsyncDebouncer<K, V> {
     /// Holding the lock across both the lookup and the insert is deliberate: it makes the
     /// lookup-then-insert atomic, so two concurrent callers for the same key cannot both build
     /// and race to insert. The lock is always released before the future is awaited.
-    fn get_or_create<T, F>(&self, key: K, build_a_future_fast: T) -> Shared<BoxFuture<'static, V>>
+    pub fn get_or_create<T, F>(
+        &self,
+        key: K,
+        build_a_future_fast: T,
+    ) -> Shared<BoxFuture<'static, V>>
     where
         T: FnOnce() -> F,
         F: Future<Output = V> + Send + 'static,

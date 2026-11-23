@@ -26,7 +26,7 @@ use quickwit_common::rate_limited_warn;
 use quickwit_proto::search::ListFieldsEntry;
 use tracing::instrument;
 
-pub use crate::list_fields::leaf::leaf_list_fields;
+pub use crate::list_fields::leaf::{ListFieldsDebouncer, leaf_list_fields};
 pub use crate::list_fields::root::root_list_fields;
 
 /// Each leaf stops after collecting this many distinct (name, type) pairs. The root

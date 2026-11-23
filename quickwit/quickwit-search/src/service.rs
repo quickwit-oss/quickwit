@@ -36,7 +36,9 @@ use tantivy::aggregation::AggregationLimitsGuard;
 use crate::invoker::LambdaLeafSearchInvoker;
 use crate::leaf::multi_index_leaf_search;
 use crate::leaf_cache::{LeafSearchCache, PredicateCacheImpl};
-use crate::list_fields::{ListFieldsCache, leaf_list_fields, root_list_fields};
+use crate::list_fields::{
+    ListFieldsCache, ListFieldsDebouncer, leaf_list_fields, root_list_fields,
+};
 use crate::list_terms::{leaf_list_terms, root_list_terms};
 use crate::metrics_trackers::LeafSearchMetricsFuture;
 use crate::root::fetch_docs_phase;
@@ -420,6 +422,8 @@ pub struct SearcherContext {
     pub split_cache_opt: Option<Arc<SearchSplitCache>>,
     /// List fields cache. Caches the raw fields-metadata blob for a given split.
     pub list_fields_cache: ListFieldsCache,
+    /// Debounces identical concurrent leaf list-fields requests.
+    pub list_fields_debouncer: ListFieldsDebouncer,
     /// The aggregation limits are passed to limit the memory usage.
     /// This object is shared across all request.
     pub aggregation_limit: AggregationLimitsGuard,
@@ -475,6 +479,7 @@ impl SearcherContext {
         let leaf_search_cache = LeafSearchCache::new(&searcher_config.partial_request_cache);
         let predicate_cache = PredicateCacheImpl::new(&searcher_config.predicate_cache);
         let list_fields_cache = ListFieldsCache::new(&searcher_config.partial_request_cache);
+        let list_fields_debouncer = ListFieldsDebouncer::default();
         let aggregation_limit = AggregationLimitsGuard::new(
             Some(searcher_config.aggregation_memory_limit.as_u64()),
             Some(searcher_config.aggregation_bucket_limit),
@@ -491,6 +496,7 @@ impl SearcherContext {
             split_footer_cache: global_split_footer_cache,
             leaf_search_cache,
             list_fields_cache,
+            list_fields_debouncer,
             split_cache_opt,
             aggregation_limit,
             lambda_invoker,
