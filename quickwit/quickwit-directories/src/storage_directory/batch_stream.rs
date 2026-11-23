@@ -20,53 +20,101 @@ use std::path::Path;
 use futures::stream::{BoxStream, StreamExt};
 use quickwit_storage::{OwnedBytes, Storage};
 use tantivy_common::VInt;
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
+use tokio::io::{AsyncRead, AsyncReadExt, BufReader};
 
 // Download small gaps to avoid extra storage requests.
 const MAX_GAP_BYTES: usize = 4 * 1024 * 1024;
 
-/// Group consecutive inputs into one download, starting with the first nonempty range.
-/// Overlaps (including duplicates) and backward jumps start a new download so the reader
-/// can yield the requested bytes in input order without seeking.
+/// Delta-encoded `(gap, len)` `VInt` pairs for one download.
 ///
-/// Ranges are delta-encoded as `(gap, len)` `VInt` pairs instead of `Vec<Range<usize>>`:
-/// an automaton query can coalesce millions of posting lists into one download outside
-/// Quickwit's memory budget, and delta encoding shrinks the range buffer from 16 bytes
+/// An automaton query can coalesce millions of posting lists into one download outside
+/// Quickwit's memory budget. Storing `(gap, len)` `VInt`s shrinks the buffer from 16 bytes
 /// per range to ~2-3 bytes.
-fn coalesce_ranges(
-    first: Range<usize>,
-    ranges: &mut Peekable<impl Iterator<Item = Range<usize>>>,
-    encoded_ranges: &mut Vec<u8>,
-) -> Range<usize> {
-    let mut download_range = first.clone();
-    encoded_ranges.clear();
-    VInt(0).serialize_into_vec(encoded_ranges);
-    VInt(first.len() as u64).serialize_into_vec(encoded_ranges);
-    while let Some(next) = ranges.next_if(|next| {
-        !next.is_empty()
-            && next.start >= download_range.end
-            && next.start - download_range.end <= MAX_GAP_BYTES
-    }) {
-        let gap = next.start - download_range.end;
-        VInt(gap as u64).serialize_into_vec(encoded_ranges);
-        VInt(next.len() as u64).serialize_into_vec(encoded_ranges);
-        download_range.end = next.end;
-    }
-    download_range
+#[derive(Default)]
+struct DeltaEncodedRanges {
+    bytes: Vec<u8>,
+    offset: usize,
 }
 
-/// Discard unwanted bytes from the reader's buffer, without allocating for the gap.
-async fn skip_gap(reader: &mut (impl AsyncBufRead + Unpin), mut len: usize) -> io::Result<()> {
-    while len > 0 {
-        let available = reader.fill_buf().await?.len();
-        if available == 0 {
-            return Err(io::ErrorKind::UnexpectedEof.into());
-        }
-        let skip = len.min(available);
-        reader.consume(skip);
-        len -= skip;
+impl DeltaEncodedRanges {
+    fn push(&mut self, gap: usize, len: usize) {
+        VInt(gap as u64).serialize_into_vec(&mut self.bytes);
+        VInt(len as u64).serialize_into_vec(&mut self.bytes);
     }
-    Ok(())
+
+    fn next(&mut self) -> io::Result<Option<(usize, usize)>> {
+        let mut remaining = &self.bytes[self.offset..];
+        if remaining.is_empty() {
+            return Ok(None);
+        }
+        let start_len = remaining.len();
+        let gap = VInt::deserialize_u64(&mut remaining)? as usize;
+        let len = VInt::deserialize_u64(&mut remaining)? as usize;
+        self.offset += start_len - remaining.len();
+        Ok(Some((gap, len)))
+    }
+
+    /// Group consecutive inputs into one download, starting with the first nonempty range.
+    /// Overlaps (including duplicates) and backward jumps start a new download so the reader
+    /// can yield the requested bytes in input order without seeking.
+    fn coalesce(
+        &mut self,
+        first: Range<usize>,
+        ranges: &mut Peekable<impl Iterator<Item = Range<usize>>>,
+    ) -> Range<usize> {
+        self.bytes.clear();
+        self.offset = 0;
+        self.push(0, first.len());
+        let mut download_range = first;
+        while let Some(next) = ranges.next_if(|next| {
+            !next.is_empty()
+                && next.start >= download_range.end
+                && next.start - download_range.end <= MAX_GAP_BYTES
+        }) {
+            self.push(next.start - download_range.end, next.len());
+            download_range.end = next.end;
+        }
+        download_range
+    }
+}
+
+struct RangeDownloader<'a> {
+    storage: &'a dyn Storage,
+    path: &'a Path,
+    ranges: Peekable<Box<dyn Iterator<Item = Range<usize>> + Send>>,
+    encoded_ranges: DeltaEncodedRanges,
+    reader: Option<BufReader<Box<dyn AsyncRead + Send + Unpin>>>,
+}
+
+impl RangeDownloader<'_> {
+    async fn next_range(&mut self) -> io::Result<Option<OwnedBytes>> {
+        loop {
+            if let Some(reader) = &mut self.reader {
+                if let Some((gap, len)) = self.encoded_ranges.next()? {
+                    if gap > 0 {
+                        tokio::io::copy_buf(&mut reader.take(gap as u64), &mut tokio::io::sink())
+                            .await?;
+                    }
+                    let mut bytes = vec![0; len];
+                    reader.read_exact(&mut bytes).await?;
+                    return Ok(Some(OwnedBytes::new(bytes)));
+                }
+                self.reader = None;
+            }
+            let Some(first) = self.ranges.next() else {
+                return Ok(None);
+            };
+            if first.is_empty() {
+                return Ok(Some(OwnedBytes::empty()));
+            }
+            let download_range = self.encoded_ranges.coalesce(first, &mut self.ranges);
+            let body = self
+                .storage
+                .get_slice_stream(self.path, download_range)
+                .await?;
+            self.reader = Some(BufReader::new(body));
+        }
+    }
 }
 
 /// Download nearby ranges together and yield each range's bytes in input order.
@@ -75,46 +123,18 @@ pub(super) fn download_ranges<'a>(
     path: &'a Path,
     ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
 ) -> BoxStream<'a, io::Result<OwnedBytes>> {
-    struct State {
-        ranges: Peekable<Box<dyn Iterator<Item = Range<usize>> + Send>>,
-        encoded_ranges: Vec<u8>,
-        encoded_offset: usize,
-        reader: Option<BufReader<Box<dyn AsyncRead + Send + Unpin>>>,
-    }
-    let state = State {
+    let downloader = RangeDownloader {
+        storage,
+        path,
         ranges: ranges.peekable(),
-        encoded_ranges: Vec::new(),
-        encoded_offset: 0,
+        encoded_ranges: DeltaEncodedRanges::default(),
         reader: None,
     };
-    futures::stream::try_unfold(state, move |mut state| async move {
-        loop {
-            if let Some(reader) = &mut state.reader {
-                let mut remaining = &state.encoded_ranges[state.encoded_offset..];
-                if !remaining.is_empty() {
-                    let start_len = remaining.len();
-                    let gap = VInt::deserialize_u64(&mut remaining)? as usize;
-                    let len = VInt::deserialize_u64(&mut remaining)? as usize;
-                    state.encoded_offset += start_len - remaining.len();
-                    skip_gap(reader, gap).await?;
-                    let mut bytes = vec![0; len];
-                    reader.read_exact(&mut bytes).await?;
-                    return Ok(Some((OwnedBytes::new(bytes), state)));
-                }
-                state.reader = None;
-            }
-            let Some(first) = state.ranges.next() else {
-                return Ok(None);
-            };
-            if first.is_empty() {
-                return Ok(Some((OwnedBytes::empty(), state)));
-            }
-            let download_range =
-                coalesce_ranges(first, &mut state.ranges, &mut state.encoded_ranges);
-            state.encoded_offset = 0;
-            let body = storage.get_slice_stream(path, download_range).await?;
-            state.reader = Some(BufReader::new(body));
-        }
+    futures::stream::try_unfold(downloader, |mut downloader| async move {
+        let Some(bytes) = downloader.next_range().await? else {
+            return Ok(None);
+        };
+        Ok(Some((bytes, downloader)))
     })
     .boxed()
 }
@@ -132,14 +152,11 @@ mod tests {
 
     #[test]
     fn coalescing_limits_the_gap() {
-        let mut encoded_ranges = Vec::new();
+        let mut encoded_ranges = DeltaEncodedRanges::default();
         let second = 2 + MAX_GAP_BYTES..3 + MAX_GAP_BYTES;
         let third = second.end + MAX_GAP_BYTES + 1..second.end + MAX_GAP_BYTES + 2;
         let mut ranges = [second.clone(), third.clone()].into_iter().peekable();
-        assert_eq!(
-            coalesce_ranges(0..2, &mut ranges, &mut encoded_ranges),
-            0..second.end
-        );
+        assert_eq!(encoded_ranges.coalesce(0..2, &mut ranges), 0..second.end);
         assert_eq!(ranges.next().unwrap(), third);
     }
 
