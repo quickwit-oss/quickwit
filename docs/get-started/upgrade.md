@@ -5,6 +5,61 @@ sidebar_position: 5
 
 This page documents breaking changes and migration steps when upgrading Quickwit. If you are upgrading across multiple minor versions, apply the steps for each intermediate version in order.
 
+## Unreleased
+
+### Searcher cache configuration
+
+The searcher now uses a shared storage cache for split footers, hotcache, fast fields, and other split body ranges. Partial-request and predicate caches remain separate. All three support an optional disk tier.
+
+:::warning Cache policies and virtual caches are ignored
+
+The `policy` and `virtual_caches` options in `searcher.fast_field_cache`, `split_footer_cache`, `partial_request_cache`, and `predicate_cache`, including their `_capacity` aliases, are accepted for compatibility and have no effect. Existing configurations using these options continue to load. You can remove them when updating your configuration.
+
+Eviction is managed by the cache implementation. Virtual-cache simulations and their metrics are no longer available.
+
+:::
+
+The legacy `fast_field_cache` and `split_footer_cache` settings, including their `_capacity` aliases, still accept memory capacities. When `storage_cache` is omitted or `null`, these budgets are added together into one memory-only storage cache. Omitted budgets contribute their defaults: `1G` for fast fields and `500M` for footers. The capacities now form a shared budget rather than separate reservations for each kind of data.
+
+Prefer replacing both legacy budgets with an explicit `storage_cache`. Set both `memory_capacity` and `disk_capacity`. Explicit settings override the legacy budgets, but legacy settings are still validated. To disable the storage cache, set both capacities to zero. Setting only one legacy budget to zero leaves the other budget active.
+
+For example, migrate this configuration:
+
+```yaml
+searcher:
+  fast_field_cache:
+    capacity: 1G
+    policy: lru
+    virtual_caches:
+      - capacity: 2G
+  split_footer_cache_capacity: 500M
+  partial_request_cache:
+    capacity: 64M
+    policy: lru
+  predicate_cache:
+    capacity: 256M
+    policy: s3-fifo
+```
+
+To this memory-only configuration, preserving the total configured memory budget:
+
+```yaml
+searcher:
+  storage_cache:
+    memory_capacity: 1500M
+    disk_capacity: 0
+  partial_request_cache:
+    memory_capacity: 64M
+  predicate_cache:
+    memory_capacity: 256M
+```
+
+Scalar capacities, the `capacity` alias for `memory_capacity` in legacy and result-cache mappings, and the `partial_request_cache_capacity` and `predicate_cache_capacity` aliases remain supported. `storage_cache` requires the `memory_capacity` field name.
+
+To enable a disk tier, use `disk_capacity` under `storage_cache`, `partial_request_cache`, or `predicate_cache`, and set the shared `searcher.storage_cache_directory`. Legacy fast-field and footer settings reject `disk_capacity`, including `0`. Per-cache `path` and `directory` fields are unsupported. Disk caching requires Linux with usable `io_uring` and a filesystem supporting direct I/O. Initialization failures prevent startup. See [cache configuration](../configuration/node-config.md#searcher-cache-configuration) and [disk requirements](../deployment/cluster-sizing.md#searchers).
+
+Update dashboards and alerts that use the former fast-field, split-footer, or virtual-cache metrics. See the [cache metrics reference](../reference/metrics.md) for the replacement metrics.
+
 ## Upgrading to 0.9
 
 1. **Back up your metastore.** If you use the PostgreSQL metastore, take a snapshot. If you use the file-backed metastore, keep a copy of the `indexes/` directory. 0.9 runs SQL migrations that add new columns (`maturity`, compaction-related fields) on first start; rolling back requires the backup.

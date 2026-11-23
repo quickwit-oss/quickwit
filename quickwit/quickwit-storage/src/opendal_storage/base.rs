@@ -239,6 +239,21 @@ impl Storage for OpendalStorage {
         Ok(into_owned_bytes(storage_content))
     }
 
+    async fn get_slice_into(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        buffer: &mut [u8],
+    ) -> StorageResult<()> {
+        if buffer.is_empty() {
+            return Ok(());
+        }
+        let _in_flight_guards = object_storage_get_slice_in_flight_guards(buffer.len());
+        crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
+        crate::default_get_slice_into(self, path, range, buffer).await
+    }
+
     #[instrument(name = "storage.gcs.get_slice_stream", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice_stream(
         &self,
