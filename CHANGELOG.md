@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `searcher.warmup_single_split_max_allocation`: maximum warmup memory a single split search can reserve, `max(warmup_single_split_initial_allocation, min(4GB, warmup_memory_budget / 4))` by default. A split search that would need more memory fails
 
 ### Fixed
+- Azure Blob Storage: reject managed identity on unmapped custom endpoints and document sovereign-cloud `AZURE_AUTHORITY_HOST` requirements (#6624)
 - (Jaeger) Query resource attributes when Jaeger request carries tags
 - A source whose VRL transform no longer compiles, for example after a VRL upgrade, no longer makes its index metadata unreadable, which failed index listing and control plane startup. Transforms are compiled when a source is created or updated and when its indexing pipeline starts
 
