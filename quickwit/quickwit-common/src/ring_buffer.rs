@@ -59,6 +59,7 @@ impl<T: Copy + Default, const N: usize> RingBuffer<T, N> {
         }
     }
 
+    /// Returns the most recently pushed element, or `None` if the buffer is empty.
     pub fn last(&self) -> Option<T> {
         if self.len == 0 {
             return None;
@@ -66,6 +67,7 @@ impl<T: Copy + Default, const N: usize> RingBuffer<T, N> {
         Some(self.buffer[(self.head + N - 1) % N])
     }
 
+    /// Returns the oldest element still in the buffer, or `None` if the buffer is empty.
     pub fn front(&self) -> Option<T> {
         if self.len == 0 {
             return None;
@@ -81,6 +83,7 @@ impl<T: Copy + Default, const N: usize> RingBuffer<T, N> {
         self.len == 0
     }
 
+    /// Iterates over the elements from oldest to newest.
     pub fn iter(&self) -> impl Iterator<Item = &T> + '_ {
         let start = (self.head + N - self.len) % N;
         (0..self.len).map(move |i| &self.buffer[(start + i) % N])
