@@ -22,7 +22,7 @@ use ahash::HashMap;
 use bytes::Bytes;
 use futures::StreamExt;
 use tokio::io::AsyncRead;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::Instant;
 use tokio_util::io::{ReaderStream, StreamReader};
 use tokio_util::task::AbortOnDropHandle;
@@ -41,15 +41,21 @@ pub(super) struct StreamDebouncer {
     groups: Mutex<(HashMap<DebouncerKey, Weak<StreamGroup>>, usize)>,
 }
 
-// The first message acknowledges opening. Subsequent messages carry data, with empty bytes for EOF.
-type StreamSender = mpsc::Sender<io::Result<Bytes>>;
+#[derive(Clone)]
+enum Message {
+    Chunk(Bytes),
+    Eof,
+    Error(Arc<io::Error>),
+}
+
+type OpenSender = oneshot::Sender<StorageResult<mpsc::Receiver<Message>>>;
 
 struct StreamGroup {
     // Only callers keep the group alive. Abort the producer before dropping the reader channel.
     _producer: AbortOnDropHandle<()>,
     join_deadline: Instant,
     // The producer owns the receiver so its termination also fails pending opens.
-    new_readers: mpsc::UnboundedSender<StreamSender>,
+    new_readers: mpsc::UnboundedSender<OpenSender>,
 }
 
 impl StreamDebouncer {
@@ -59,23 +65,23 @@ impl StreamDebouncer {
         path: &Path,
         range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        let (sender, mut receiver) = mpsc::channel(1);
-        let group = self.subscribe(storage, (path.to_owned(), range), sender);
-        let opened = receiver.recv().await.ok_or_else(|| {
-            StorageErrorKind::Internal.with_error(anyhow::anyhow!("stream producer stopped"))
-        })??;
-        assert!(
-            opened.is_empty(),
-            "first stream message must acknowledge opening"
-        );
+        let (open_sender, open_receiver) = oneshot::channel();
+        let group = self.subscribe(storage, (path.to_owned(), range), open_sender);
+        let receiver = match open_receiver.await {
+            Ok(result) => result?,
+            Err(_) => {
+                return Err(StorageErrorKind::Internal
+                    .with_error(anyhow::anyhow!("stream producer stopped")));
+            }
+        };
         let chunks =
             futures::stream::try_unfold((receiver, group), |(mut receiver, group)| async {
-                // An empty chunk explicitly marks EOF. A stopped producer is an error, not EOF.
-                let bytes = receiver
-                    .recv()
-                    .await
-                    .ok_or_else(|| io::Error::other("stream producer stopped"))??;
-                Ok::<_, io::Error>((!bytes.is_empty()).then_some((bytes, (receiver, group))))
+                match receiver.recv().await {
+                    Some(Message::Chunk(bytes)) => Ok(Some((bytes, (receiver, group)))),
+                    Some(Message::Eof) => Ok(None),
+                    Some(Message::Error(error)) => Err(io::Error::new(error.kind(), error)),
+                    None => Err(io::Error::other("stream producer stopped")),
+                }
             });
         Ok(Box::new(StreamReader::new(chunks.boxed())))
     }
@@ -84,7 +90,7 @@ impl StreamDebouncer {
         &self,
         storage: Arc<T>,
         key: DebouncerKey,
-        mut reader: StreamSender,
+        mut reader: OpenSender,
     ) -> Arc<StreamGroup> {
         let mut registry = self.groups.lock().unwrap();
         let (groups, inserts_since_cleanup) = &mut *registry;
@@ -122,21 +128,24 @@ async fn share_stream<T: Storage>(
     storage: Arc<T>,
     key: DebouncerKey,
     join_deadline: Instant,
-    mut new_readers: mpsc::UnboundedReceiver<StreamSender>,
+    mut new_readers: mpsc::UnboundedReceiver<OpenSender>,
 ) {
     tokio::time::sleep_until(join_deadline).await;
     // Callers that miss this group start a new download group.
     new_readers.close();
     let stream = storage.get_slice_stream(&key.0, key.1).await;
     let mut senders = Vec::new();
-    while let Some(reader) = new_readers.recv().await {
-        // StorageError round-trips through io::Error without losing its kind or retry metadata.
-        let opened = stream
-            .as_ref()
-            .map(|_| Bytes::new())
-            .map_err(|error| io::Error::from(error.clone()));
-        if reader.send(opened).await.is_ok() {
-            senders.push(reader);
+    while let Some(open_sender) = new_readers.recv().await {
+        match &stream {
+            Ok(_) => {
+                let (sender, receiver) = mpsc::channel(1);
+                if open_sender.send(Ok(receiver)).is_ok() {
+                    senders.push(sender);
+                }
+            }
+            Err(error) => {
+                let _ = open_sender.send(Err(error.clone()));
+            }
         }
     }
     let Ok(stream) = stream else { return };
@@ -146,21 +155,15 @@ async fn share_stream<T: Storage>(
         if senders.is_empty() {
             return;
         }
-        let chunk = chunks
-            .next()
-            .await
-            .unwrap_or_else(|| Ok(Bytes::new()))
-            .map_err(Arc::new);
-        let finished = match &chunk {
-            Ok(bytes) => bytes.is_empty(),
-            Err(_) => true,
+        let message = match chunks.next().await {
+            Some(Ok(bytes)) => Message::Chunk(bytes),
+            Some(Err(error)) => Message::Error(Arc::new(error)),
+            None => Message::Eof,
         };
+        let finished = !matches!(message, Message::Chunk(_));
         for sender in &senders {
-            let chunk = chunk
-                .clone()
-                .map_err(|error| io::Error::new(error.kind(), error));
             // A dropped reader leaves the group. Other readers still receive every chunk.
-            let _ = sender.send(chunk).await;
+            let _ = sender.send(message.clone()).await;
         }
         if finished {
             return;

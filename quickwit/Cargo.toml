@@ -57,7 +57,6 @@ arc-swap = "1.9"
 assert-json-diff = "2"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"
-async-stream = "0.3"
 async-trait = "0.1"
 atomic_float = "1.1"
 backtrace = "0.3"

@@ -12,12 +12,12 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-async-stream = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 postcard = { workspace = true }
 serde = { workspace = true }
 tantivy = { workspace = true }
+tantivy-common = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

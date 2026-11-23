@@ -15,12 +15,12 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::{fmt, io};
 
 use anyhow::{Context, bail};
 use async_trait::async_trait;
-use futures::stream::{BoxStream, StreamExt};
+use futures::stream::BoxStream;
 use quickwit_storage::VersionedComponent;
 use serde::{Deserialize, Serialize};
 use tantivy::directory::error::OpenReadError;
@@ -410,33 +410,7 @@ impl FileHandle for FileSliceWithCache {
         &self,
         ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
     ) -> BoxStream<'_, io::Result<OwnedBytes>> {
-        if self.static_cache.index.slices.is_empty() {
-            return self.underlying.stream_ranges(ranges);
-        }
-        let cache = self.static_cache.clone();
-        let ranges = ranges.map(move |range| {
-            let cached_bytes = cache.try_read_bytes(range.clone());
-            (range, cached_bytes)
-        });
-        let ranges = Arc::new(Mutex::new(ranges.peekable()));
-        async_stream::try_stream! {
-            for (range, cached_bytes) in std::iter::from_fn(|| ranges.lock().unwrap().next()) {
-                if let Some(bytes) = cached_bytes {
-                    yield bytes;
-                    continue;
-                }
-                // The download iterator owns a handle to the shared cursor. It stops at the next
-                // cached range so the outer stream can yield that range in order.
-                let cursor = ranges.clone();
-                let misses = std::iter::from_fn(move || cursor.lock().unwrap()
-                    .next_if(|(_, hit)| hit.is_none()).map(|(range, _)| range));
-                let ranges_to_download = std::iter::once(range).chain(misses);
-                for await result in self.underlying.stream_ranges(Box::new(ranges_to_download)) {
-                    yield result?;
-                }
-            }
-        }
-        .boxed()
+        self.underlying.stream_ranges(ranges)
     }
 }
 
@@ -588,43 +562,6 @@ mod tests {
     use tantivy::{Index, TantivyDocument};
 
     use super::*;
-
-    #[tokio::test]
-    async fn test_stream_uses_hotcache() {
-        use futures::TryStreamExt;
-
-        let path = Path::new("test.file");
-        let content = b"0123456789abcdef";
-        let directory = RamDirectory::default();
-        directory.atomic_write(path, content).unwrap();
-        let mut hotcache = StaticDirectoryCacheBuilder::default();
-        hotcache
-            .add_file(path, content.len() as u64)
-            .add_bytes(b"xx", 4);
-        let mut hotcache_bytes = Vec::new();
-        hotcache.write(&mut hotcache_bytes).unwrap();
-        let hot_directory = HotDirectory::open(directory, OwnedBytes::new(hotcache_bytes)).unwrap();
-        let file = hot_directory
-            .open_read(path)
-            .unwrap()
-            .slice(2..content.len());
-        // Cached bytes differ from storage. A partial hit still reads the complete range from
-        // storage.
-        let ranges = [0..2, 5..7, 2..4, 3..3, 2..4, 3..5];
-        let mut stream = file.stream_ranges(Box::new(ranges.into_iter()));
-        for expected in [b"23".as_slice(), b"78", b"xx", b"", b"xx", b"56"] {
-            let bytes = stream.try_next().await.unwrap().unwrap();
-            assert_eq!(bytes.as_slice(), expected);
-        }
-        assert!(stream.try_next().await.unwrap().is_none());
-
-        // A miss run stays lazy when the backend itself only asks for one range.
-        let ranges =
-            std::iter::once(0..2).chain(std::iter::from_fn(|| panic!("unexpected read-ahead")));
-        let mut stream = file.stream_ranges(Box::new(ranges));
-        let bytes = stream.try_next().await.unwrap().unwrap();
-        assert_eq!(bytes.as_slice(), b"23");
-    }
 
     #[test]
     fn test_empty_slice_cache_index() -> tantivy::Result<()> {

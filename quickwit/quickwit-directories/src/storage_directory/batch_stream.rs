@@ -19,7 +19,8 @@ use std::path::Path;
 
 use futures::stream::{BoxStream, StreamExt};
 use quickwit_storage::{OwnedBytes, Storage};
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader};
+use tantivy_common::VInt;
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 
 // Download small gaps to avoid extra storage requests.
 const MAX_GAP_BYTES: usize = 4 * 1024 * 1024;
@@ -27,21 +28,29 @@ const MAX_GAP_BYTES: usize = 4 * 1024 * 1024;
 /// Group consecutive inputs into one download, starting with the first nonempty range.
 /// Overlaps (including duplicates) and backward jumps start a new download so the reader
 /// can yield the requested bytes in input order without seeking.
+///
+/// Ranges are delta-encoded as `(gap, len)` `VInt` pairs instead of `Vec<Range<usize>>`:
+/// an automaton query can coalesce millions of posting lists into one download outside
+/// Quickwit's memory budget, and delta encoding shrinks the range buffer from 16 bytes
+/// per range to ~2-3 bytes.
 fn coalesce_ranges(
     first: Range<usize>,
     ranges: &mut Peekable<impl Iterator<Item = Range<usize>>>,
-    requested_ranges: &mut Vec<Range<usize>>,
+    encoded_ranges: &mut Vec<u8>,
 ) -> Range<usize> {
     let mut download_range = first.clone();
-    requested_ranges.clear();
-    requested_ranges.push(first);
+    encoded_ranges.clear();
+    VInt(0).serialize_into_vec(encoded_ranges);
+    VInt(first.len() as u64).serialize_into_vec(encoded_ranges);
     while let Some(next) = ranges.next_if(|next| {
         !next.is_empty()
             && next.start >= download_range.end
             && next.start - download_range.end <= MAX_GAP_BYTES
     }) {
+        let gap = next.start - download_range.end;
+        VInt(gap as u64).serialize_into_vec(encoded_ranges);
+        VInt(next.len() as u64).serialize_into_vec(encoded_ranges);
         download_range.end = next.end;
-        requested_ranges.push(next);
     }
     download_range
 }
@@ -66,27 +75,47 @@ pub(super) fn download_ranges<'a>(
     path: &'a Path,
     ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
 ) -> BoxStream<'a, io::Result<OwnedBytes>> {
-    async_stream::try_stream! {
-        let mut ranges = ranges.peekable();
-        let mut requested_ranges = Vec::new();
-        while let Some(first) = ranges.next() {
-            if first.is_empty() {
-                yield OwnedBytes::empty();
-                continue;
-            }
-            let download_range = coalesce_ranges(first, &mut ranges, &mut requested_ranges);
-            let mut offset = download_range.start;
-            let body = storage.get_slice_stream(path, download_range).await?;
-            let mut reader = BufReader::new(body);
-            for range in &requested_ranges {
-                skip_gap(&mut reader, range.start - offset).await?;
-                let mut bytes = vec![0; range.len()];
-                reader.read_exact(&mut bytes).await?;
-                offset = range.end;
-                yield OwnedBytes::new(bytes);
-            }
-        }
+    struct State {
+        ranges: Peekable<Box<dyn Iterator<Item = Range<usize>> + Send>>,
+        encoded_ranges: Vec<u8>,
+        encoded_offset: usize,
+        reader: Option<BufReader<Box<dyn AsyncRead + Send + Unpin>>>,
     }
+    let state = State {
+        ranges: ranges.peekable(),
+        encoded_ranges: Vec::new(),
+        encoded_offset: 0,
+        reader: None,
+    };
+    futures::stream::try_unfold(state, move |mut state| async move {
+        loop {
+            if let Some(reader) = &mut state.reader {
+                let mut remaining = &state.encoded_ranges[state.encoded_offset..];
+                if !remaining.is_empty() {
+                    let start_len = remaining.len();
+                    let gap = VInt::deserialize_u64(&mut remaining)? as usize;
+                    let len = VInt::deserialize_u64(&mut remaining)? as usize;
+                    state.encoded_offset += start_len - remaining.len();
+                    skip_gap(reader, gap).await?;
+                    let mut bytes = vec![0; len];
+                    reader.read_exact(&mut bytes).await?;
+                    return Ok(Some((OwnedBytes::new(bytes), state)));
+                }
+                state.reader = None;
+            }
+            let Some(first) = state.ranges.next() else {
+                return Ok(None);
+            };
+            if first.is_empty() {
+                return Ok(Some((OwnedBytes::empty(), state)));
+            }
+            let download_range =
+                coalesce_ranges(first, &mut state.ranges, &mut state.encoded_ranges);
+            state.encoded_offset = 0;
+            let body = storage.get_slice_stream(path, download_range).await?;
+            state.reader = Some(BufReader::new(body));
+        }
+    })
     .boxed()
 }
 
@@ -103,15 +132,22 @@ mod tests {
 
     #[test]
     fn coalescing_limits_the_gap() {
-        let mut requested_ranges = Vec::new();
+        let mut encoded_ranges = Vec::new();
         let second = 2 + MAX_GAP_BYTES..3 + MAX_GAP_BYTES;
         let third = second.end + MAX_GAP_BYTES + 1..second.end + MAX_GAP_BYTES + 2;
         let mut ranges = [second.clone(), third.clone()].into_iter().peekable();
-        assert_eq!(
-            coalesce_ranges(0..2, &mut ranges, &mut requested_ranges),
-            0..second.end
-        );
-        assert_eq!(requested_ranges, [0..2, second]);
+        let download_range = coalesce_ranges(0..2, &mut ranges, &mut encoded_ranges);
+        assert_eq!(download_range, 0..second.end);
+        let mut decoded = Vec::new();
+        let mut offset = download_range.start;
+        let mut encoded: &[u8] = &encoded_ranges;
+        while !encoded.is_empty() {
+            let start = offset + VInt::deserialize_u64(&mut encoded).unwrap() as usize;
+            let end = start + VInt::deserialize_u64(&mut encoded).unwrap() as usize;
+            decoded.push(start..end);
+            offset = end;
+        }
+        assert_eq!(decoded, [0..2, second]);
         assert_eq!(ranges.next().unwrap(), third);
     }
 
