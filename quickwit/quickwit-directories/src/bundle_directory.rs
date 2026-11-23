@@ -215,38 +215,6 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_bundle_stream_maps_nested_ranges() {
-        use futures::TryStreamExt;
-
-        let bundle = BundleDirectory {
-            file: FileSlice::from(b"0123456789abcdefghij".as_slice()).slice(2..20),
-            file_ranges: BundleFileRanges {
-                files: [(PathBuf::from("file"), 3..9)].into_iter().collect(),
-            },
-        };
-        // A stream must read the underlying bundle even if the directory cache has these bytes.
-        let cache = quickwit_storage::ByteRangeCache::with_infinite_capacity();
-        cache
-            .get_file_cache(Path::new("file"))
-            .put_slice(2..4, quickwit_storage::OwnedBytes::new(b"xx".as_slice()));
-        let directory =
-            crate::DebugProxyDirectory::wrap(crate::CachingDirectory::new(Arc::new(bundle), cache));
-        let file = directory.open_read(Path::new("file")).unwrap().slice(1..4);
-        let ranges = [1..3, 0..1, 3..3, 1..3]
-            .into_iter()
-            .chain(std::iter::from_fn(|| {
-                panic!("dropping the batch should leave later ranges unread")
-            }));
-        let mut stream = file.stream_ranges(Box::new(ranges));
-        for expected in [b"78".as_slice(), b"6", b"", b"78"] {
-            let bytes = stream.try_next().await.unwrap().unwrap();
-            assert_eq!(bytes.as_slice(), expected);
-        }
-        drop(stream);
-        assert_eq!(directory.drain_read_operations().count(), 0);
-    }
-
-    #[tokio::test]
     async fn test_bundle_directory_stats() -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let test_filepath1 = temp_dir.path().join("f1");

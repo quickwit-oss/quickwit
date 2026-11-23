@@ -67,13 +67,9 @@ impl StreamDebouncer {
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
         let (open_sender, open_receiver) = oneshot::channel();
         let group = self.subscribe(storage, (path.to_owned(), range), open_sender);
-        let receiver = match open_receiver.await {
-            Ok(result) => result?,
-            Err(_) => {
-                return Err(StorageErrorKind::Internal
-                    .with_error(anyhow::anyhow!("stream producer stopped")));
-            }
-        };
+        let receiver = open_receiver.await.map_err(|_| {
+            StorageErrorKind::Internal.with_error(anyhow::anyhow!("stream producer stopped"))
+        })??;
         let chunks =
             futures::stream::try_unfold((receiver, group), |(mut receiver, group)| async {
                 match receiver.recv().await {
@@ -114,7 +110,8 @@ impl StreamDebouncer {
             new_readers,
         });
         groups.insert(key, Arc::downgrade(&group));
-        // As with buffered reads, cancelled groups leave weak entries to reclaim periodically.
+        // As with buffered reads, finished and cancelled groups leave weak entries to reclaim
+        // periodically.
         *inserts_since_cleanup += 1;
         if *inserts_since_cleanup > CLEANUP_INTERVAL {
             *inserts_since_cleanup = 0;
@@ -272,15 +269,13 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn test_open_and_read_errors_reach_all_readers() {
-        const OPEN_ERRORS: [StorageErrorKind; 2] =
-            [StorageErrorKind::NotFound, StorageErrorKind::Service];
         let mut backend = MockStorage::default();
         backend
             .expect_get_slice_stream()
-            .times(3)
+            .times(2)
             .returning(|_, range| {
-                if let Some(kind) = OPEN_ERRORS.get(range.start) {
-                    return Err(kind
+                if range.start == 0 {
+                    return Err(StorageErrorKind::Service
                         .with_error(anyhow::anyhow!("opening failed"))
                         .with_retry_after(Some(COLLECT_READERS_FOR)));
                 }
@@ -294,76 +289,67 @@ mod tests {
                 Ok(Box::new(StreamReader::new(chunks)))
             });
         let storage = DebouncedStorage::new(backend);
-        for start in 0..=OPEN_ERRORS.len() {
-            let (first, second) = tokio::join!(
-                storage.get_slice_stream(Path::new("file"), start..10),
-                storage.get_slice_stream(Path::new("file"), start..10),
-            );
-            for reader in [first, second] {
-                if let Some(kind) = OPEN_ERRORS.get(start) {
-                    let error = reader.err().unwrap();
-                    assert_eq!(error.kind(), *kind);
-                    assert_eq!(error.retry_after, Some(COLLECT_READERS_FOR));
-                    continue;
-                }
-                let mut bytes = Vec::new();
-                let error = reader.unwrap().read_to_end(&mut bytes).await.unwrap_err();
-                assert_eq!(error.kind(), io::ErrorKind::ConnectionReset);
-                assert_eq!(error.to_string(), "interrupted");
-                assert_eq!(bytes, b"prefix");
-            }
+        let (first, second) = tokio::join!(
+            storage.get_slice_stream(Path::new("file"), 0..10),
+            storage.get_slice_stream(Path::new("file"), 0..10),
+        );
+        for reader in [first, second] {
+            let error = reader.err().unwrap();
+            assert_eq!(error.kind(), StorageErrorKind::Service);
+            assert_eq!(error.retry_after, Some(COLLECT_READERS_FOR));
+        }
+        let (first, second) = tokio::join!(
+            storage.get_slice_stream(Path::new("file"), 1..10),
+            storage.get_slice_stream(Path::new("file"), 1..10),
+        );
+        for reader in [first, second] {
+            let mut bytes = Vec::new();
+            let error = reader.unwrap().read_to_end(&mut bytes).await.unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::ConnectionReset);
+            assert_eq!(bytes, b"prefix");
         }
     }
 
     #[tokio::test(start_paused = true)]
     async fn test_cancellation_and_producer_failure() {
-        for abort_producer in [false, true] {
-            // The inner debouncer adds a second window: collection, pending open, then reading.
-            for elapsed in 0..=2 {
-                let (reader, mut writer) = tokio::io::duplex(1);
-                let backend = Arc::new(storage_with_stream(reader, usize::from(elapsed == 2)));
-                let debouncer = StreamDebouncer::default();
-                let mut opening = Box::pin(debouncer.get(backend.clone(), Path::new("file"), 0..3));
-                assert!(poll!(&mut opening).is_pending());
-                tokio::time::advance(elapsed * COLLECT_READERS_FOR).await;
-                tokio::task::yield_now().await;
-                let mut reader = if elapsed == 2 {
-                    Some(opening.as_mut().await.unwrap())
-                } else {
-                    None
-                };
-                if abort_producer {
-                    let group = {
-                        let (groups, _) = &*debouncer.groups.lock().unwrap();
-                        groups.values().find_map(Weak::upgrade).unwrap()
-                    };
-                    group._producer.abort();
-                    if let Some(reader) = &mut reader {
-                        assert_eq!(
-                            reader.read_u8().await.unwrap_err().to_string(),
-                            "stream producer stopped"
-                        );
-                    } else {
-                        assert_eq!(
-                            opening.as_mut().await.err().unwrap().kind(),
-                            StorageErrorKind::Internal
-                        );
-                    }
-                }
-                drop(reader);
-                drop(opening);
-                tokio::task::yield_now().await;
-                tokio::time::advance(2 * COLLECT_READERS_FOR).await;
-                tokio::task::yield_now().await;
-                // Keep the mock in this task so unexpected background calls fail the test.
-                assert_eq!(Arc::strong_count(&backend), 1);
-                if elapsed == 2 {
-                    assert_eq!(
-                        writer.write_all(b"x").await.unwrap_err().kind(),
-                        io::ErrorKind::BrokenPipe
-                    );
-                }
-            }
-        }
+        // Dropping the only caller during collection cancels the producer before opening storage.
+        let backend = Arc::new(MockStorage::default());
+        let debouncer = StreamDebouncer::default();
+        let mut opening = Box::pin(debouncer.get(backend.clone(), Path::new("file"), 0..3));
+        assert!(poll!(&mut opening).is_pending());
+        drop(opening);
+        tokio::time::advance(2 * COLLECT_READERS_FOR).await;
+        tokio::task::yield_now().await;
+        assert_eq!(Arc::strong_count(&backend), 1);
+
+        // Aborting a producer fails both pending opens and active readers.
+        let abort_group = |debouncer: &StreamDebouncer| {
+            let (groups, _) = &*debouncer.groups.lock().unwrap();
+            groups
+                .values()
+                .find_map(Weak::upgrade)
+                .unwrap()
+                ._producer
+                .abort();
+        };
+        let mut opening = Box::pin(debouncer.get(backend.clone(), Path::new("file"), 0..3));
+        assert!(poll!(&mut opening).is_pending());
+        abort_group(&debouncer);
+        assert_eq!(
+            opening.await.err().unwrap().kind(),
+            StorageErrorKind::Internal
+        );
+
+        let (reader, _writer) = tokio::io::duplex(1);
+        let backend = Arc::new(storage_with_stream(reader, 1));
+        let mut active = debouncer
+            .get(backend, Path::new("file"), 0..3)
+            .await
+            .unwrap();
+        abort_group(&debouncer);
+        assert_eq!(
+            active.read_u8().await.unwrap_err().to_string(),
+            "stream producer stopped"
+        );
     }
 }

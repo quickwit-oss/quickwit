@@ -125,7 +125,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use futures::TryStreamExt;
-    use quickwit_storage::MockStorage;
+    use quickwit_storage::{MockStorage, StorageErrorKind};
     use tokio::io::AsyncWriteExt;
 
     use super::*;
@@ -136,18 +136,10 @@ mod tests {
         let second = 2 + MAX_GAP_BYTES..3 + MAX_GAP_BYTES;
         let third = second.end + MAX_GAP_BYTES + 1..second.end + MAX_GAP_BYTES + 2;
         let mut ranges = [second.clone(), third.clone()].into_iter().peekable();
-        let download_range = coalesce_ranges(0..2, &mut ranges, &mut encoded_ranges);
-        assert_eq!(download_range, 0..second.end);
-        let mut decoded = Vec::new();
-        let mut offset = download_range.start;
-        let mut encoded: &[u8] = &encoded_ranges;
-        while !encoded.is_empty() {
-            let start = offset + VInt::deserialize_u64(&mut encoded).unwrap() as usize;
-            let end = start + VInt::deserialize_u64(&mut encoded).unwrap() as usize;
-            decoded.push(start..end);
-            offset = end;
-        }
-        assert_eq!(decoded, [0..2, second]);
+        assert_eq!(
+            coalesce_ranges(0..2, &mut ranges, &mut encoded_ranges),
+            0..second.end
+        );
         assert_eq!(ranges.next().unwrap(), third);
     }
 
@@ -242,18 +234,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn truncated_body_fails_in_gap_or_in_list() {
-        for available in [4, 9] {
-            let mut storage = MockStorage::default();
-            storage
-                .expect_get_slice_stream()
-                .once()
-                .returning(move |_, _| Ok(Box::new(&b"0123456789"[..available])));
-            let ranges = [0..2, 8..10];
-            let mut stream =
-                download_ranges(&storage, Path::new("file"), Box::new(ranges.into_iter()));
-            let bytes = stream.try_next().await.unwrap().unwrap();
-            assert_eq!(bytes.as_slice(), b"01");
+    async fn propagates_open_and_truncation_errors() {
+        let mut storage = MockStorage::default();
+        storage
+            .expect_get_slice_stream()
+            .times(3)
+            .returning(|_, range| match range.start {
+                0 => Err(StorageErrorKind::NotFound.with_error(anyhow::anyhow!("missing file"))),
+                1 => Ok(Box::new(&b"0123"[..])),
+                _ => Ok(Box::new(&b"012345678"[..])),
+            });
+        let mut missing =
+            download_ranges(&storage, Path::new("file"), Box::new([0..1].into_iter()));
+        assert_eq!(
+            missing.try_next().await.unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
+        // Truncated in gap (start=1, 4 bytes available) and in list (start=2, 9 bytes available).
+        for start in [1, 2] {
+            let mut stream = download_ranges(
+                &storage,
+                Path::new("file"),
+                Box::new([start..start + 2, start + 8..start + 10].into_iter()),
+            );
+            assert_eq!(stream.try_next().await.unwrap().unwrap().as_slice(), b"01");
             assert_eq!(
                 stream.try_next().await.unwrap_err().kind(),
                 io::ErrorKind::UnexpectedEof

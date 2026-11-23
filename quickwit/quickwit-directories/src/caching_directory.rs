@@ -515,13 +515,16 @@ mod tests {
         let cache = ByteRangeCache::with_infinite_capacity();
         let budget = 32 * 1024 * 1024;
         let reserver = LimitedMemoryReserver::new(budget);
-        let directory = CachingDirectory::new(Arc::new(directory), cache.clone())
-            .with_memory_reserver(reserver.clone());
-        let index = Index::open(directory)?;
+        let directory = DebugProxyDirectory::wrap(
+            CachingDirectory::new(Arc::new(directory), cache.clone())
+                .with_memory_reserver(reserver.clone()),
+        );
+        let index = Index::open(directory.clone())?;
         let searcher = index.reader()?.searcher();
         let segment = searcher.segment_reader(0);
         let reader = segment.inverted_index(field)?;
         // Opening the index caches metadata. Leave no budget for dictionary or posting reads.
+        let _ = directory.drain_read_operations();
         let initial_bytes = cache.get_num_bytes();
         let _reservation = reserver
             .try_reserve_memory(budget - reserver.reserved())
@@ -532,12 +535,12 @@ mod tests {
             .await?;
         assert_eq!(sparse.len(), 2);
         assert!(sparse.contains(0) && sparse.contains(2));
-        assert_eq!(cache.get_num_bytes(), initial_bytes);
         let all = reader
             .create_bitset_for_automaton(AlwaysMatch, segment.max_doc(), &executor)
             .await?;
         assert_eq!(all.len(), 3);
         assert_eq!(cache.get_num_bytes(), initial_bytes);
+        assert_eq!(directory.drain_read_operations().count(), 0);
         Ok(())
     }
 

@@ -251,7 +251,7 @@ impl StorageCache for SplitCacheBackingStorage {
 }
 
 #[cfg(test)]
-mod stream_tests {
+mod tests {
     use std::num::NonZeroU32;
     use std::os::unix::fs::FileExt;
 
@@ -266,7 +266,7 @@ mod stream_tests {
         let tempdir = tempfile::tempdir().unwrap();
         let path = Path::new("cached.split");
         let file = std::fs::File::create(tempdir.path().join(path)).unwrap();
-        let end = 4 * 1024 * 1024;
+        let end = 2 * 1024 * 1024;
         file.set_len(end as u64 + 1).unwrap();
         file.write_all_at(b"a", 7).unwrap();
         let cache = SearchSplitCache::with_root_path(
@@ -289,7 +289,6 @@ mod stream_tests {
         file.write_all_at(b"bc", end as u64 - 1).unwrap();
         let mut tail = Vec::new();
         reader.read_to_end(&mut tail).await.unwrap();
-        assert_eq!(tail.len(), end - 8);
-        assert_eq!(tail.last(), Some(&b'b'));
+        assert_eq!((tail.len(), tail.last()), (end - 8, Some(&b'b')));
     }
 }

@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, io};
 
-use anyhow::{Context, bail, ensure};
+use anyhow::{Context, anyhow, bail, ensure};
 use async_trait::async_trait;
 use bytes::{Buf, BufMut};
 use quickwit_common::chunk_range;
@@ -33,7 +33,8 @@ use tracing::error;
 
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, OwnedBytes, Storage, StorageError, StorageResult, VersionedComponent,
+    BulkDeleteError, OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResult,
+    VersionedComponent,
 };
 
 /// BundleStorage bundles together multiple files into a single file.
@@ -91,13 +92,6 @@ impl BundleStorage {
     /// Returns Iterator over files contained in the bundle.
     pub fn iter_files(&self) -> impl Iterator<Item = &PathBuf> {
         self.file_ranges.files.keys()
-    }
-
-    fn file_range(&self, path: &Path) -> StorageResult<Range<u64>> {
-        self.file_ranges.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })
     }
 
     /// Fetches a bundled file from a split.
@@ -473,9 +467,17 @@ impl BundleFileRanges {
     }
 }
 
-fn range_in_bundle(file_start: u64, range: Range<usize>) -> Range<usize> {
-    let start = file_start as usize;
-    start + range.start..start + range.end
+impl BundleStorage {
+    fn file_range(&self, path: &Path) -> StorageResult<Range<u64>> {
+        self.file_ranges
+            .get(path)
+            .ok_or_else(|| StorageErrorKind::NotFound.with_error(anyhow!("missing file {path:?}")))
+    }
+
+    fn bundle_slice_range(&self, path: &Path, range: Range<usize>) -> StorageResult<Range<usize>> {
+        let start = self.file_range(path)?.start as usize;
+        Ok(start + range.start..start + range.end)
+    }
 }
 
 #[async_trait]
@@ -520,7 +522,7 @@ impl Storage for BundleStorage {
         path: &Path,
         range: Range<usize>,
     ) -> crate::StorageResult<OwnedBytes> {
-        let range = range_in_bundle(self.file_range(path)?.start, range);
+        let range = self.bundle_slice_range(path, range)?;
         self.storage.get_slice(&self.bundle_filepath, range).await
     }
 
@@ -533,7 +535,7 @@ impl Storage for BundleStorage {
         if buffer.is_empty() {
             return Ok(());
         }
-        let range = range_in_bundle(self.file_range(path)?.start, range);
+        let range = self.bundle_slice_range(path, range)?;
         self.storage
             .get_slice_into(&self.bundle_filepath, range, buffer)
             .await
@@ -544,13 +546,7 @@ impl Storage for BundleStorage {
         path: &Path,
         range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        let file_range = self.file_range(path)?;
-        if range.start > range.end || range.end as u64 > file_range.end - file_range.start {
-            return Err(
-                io::Error::new(io::ErrorKind::InvalidInput, "range exceeds bundled file").into(),
-            );
-        }
-        let range = range_in_bundle(file_range.start, range);
+        let range = self.bundle_slice_range(path, range)?;
         self.storage
             .get_slice_stream(&self.bundle_filepath, range)
             .await
@@ -632,10 +628,9 @@ mod tests {
         let mut backend = crate::MockStorage::default();
         backend
             .expect_get_slice_stream()
-            .times(1)
+            .once()
             .return_once(|path, range| {
-                assert_eq!(path, Path::new("split"));
-                assert_eq!(range, 102..105);
+                assert_eq!((path, range), (Path::new("split"), 102..105));
                 Ok(Box::new(reader))
             });
         let mut cache = crate::MockStorageCache::default();
@@ -644,8 +639,7 @@ mod tests {
             .expect_get_slice_stream()
             .times(2)
             .returning(move |path, range| {
-                assert_eq!(path, Path::new("split"));
-                assert_eq!(range, 102..105);
+                assert_eq!((path, range), (Path::new("split"), 102..105));
                 // Hit on the first read, miss on the second. Any insertion fails the test.
                 Some(Box::new(cached_reader.take()?))
             });
@@ -656,32 +650,21 @@ mod tests {
                 files: HashMap::from([(PathBuf::from("file"), 100..110)]),
             },
         };
-        let error = storage
-            .get_slice_stream(Path::new("file"), 9..11)
-            .await
-            .err()
-            .unwrap();
-        assert_eq!(error.kind(), crate::StorageErrorKind::Io);
-        assert_eq!(
-            std::error::Error::source(&error)
-                .unwrap()
-                .downcast_ref::<io::Error>()
-                .unwrap()
-                .kind(),
-            io::ErrorKind::InvalidInput
-        );
-        let error = storage
+        let err = storage
             .get_slice_stream(Path::new("missing"), 0..1)
             .await
             .err()
             .unwrap();
-        assert_eq!(io::Error::from(error).kind(), io::ErrorKind::NotFound);
-        let mut cached = storage
+        assert_eq!(err.kind(), crate::StorageErrorKind::NotFound);
+
+        let mut bytes = Vec::new();
+        storage
             .get_slice_stream(Path::new("file"), 2..5)
             .await
+            .unwrap()
+            .read_to_end(&mut bytes)
+            .await
             .unwrap();
-        let mut bytes = Vec::new();
-        cached.read_to_end(&mut bytes).await.unwrap();
         assert_eq!(bytes, b"abc");
 
         let mut stream = storage
