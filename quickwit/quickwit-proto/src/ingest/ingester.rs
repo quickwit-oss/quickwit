@@ -20,6 +20,8 @@ include!("../codegen/quickwit/quickwit.ingest.ingester.rs");
 
 pub use ingester_service_grpc_server::IngesterServiceGrpcServer;
 
+pub const RETAIN_SHARDS_V2: u32 = 2;
+
 impl FetchMessage {
     pub fn new_payload(payload: FetchPayload) -> Self {
         assert!(
