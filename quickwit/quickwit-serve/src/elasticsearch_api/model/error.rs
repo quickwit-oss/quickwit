@@ -12,21 +12,42 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use elasticsearch_dsl::search::ErrorCause;
 use quickwit_common::{rate_limited_debug, rate_limited_error};
 use quickwit_index_management::IndexServiceError;
 use quickwit_ingest::IngestServiceError;
 use quickwit_proto::ServiceError;
 use quickwit_proto::ingest::IngestV2Error;
 use quickwit_search::SearchError;
-use serde::{Deserialize, Serialize};
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Serialize, Serializer};
 use warp::hyper::StatusCode;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ElasticsearchError {
     #[serde(with = "http_serde::status_code")]
     pub status: StatusCode,
-    pub error: ErrorCause,
+    pub error: ElasticsearchErrorCause,
+}
+
+/// Subset of the Elasticsearch `ErrorCause` that Quickwit populates.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ElasticsearchErrorCause {
+    pub reason: String,
+    #[serde(rename = "type")]
+    pub ty: Option<String>,
+}
+
+// Always emits `caused_by` and `stack_trace` as null for backward compatibility with the
+// `elasticsearch_dsl::ErrorCause` format we used to return.
+impl Serialize for ElasticsearchErrorCause {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("ErrorCause", 4)?;
+        state.serialize_field("caused_by", &None::<()>)?;
+        state.serialize_field("reason", &self.reason)?;
+        state.serialize_field("stack_trace", &None::<()>)?;
+        state.serialize_field("type", &self.ty)?;
+        state.end()
+    }
 }
 
 impl ElasticsearchError {
@@ -42,14 +63,19 @@ impl ElasticsearchError {
         }
         ElasticsearchError {
             status,
-            error: ErrorCause {
-                reason: Some(reason),
-                caused_by: None,
-                root_cause: Vec::new(),
-                stack_trace: None,
-                suppressed: Vec::new(),
+            error: ElasticsearchErrorCause {
+                reason,
                 ty: exception_opt.map(|exception| exception.as_str().to_string()),
-                additional_details: Default::default(),
+            },
+        }
+    }
+
+    fn from_service_error(service_error: impl ServiceError) -> Self {
+        ElasticsearchError {
+            status: service_error.error_code().http_status_code(),
+            error: ElasticsearchErrorCause {
+                reason: service_error.to_string(),
+                ty: None,
             },
         }
     }
@@ -57,81 +83,25 @@ impl ElasticsearchError {
 
 impl From<SearchError> for ElasticsearchError {
     fn from(search_error: SearchError) -> Self {
-        let status = search_error.error_code().http_status_code();
-        // Fill only reason field to keep it simple.
-        let reason = ErrorCause {
-            reason: Some(search_error.to_string()),
-            caused_by: None,
-            root_cause: Vec::new(),
-            stack_trace: None,
-            suppressed: Vec::new(),
-            ty: None,
-            additional_details: Default::default(),
-        };
-        ElasticsearchError {
-            status,
-            error: reason,
-        }
+        Self::from_service_error(search_error)
     }
 }
 
 impl From<IngestServiceError> for ElasticsearchError {
     fn from(ingest_service_error: IngestServiceError) -> Self {
-        let status = ingest_service_error.error_code().http_status_code();
-
-        let reason = ErrorCause {
-            reason: Some(ingest_service_error.to_string()),
-            caused_by: None,
-            root_cause: Vec::new(),
-            stack_trace: None,
-            suppressed: Vec::new(),
-            ty: None,
-            additional_details: Default::default(),
-        };
-        ElasticsearchError {
-            status,
-            error: reason,
-        }
+        Self::from_service_error(ingest_service_error)
     }
 }
 
 impl From<IngestV2Error> for ElasticsearchError {
     fn from(ingest_error: IngestV2Error) -> Self {
-        let status = ingest_error.error_code().http_status_code();
-
-        let reason = ErrorCause {
-            reason: Some(ingest_error.to_string()),
-            caused_by: None,
-            root_cause: Vec::new(),
-            stack_trace: None,
-            suppressed: Vec::new(),
-            ty: None,
-            additional_details: Default::default(),
-        };
-        ElasticsearchError {
-            status,
-            error: reason,
-        }
+        Self::from_service_error(ingest_error)
     }
 }
 
 impl From<IndexServiceError> for ElasticsearchError {
-    fn from(ingest_error: IndexServiceError) -> Self {
-        let status = ingest_error.error_code().http_status_code();
-
-        let reason = ErrorCause {
-            reason: Some(ingest_error.to_string()),
-            caused_by: None,
-            root_cause: Vec::new(),
-            stack_trace: None,
-            suppressed: Vec::new(),
-            ty: None,
-            additional_details: Default::default(),
-        };
-        ElasticsearchError {
-            status,
-            error: reason,
-        }
+    fn from(index_service_error: IndexServiceError) -> Self {
+        Self::from_service_error(index_service_error)
     }
 }
 
@@ -170,5 +140,38 @@ impl ElasticException {
             Self::SourceNotFound => "source_not_found_exception",
             Self::Timeout => "timeout_exception",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use elasticsearch_dsl::ErrorCause;
+
+    use super::*;
+
+    #[test]
+    fn test_elasticsearch_error_cause_serialization_matches_error_cause() {
+        let error_cause = ElasticsearchErrorCause {
+            reason: "index `foo` not found".to_string(),
+            ty: Some("index_not_found_exception".to_string()),
+        };
+        let expected_error_cause = ErrorCause {
+            reason: Some("index `foo` not found".to_string()),
+            caused_by: None,
+            root_cause: Vec::new(),
+            stack_trace: None,
+            suppressed: Vec::new(),
+            ty: Some("index_not_found_exception".to_string()),
+            additional_details: Default::default(),
+        };
+        assert_eq!(
+            serde_json::to_string(&error_cause).unwrap(),
+            serde_json::to_string(&expected_error_cause).unwrap()
+        );
+        let error_cause_json = serde_json::to_string(&error_cause).unwrap();
+        let deserialized: ElasticsearchErrorCause =
+            serde_json::from_str(&error_cause_json).unwrap();
+        assert_eq!(deserialized.reason, error_cause.reason);
+        assert_eq!(deserialized.ty, error_cause.ty);
     }
 }

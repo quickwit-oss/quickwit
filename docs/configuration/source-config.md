@@ -246,6 +246,8 @@ For all source types but the `ingest-api`, ingested documents can be transformed
 | `script` | Source code of the VRL program executed to transform documents. | required |
 | `timezone` | Timezone used in the VRL program for date and time manipulations. It must be a valid name in the [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) | `UTC` |
 
+Quickwit compiles the script when the source is created or updated, and each time one of its indexing pipelines starts. If a Quickwit upgrade brings a VRL version that rejects the script, the source's indexing pipelines fail to start and log the compilation error until you update the source with a fixed script.
+
 ```yaml
 # Your source config here
 # ...

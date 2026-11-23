@@ -837,16 +837,11 @@ impl SearchAfterSegment {
             .sort_value
             .and_then(|sort_value| sort_value.sort_value)
         {
-            if let Some(new_value) = score_extractor
+            // Out of bounds value: disable the whole search_after.
+            let new_value = score_extractor
                 .first
-                .convert_to_u64_ff_val(search_after_sort_value, sort_order1)
-            {
-                sort_value = Some(new_value);
-            } else {
-                // Value is out of bounds, we ignore sort_value2 and disable the whole
-                // search_after
-                return None;
-            }
+                .convert_to_u64_ff_val(search_after_sort_value, sort_order1)?;
+            sort_value = Some(new_value);
         }
         let mut sort_value2 = None;
         if let Some(search_after_sort_value) = search_after

@@ -20,8 +20,11 @@ use super::RetryPolicy;
 use crate::SearchError;
 
 /// Retry policy for LeafSearchRequest.
-/// A retry is made either on an error or if there are some failing splits.
-/// In the last case, a retry request is built on failing splits only.
+/// A retry is made either on an error or if there are some retryable failing splits.
+/// In the last case, a retry request is built on retryable failing splits only.
+///
+/// Failed splits with `retryable_error == false` (for instance splits that ran out of warmup
+/// memory) are never retried.
 pub struct LeafSearchRetryPolicy {}
 
 impl RetryPolicy<LeafSearchRequest, LeafSearchResponse, SearchError> for LeafSearchRetryPolicy {
@@ -33,18 +36,19 @@ impl RetryPolicy<LeafSearchRequest, LeafSearchResponse, SearchError> for LeafSea
     ) -> Option<LeafSearchRequest> {
         match response_res {
             Ok(response) => {
-                if response.failed_splits.is_empty() {
-                    return None;
-                }
-                let failed_splits_hash_set: HashSet<&str> = response
+                let retryable_failed_split_ids: HashSet<&str> = response
                     .failed_splits
                     .iter()
+                    .filter(|failed_split| failed_split.retryable_error)
                     .map(|failed_split| failed_split.split_id.as_str())
                     .collect();
+                if retryable_failed_split_ids.is_empty() {
+                    return None;
+                }
                 for request in request.leaf_requests.iter_mut() {
-                    // Keep only failed splits
+                    // Keep only retryable failed splits
                     request.split_offsets.retain(|split_metadata| {
-                        failed_splits_hash_set.contains(split_metadata.split_id.as_str())
+                        retryable_failed_split_ids.contains(split_metadata.split_id.as_str())
                     });
                 }
                 // Remove requests with empty split_offsets
@@ -151,6 +155,51 @@ mod tests {
             partial_hits: Vec::new(),
             failed_splits: vec![split_error],
             num_attempted_splits: 1,
+            ..Default::default()
+        });
+        let retry_request = retry_policy.retry_request(request, &response_res).unwrap();
+        assert_eq!(retry_request, expected_retry_request);
+    }
+
+    #[test]
+    fn test_should_not_retry_if_no_failed_split_is_retryable() {
+        let retry_policy = LeafSearchRetryPolicy {};
+        let request = mock_leaf_search_request();
+        let split_error = SplitSearchError {
+            error: "out of warmup memory".to_string(),
+            split_id: "split_2".to_string(),
+            retryable_error: false,
+        };
+        let response_res = Ok(LeafSearchResponse {
+            failed_splits: vec![split_error],
+            num_attempted_splits: 2,
+            ..Default::default()
+        });
+        assert!(retry_policy.retry_request(request, &response_res).is_none());
+    }
+
+    #[test]
+    fn test_should_retry_only_retryable_failed_splits() {
+        let retry_policy = LeafSearchRetryPolicy {};
+        let request = mock_leaf_search_request();
+        let mut expected_retry_request = request.clone();
+        // Only split_2 is retried.
+        expected_retry_request.leaf_requests[0]
+            .split_offsets
+            .remove(0);
+        let non_retryable_split_error = SplitSearchError {
+            error: "out of warmup memory".to_string(),
+            split_id: "split_1".to_string(),
+            retryable_error: false,
+        };
+        let retryable_split_error = SplitSearchError {
+            error: "error".to_string(),
+            split_id: "split_2".to_string(),
+            retryable_error: true,
+        };
+        let response_res = Ok(LeafSearchResponse {
+            failed_splits: vec![non_retryable_split_error, retryable_split_error],
+            num_attempted_splits: 2,
             ..Default::default()
         });
         let retry_request = retry_policy.retry_request(request, &response_res).unwrap();

@@ -17,6 +17,7 @@ use std::ops::Bound;
 use std::sync::Arc;
 
 use anyhow::Context;
+use bytesize::ByteSize;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use quickwit_common::pretty::PrettySample;
@@ -38,7 +39,7 @@ use crate::cost::compute_split_query_cost;
 use crate::leaf::open_index_with_caches;
 use crate::metrics::{LEAF_LIST_TERMS_SPLITS_TOTAL, LEAF_SEARCH_SPLIT_DURATION_SECS};
 use crate::search_job_placer::group_jobs_by_index_id;
-use crate::search_permit_provider::compute_initial_memory_allocation;
+use crate::search_permit_provider::{SearchPermit, compute_initial_memory_allocation};
 use crate::{ClusterClient, SearchError, SearchJob, SearcherContext, resolve_index_patterns};
 
 /// Performs a distributed list terms.
@@ -218,10 +219,20 @@ async fn leaf_list_terms_single_split(
     search_request: &ListTermsRequest,
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
+    search_permit: &SearchPermit,
 ) -> crate::Result<LeafListTermsResponse> {
     let cache = ByteRangeCache::with_infinite_capacity();
-    let (index, _) =
-        open_index_with_caches(searcher_context, storage, &split, None, Some(cache)).await?;
+    let (index, hot_directory) = open_index_with_caches(
+        searcher_context,
+        storage,
+        &split,
+        None,
+        Some(cache),
+        Some(search_permit.warmup_memory()),
+    )
+    .await?;
+    // Listing terms cannot download more than the index, so we do not need to reserve more.
+    search_permit.shrink_memory_allocation(ByteSize(hot_directory.num_bytes_without_doc_store()));
     let split_schema = index.schema();
     let reader = index
         .reader_builder()
@@ -269,7 +280,11 @@ async fn leaf_list_terms_single_split(
         )
         .read_bytes_async()
         .await
-        .with_context(|| "failed to load sstable range")?;
+        // Converted directly, so that running out of warmup memory gives
+        // `SearchError::OutOfWarmupMemory`.
+        .map_err(|io_error| {
+            SearchError::from(io_error).with_context("failed to load sstable range")
+        })?;
 
         let mut range = dict.range();
         if let Some(limit) = search_request.max_hits {
@@ -281,9 +296,9 @@ async fn leaf_list_terms_single_split(
         if let Some(end_term) = &end_term {
             range = range.lt(end_term.serialized_value_bytes())
         }
-        let mut stream = range
-            .into_stream()
-            .with_context(|| "failed to create stream over sstable")?;
+        let mut stream = range.into_stream().map_err(|io_error| {
+            SearchError::from(io_error).with_context("failed to create stream over sstable")
+        })?;
         let mut segment_result: Vec<Vec<u8>> =
             Vec::with_capacity(search_request.max_hits.unwrap_or(0) as usize);
         while stream.advance() {
@@ -339,6 +354,13 @@ pub async fn leaf_list_terms(
                 searcher_context
                     .searcher_config
                     .warmup_single_split_initial_allocation,
+            )
+            // A split search can never reserve more than the per-split limit, which is also lower
+            // or equal to the total budget (a reservation above it could never acquire a permit).
+            .min(
+                searcher_context
+                    .searcher_config
+                    .effective_warmup_single_split_max_allocation(),
             );
             // query_complexity_factor is 1.0 here (no effect) because list_terms doesn't execute
             // the query.
@@ -376,28 +398,36 @@ pub async fn leaf_list_terms(
                     request,
                     index_storage_clone,
                     split.clone(),
+                    &leaf_split_search_permit,
                 )
                 .await;
                 timer.observe_duration();
-
                 // Explicitly drop the permit for readability.
-                // This should always happen after the ephemeral search cache is dropped.
+                // This should always happen after the ephemeral search cache is dropped. The
+                // split's `CachingDirectory` holds the other reference to the warmup memory,
+                // together with the ephemeral search cache, so the warmup memory is freed here.
                 std::mem::drop(leaf_split_search_permit);
 
-                leaf_search_single_split_res.map_err(|err| (split.split_id.clone(), err))
+                leaf_search_single_split_res.map_err(|err| SplitSearchError {
+                    split_id: split.split_id.clone(),
+                    error: err.to_string(),
+                    retryable_error: err.is_retryable_on_another_searcher(),
+                })
             }
         })
         .collect();
 
     let split_search_results = futures::future::join_all(leaf_search_single_split_futures).await;
 
-    let (split_search_responses, errors): (Vec<LeafListTermsResponse>, Vec<(String, SearchError)>) =
-        split_search_results
-            .into_iter()
-            .partition_map(|split_search_res| match split_search_res {
-                Ok(split_search_resp) => Either::Left(split_search_resp),
-                Err(err) => Either::Right(err),
-            });
+    let (split_search_responses, failed_splits): (
+        Vec<LeafListTermsResponse>,
+        Vec<SplitSearchError>,
+    ) = split_search_results
+        .into_iter()
+        .partition_map(|split_search_res| match split_search_res {
+            Ok(split_search_resp) => Either::Left(split_search_resp),
+            Err(err) => Either::Right(err),
+        });
 
     let merged_iter = split_search_responses
         .into_iter()
@@ -410,14 +440,6 @@ pub async fn leaf_list_terms(
         merged_iter.collect()
     };
 
-    let failed_splits = errors
-        .into_iter()
-        .map(|(split_id, err)| SplitSearchError {
-            split_id,
-            error: err.to_string(),
-            retryable_error: true,
-        })
-        .collect();
     let merged_search_response = LeafListTermsResponse {
         num_hits: terms.len() as u64,
         terms,

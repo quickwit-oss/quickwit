@@ -299,44 +299,44 @@ interface DateTimeRangeLabelProps {
 }
 
 function DateTimeRangeLabel(props: DateTimeRangeLabelProps): JSX.Element {
-  function Label() {
-    if (props.startTimestamp !== null && props.endTimestamp !== null) {
-      return (
-        <>
-          {convertTimestampSecsIntoDateUtc(props.startTimestamp).format(
-            DATE_TIME_WITH_SECONDS_FORMAT,
-          )}{" "}
-          -{" "}
-          {convertTimestampSecsIntoDateUtc(props.endTimestamp).format(
-            DATE_TIME_WITH_SECONDS_FORMAT,
-          )}
-        </>
-      );
-    } else if (props.startTimestamp !== null && props.endTimestamp === null) {
-      return (
-        <>
-          Since{" "}
-          {convertTimestampSecsIntoDateUtc(props.startTimestamp).fromNow(true)}
-        </>
-      );
-    } else if (props.startTimestamp == null && props.endTimestamp != null) {
-      return (
-        <>
-          Before{" "}
-          {convertTimestampSecsIntoDateUtc(props.endTimestamp).format(
-            DATE_TIME_WITH_SECONDS_FORMAT,
-          )}
-        </>
-      );
-    }
-    return <>No date range</>;
-  }
-
   return (
     <span style={{ textTransform: "none" }}>
-      <Label />
+      <DateTimeRangeLabelText {...props} />
     </span>
   );
+}
+
+function DateTimeRangeLabelText(props: DateTimeRangeLabelProps): JSX.Element {
+  if (props.startTimestamp !== null && props.endTimestamp !== null) {
+    return (
+      <>
+        {convertTimestampSecsIntoDateUtc(props.startTimestamp).format(
+          DATE_TIME_WITH_SECONDS_FORMAT,
+        )}{" "}
+        -{" "}
+        {convertTimestampSecsIntoDateUtc(props.endTimestamp).format(
+          DATE_TIME_WITH_SECONDS_FORMAT,
+        )}
+      </>
+    );
+  } else if (props.startTimestamp !== null && props.endTimestamp === null) {
+    return (
+      <>
+        Since{" "}
+        {convertTimestampSecsIntoDateUtc(props.startTimestamp).fromNow(true)}
+      </>
+    );
+  } else if (props.startTimestamp == null && props.endTimestamp != null) {
+    return (
+      <>
+        Before{" "}
+        {convertTimestampSecsIntoDateUtc(props.endTimestamp).format(
+          DATE_TIME_WITH_SECONDS_FORMAT,
+        )}
+      </>
+    );
+  }
+  return <>No date range</>;
 }
 
 function convertTimestampSecsIntoDateUtc(timestamp_secs: number): Dayjs {
