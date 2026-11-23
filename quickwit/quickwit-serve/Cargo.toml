@@ -76,6 +76,7 @@ quickwit-proto = { workspace = true }
 quickwit-query = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-storage = { workspace = true }
+quickwit-telemetry = { workspace = true }
 quickwit-telemetry-exporters = { workspace = true }
 quickwit-transport = { workspace = true }
 
