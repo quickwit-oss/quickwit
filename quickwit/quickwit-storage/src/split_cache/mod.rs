@@ -266,8 +266,8 @@ mod tests {
         let tempdir = tempfile::tempdir().unwrap();
         let path = Path::new("cached.split");
         let file = std::fs::File::create(tempdir.path().join(path)).unwrap();
-        let end = 2 * 1024 * 1024;
-        file.set_len(end as u64 + 1).unwrap();
+        let range_end = 2 * 1024 * 1024;
+        file.set_len(range_end as u64 + 1).unwrap();
         file.write_all_at(b"a", 7).unwrap();
         let cache = SearchSplitCache::with_root_path(
             tempdir.path().to_owned(),
@@ -282,13 +282,16 @@ mod tests {
         .unwrap();
         let storage =
             SearchSplitCache::wrap_storage(cache.clone(), Arc::new(RamStorage::default()));
-        let mut reader = storage.get_slice_stream(path, 7..end).await.unwrap();
+        let mut reader = storage.get_slice_stream(path, 7..range_end).await.unwrap();
         assert_eq!(reader.read_u8().await.unwrap(), b'a');
         cache.evict(&[SplitId::from("cached")]);
         // Change the unread tail through the open descriptor to detect eager buffering.
-        file.write_all_at(b"bc", end as u64 - 1).unwrap();
-        let mut tail = Vec::new();
-        reader.read_to_end(&mut tail).await.unwrap();
-        assert_eq!((tail.len(), tail.last()), (end - 8, Some(&b'b')));
+        file.write_all_at(b"bc", range_end as u64 - 1).unwrap();
+        let mut remaining_bytes = Vec::new();
+        reader.read_to_end(&mut remaining_bytes).await.unwrap();
+        assert_eq!(
+            (remaining_bytes.len(), remaining_bytes.last()),
+            (range_end - 8, Some(&b'b'))
+        );
     }
 }

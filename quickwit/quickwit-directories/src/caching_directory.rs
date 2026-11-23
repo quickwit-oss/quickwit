@@ -485,7 +485,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_automaton_bitset_does_not_fill_directory_cache() -> tantivy::Result<()> {
+    async fn test_automaton_bitset_bypasses_directory_cache_and_memory_budget()
+    -> tantivy::Result<()> {
         use tantivy::schema::{STRING, Schema};
         use tantivy::{Executor, Index, IndexWriter, doc};
         use tantivy_fst::Regex;
@@ -502,8 +503,8 @@ mod tests {
         writer.commit()?;
 
         let cache = ByteRangeCache::with_infinite_capacity();
-        let budget = 32 * 1024 * 1024;
-        let reserver = LimitedMemoryReserver::new(budget);
+        let budget_bytes = 32 * 1024 * 1024;
+        let reserver = LimitedMemoryReserver::new(budget_bytes);
         let directory = DebugProxyDirectory::wrap(
             CachingDirectory::new(Arc::new(directory), cache.clone())
                 .with_memory_reserver(reserver.clone()),
@@ -511,23 +512,23 @@ mod tests {
         let index = Index::open(directory.clone())?;
         let searcher = index.reader()?.searcher();
         let segment = searcher.segment_reader(0);
-        let reader = segment.inverted_index(field)?;
+        let inverted_index = segment.inverted_index(field)?;
         // Opening the index caches metadata. Exhaust remaining budget before streaming reads.
         let _ = directory.drain_read_operations();
-        let initial_bytes = cache.get_num_bytes();
+        let initial_cached_bytes = cache.get_num_bytes();
         let _reservation = reserver
-            .try_reserve_memory(budget - reserver.reserved())
+            .try_reserve_memory(budget_bytes - reserver.reserved())
             .unwrap();
         let executor = Executor::single_thread();
-        let sparse = reader
+        let subset_bitset = inverted_index
             .create_bitset_for_automaton(Regex::new("a|z").unwrap(), segment.max_doc(), &executor)
             .await?;
-        assert!(sparse.len() == 2 && sparse.contains(0) && sparse.contains(2));
-        let all = reader
+        assert!(subset_bitset.len() == 2 && subset_bitset.contains(0) && subset_bitset.contains(2));
+        let all_docs_bitset = inverted_index
             .create_bitset_for_automaton(AlwaysMatch, segment.max_doc(), &executor)
             .await?;
-        assert_eq!(all.len(), 3);
-        assert_eq!(cache.get_num_bytes(), initial_bytes);
+        assert_eq!(all_docs_bitset.len(), 3);
+        assert_eq!(cache.get_num_bytes(), initial_cached_bytes);
         assert_eq!(directory.drain_read_operations().count(), 0);
         Ok(())
     }

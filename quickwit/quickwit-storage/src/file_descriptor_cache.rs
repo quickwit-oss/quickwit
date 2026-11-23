@@ -170,17 +170,22 @@ impl SplitFile {
         Ok(OwnedBytes::new(buf))
     }
 
-    /// Keep the descriptor alive across eviction and use positional reads so streams can share it.
+    /// Streams `range` in chunks using positional reads while holding the file descriptor open
+    /// across cache eviction.
     pub fn get_range_stream(self, range: Range<usize>) -> impl AsyncRead + Send + Unpin {
-        const CHUNK_SIZE: usize = 1024 * 1024;
-        let chunks = futures::stream::try_unfold((self, range), |(file, range)| async move {
-            if range.is_empty() {
-                return Ok(None);
-            }
-            let end = range.start + range.len().min(CHUNK_SIZE);
-            let bytes = file.get_range(range.start..end).await?;
-            io::Result::Ok(Some((io::Cursor::new(bytes), (file, end..range.end))))
-        });
+        const CHUNK_NUM_BYTES: usize = 1024 * 1024;
+        let chunks =
+            futures::stream::try_unfold((self, range), |(file, remaining_range)| async move {
+                if remaining_range.is_empty() {
+                    return Ok(None);
+                }
+                let chunk_end = remaining_range.start + remaining_range.len().min(CHUNK_NUM_BYTES);
+                let bytes = file.get_range(remaining_range.start..chunk_end).await?;
+                io::Result::Ok(Some((
+                    io::Cursor::new(bytes),
+                    (file, chunk_end..remaining_range.end),
+                )))
+            });
         StreamReader::new(Box::pin(chunks))
     }
 

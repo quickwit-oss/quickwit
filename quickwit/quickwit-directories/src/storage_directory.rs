@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, io};
 
-mod batch_stream;
+mod coalesced_range_stream;
 
 use async_trait::async_trait;
 use futures::stream::BoxStream;
@@ -72,7 +72,11 @@ impl FileHandle for StorageDirectoryFileHandle {
         &self,
         ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
     ) -> BoxStream<'_, io::Result<OwnedBytes>> {
-        batch_stream::download_ranges(self.storage_directory.storage.as_ref(), &self.path, ranges)
+        coalesced_range_stream::download_ranges(
+            self.storage_directory.storage.as_ref(),
+            &self.path,
+            ranges,
+        )
     }
 }
 

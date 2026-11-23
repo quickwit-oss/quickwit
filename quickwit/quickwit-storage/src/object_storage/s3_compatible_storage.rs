@@ -90,15 +90,13 @@ impl<T: AsyncRead + Send + Unpin> AsyncRead for S3AsyncRead<T> {
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         let self_unpin = self.get_mut();
-        let before = buf.filled().len();
-        let poll = Pin::new(&mut self_unpin.read).poll_read(cx, buf);
-        if let Poll::Ready(Ok(())) = &poll {
-            let num_bytes = buf.filled().len() - before;
-            if num_bytes > 0 {
-                crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes as u64);
-            }
+        let filled_before = buf.filled().len();
+        let poll_result = Pin::new(&mut self_unpin.read).poll_read(cx, buf);
+        if let Poll::Ready(Ok(())) = &poll_result {
+            let num_bytes_read = buf.filled().len() - filled_before;
+            crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes_read as u64);
         }
-        poll
+        poll_result
     }
 }
 

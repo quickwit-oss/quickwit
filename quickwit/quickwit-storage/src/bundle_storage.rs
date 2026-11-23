@@ -474,9 +474,9 @@ impl BundleStorage {
             .ok_or_else(|| StorageErrorKind::NotFound.with_error(anyhow!("missing file {path:?}")))
     }
 
-    fn bundle_slice_range(&self, path: &Path, range: Range<usize>) -> StorageResult<Range<usize>> {
-        let start = self.file_range(path)?.start as usize;
-        Ok(start + range.start..start + range.end)
+    fn bundle_range(&self, path: &Path, range: Range<usize>) -> StorageResult<Range<usize>> {
+        let file_start = self.file_range(path)?.start as usize;
+        Ok(file_start + range.start..file_start + range.end)
     }
 }
 
@@ -522,8 +522,10 @@ impl Storage for BundleStorage {
         path: &Path,
         range: Range<usize>,
     ) -> crate::StorageResult<OwnedBytes> {
-        let range = self.bundle_slice_range(path, range)?;
-        self.storage.get_slice(&self.bundle_filepath, range).await
+        let bundle_range = self.bundle_range(path, range)?;
+        self.storage
+            .get_slice(&self.bundle_filepath, bundle_range)
+            .await
     }
 
     async fn get_slice_into(
@@ -535,9 +537,9 @@ impl Storage for BundleStorage {
         if buffer.is_empty() {
             return Ok(());
         }
-        let range = self.bundle_slice_range(path, range)?;
+        let bundle_range = self.bundle_range(path, range)?;
         self.storage
-            .get_slice_into(&self.bundle_filepath, range, buffer)
+            .get_slice_into(&self.bundle_filepath, bundle_range, buffer)
             .await
     }
 
@@ -546,9 +548,9 @@ impl Storage for BundleStorage {
         path: &Path,
         range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        let range = self.bundle_slice_range(path, range)?;
+        let bundle_range = self.bundle_range(path, range)?;
         self.storage
-            .get_slice_stream(&self.bundle_filepath, range)
+            .get_slice_stream(&self.bundle_filepath, bundle_range)
             .await
     }
 

@@ -210,7 +210,7 @@ impl<T: Storage> Storage for DebouncedStorage<T> {
         range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
         self.stream_debouncer
-            .get(self.underlying.clone(), path, range)
+            .get_slice_stream(self.underlying.clone(), path, range)
             .await
     }
 
