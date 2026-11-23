@@ -288,7 +288,13 @@ impl SearchService for SearchServiceImpl {
         &self,
         list_fields_req: ListFieldsRequest,
     ) -> crate::Result<ListFieldsResponse> {
-        root_list_fields(list_fields_req, &self.cluster_client, &self.metastore).await
+        root_list_fields(
+            list_fields_req,
+            &self.cluster_client,
+            &self.metastore,
+            &self.searcher_context.list_fields_debouncer,
+        )
+        .await
     }
 
     async fn leaf_list_fields(
@@ -422,7 +428,7 @@ pub struct SearcherContext {
     pub split_cache_opt: Option<Arc<SearchSplitCache>>,
     /// List fields cache. Caches the raw fields-metadata blob for a given split.
     pub list_fields_cache: ListFieldsCache,
-    /// Debounces identical concurrent leaf list-fields requests.
+    /// Debounces identical concurrent root list-fields requests.
     pub list_fields_debouncer: ListFieldsDebouncer,
     /// The aggregation limits are passed to limit the memory usage.
     /// This object is shared across all request.

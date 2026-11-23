@@ -18,12 +18,11 @@ use std::sync::Arc;
 use anyhow::Context;
 use futures::stream::{self, StreamExt, TryStreamExt};
 use quickwit_common::shared_consts::{FIELD_PRESENCE_FIELD_NAME, SPLIT_FIELDS_FILE_NAME};
-use quickwit_common::uri::Uri;
 use quickwit_proto::search::{
     ListFieldsEntry, ListFieldsMetadata, ListFieldsResponse, SplitIdAndFooterOffsets,
 };
 use quickwit_proto::types::IndexId;
-use quickwit_storage::{AsyncDebouncer, OwnedBytes, Storage};
+use quickwit_storage::{OwnedBytes, Storage};
 use tracing::instrument;
 
 use crate::leaf::open_split_bundle;
@@ -41,46 +40,6 @@ const MAX_CONCURRENT_DOWNLOADS: usize = 500;
 
 /// A decoded split's field list can be much larger than its compressed metadata blob.
 const MAX_CONCURRENT_DECODES: usize = 4;
-
-/// Key identifying equivalent concurrent [`leaf_list_fields`] requests.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct LeafListFieldsKey {
-    index_id: IndexId,
-    index_uri: Uri,
-    field_patterns: Vec<String>,
-    split_ids: Vec<String>,
-    limit: usize,
-}
-
-impl LeafListFieldsKey {
-    fn new(
-        index_id: &IndexId,
-        index_uri: &Uri,
-        field_patterns: &[String],
-        split_footers: &[SplitIdAndFooterOffsets],
-        limit: usize,
-    ) -> Self {
-        let mut field_patterns = field_patterns.to_vec();
-        field_patterns.sort_unstable();
-        field_patterns.dedup();
-        let mut split_ids: Vec<String> = split_footers
-            .iter()
-            .map(|split_footer| split_footer.split_id.clone())
-            .collect();
-        split_ids.sort_unstable();
-        Self {
-            index_id: index_id.clone(),
-            index_uri: index_uri.clone(),
-            field_patterns,
-            split_ids,
-            limit,
-        }
-    }
-}
-
-/// Debounces identical concurrent [`leaf_list_fields`] requests so parallel callers share one
-/// execution.
-pub type ListFieldsDebouncer = AsyncDebouncer<LeafListFieldsKey, crate::Result<ListFieldsResponse>>;
 
 /// `leaf` step of list fields.
 ///
@@ -102,37 +61,7 @@ pub async fn leaf_list_fields(
     if limit == 0 {
         return Ok(ListFieldsResponse::default());
     }
-    let key = LeafListFieldsKey::new(
-        &index_id,
-        storage.uri(),
-        field_patterns_strs,
-        &split_footers,
-        limit,
-    );
-    searcher_ctx
-        .list_fields_debouncer
-        .get_or_create(key, || {
-            let searcher_ctx = searcher_ctx.clone();
-            execute_leaf_list_fields(
-                index_id,
-                field_patterns,
-                split_footers,
-                limit,
-                searcher_ctx,
-                storage,
-            )
-        })
-        .await
-}
 
-async fn execute_leaf_list_fields(
-    index_id: IndexId,
-    field_patterns: FieldPatterns,
-    split_footers: Vec<SplitIdAndFooterOffsets>,
-    limit: usize,
-    searcher_ctx: Arc<SearcherContext>,
-    storage: Arc<dyn Storage>,
-) -> crate::Result<ListFieldsResponse> {
     let mut fields_by_split = stream::iter(split_footers)
         .map(async |split_footer| {
             let bytes = get_fields_metadata(&split_footer, &searcher_ctx, storage.clone()).await?;
@@ -487,137 +416,5 @@ mod tests {
             matching_fields(fields, &["service.*".into()]),
             [entry("service.id"), entry("service.name")]
         );
-    }
-
-    async fn build_test_split(
-        split_id: &str,
-        fields: Vec<ListFieldsEntry>,
-    ) -> (SplitIdAndFooterOffsets, OwnedBytes) {
-        let serialized = ListFieldsMetadata { entries: fields }.serialize();
-        let split_payload =
-            quickwit_storage::SplitPayloadBuilder::get_split_payload(&[], &serialized, None, &[])
-                .unwrap();
-        let footer_range = split_payload.footer_range.clone();
-        let ram_storage = quickwit_storage::RamStorage::default();
-        let path = Path::new(&format!("{split_id}.split")).to_path_buf();
-        ram_storage
-            .put(&path, Box::new(split_payload))
-            .await
-            .unwrap();
-        let bytes = ram_storage.get_all(&path).await.unwrap();
-        let footer = SplitIdAndFooterOffsets {
-            split_id: split_id.to_string(),
-            split_footer_start: footer_range.start,
-            split_footer_end: footer_range.end,
-            num_docs: 1,
-            ..Default::default()
-        };
-        (footer, bytes)
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn leaf_list_fields_debounces_identical_concurrent_requests() {
-        use std::collections::HashMap;
-        use std::sync::atomic::{AtomicUsize, Ordering};
-
-        let (split_one, bytes_one) =
-            build_test_split("split-1", vec![entry("a"), entry("b")]).await;
-        let (split_two, bytes_two) =
-            build_test_split("split-2", vec![entry("b"), entry("c")]).await;
-        let split_files: HashMap<String, OwnedBytes> = HashMap::from([
-            ("split-1.split".to_string(), bytes_one),
-            ("split-2.split".to_string(), bytes_two),
-        ]);
-
-        let get_slice_calls = Arc::new(AtomicUsize::new(0));
-        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
-        let (release_tx, release_rx) = std::sync::mpsc::channel();
-        let started_tx = std::sync::Mutex::new(Some(started_tx));
-        let release_rx = std::sync::Mutex::new(release_rx);
-
-        let mut mock_storage = quickwit_storage::MockStorage::default();
-        mock_storage
-            .expect_uri()
-            .return_const(Uri::for_test("ram:///debounce-test"));
-        {
-            let get_slice_calls = get_slice_calls.clone();
-            mock_storage
-                .expect_get_slice()
-                .returning(move |path, range| {
-                    if get_slice_calls.fetch_add(1, Ordering::SeqCst) == 0 {
-                        if let Some(tx) = started_tx.lock().unwrap().take() {
-                            let _ = tx.send(());
-                        }
-                        tokio::task::block_in_place(|| {
-                            let _ = release_rx.lock().unwrap().recv();
-                        });
-                    }
-                    let file_name = path.to_str().unwrap();
-                    Ok(split_files[file_name].slice(range))
-                });
-        }
-        let storage: Arc<dyn Storage> = Arc::new(mock_storage);
-        let searcher = Arc::new(SearcherContext::for_test());
-
-        let first_task = {
-            let searcher = searcher.clone();
-            let storage = storage.clone();
-            let splits = vec![split_one.clone(), split_two.clone()];
-            tokio::spawn(async move {
-                leaf_list_fields(
-                    "index".into(),
-                    &["b*".into(), "a*".into()],
-                    splits,
-                    Some(10),
-                    searcher,
-                    storage,
-                )
-                .await
-            })
-        };
-
-        started_rx.await.unwrap();
-
-        // Concurrent callers with reordered splits and reordered/duplicated patterns normalize to
-        // the same key and join the in-flight execution.
-        let mut joined_tasks = Vec::new();
-        for _ in 0..5 {
-            let searcher = searcher.clone();
-            let storage = storage.clone();
-            let splits = vec![split_two.clone(), split_one.clone()];
-            joined_tasks.push(tokio::spawn(async move {
-                leaf_list_fields(
-                    "index".into(),
-                    &["a*".into(), "b*".into(), "a*".into()],
-                    splits,
-                    Some(10),
-                    searcher,
-                    storage,
-                )
-                .await
-            }));
-        }
-
-        for _ in 0..10 {
-            tokio::task::yield_now().await;
-        }
-        assert_eq!(searcher.list_fields_debouncer.len(), 1);
-        assert!(get_slice_calls.load(Ordering::SeqCst) <= 3);
-
-        release_tx.send(()).unwrap();
-
-        let first_response = first_task.await.unwrap().unwrap();
-        let field_names: Vec<&str> = first_response
-            .entries
-            .iter()
-            .map(|field| field.field_name.as_str())
-            .collect();
-        assert_eq!(field_names, ["a", "b"]);
-
-        for task in joined_tasks {
-            assert_eq!(task.await.unwrap().unwrap(), first_response);
-        }
-        // 2 splits × (footer + split_fields) = 4 reads total across all 6 concurrent callers.
-        assert_eq!(get_slice_calls.load(Ordering::SeqCst), 4);
     }
 }

@@ -28,14 +28,61 @@ use quickwit_proto::search::{
 };
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_query::query_ast::QueryAst;
+use quickwit_storage::AsyncDebouncer;
 use tracing::{Span, instrument};
 
-use crate::list_fields::{merge_entries_with_limit_override, sort_and_dedup};
+use crate::list_fields::{
+    field_list_size_limit, merge_entries_with_limit_override, sort_and_dedup,
+};
 use crate::search_job_placer::group_jobs_by_index_id;
 use crate::{
     ClusterClient, SearchError, SearchJob, list_relevant_splits, resolve_index_patterns,
     search_thread_pool,
 };
+
+/// Granularity for snapping `start_timestamp` and `end_timestamp` in [`RootListFieldsKey`].
+const TIMESTAMP_SNAP_GRANULARITY_SECS: i64 = 10 * 60;
+
+/// Key identifying equivalent concurrent [`root_list_fields`] requests.
+///
+/// Timestamps are snapped to [`TIMESTAMP_SNAP_GRANULARITY_SECS`] buckets so concurrent requests
+/// with slightly shifted sliding time windows share one execution.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct RootListFieldsKey {
+    index_id_patterns: Vec<String>,
+    field_patterns: Vec<String>,
+    start_timestamp_bucket: Option<i64>,
+    end_timestamp_bucket: Option<i64>,
+    query_ast: Option<String>,
+    limit: usize,
+}
+
+impl RootListFieldsKey {
+    fn from_request(request: &ListFieldsRequest) -> Self {
+        let mut index_id_patterns = request.index_id_patterns.clone();
+        index_id_patterns.sort_unstable();
+        index_id_patterns.dedup();
+        let mut field_patterns = request.field_patterns.clone();
+        field_patterns.sort_unstable();
+        field_patterns.dedup();
+        Self {
+            index_id_patterns,
+            field_patterns,
+            start_timestamp_bucket: request
+                .start_timestamp
+                .map(|timestamp| timestamp.div_euclid(TIMESTAMP_SNAP_GRANULARITY_SECS)),
+            end_timestamp_bucket: request
+                .end_timestamp
+                .map(|timestamp| timestamp.div_euclid(TIMESTAMP_SNAP_GRANULARITY_SECS)),
+            query_ast: request.query_ast.clone(),
+            limit: field_list_size_limit(request.limit),
+        }
+    }
+}
+
+/// Debounces identical concurrent [`root_list_fields`] requests so parallel callers share one
+/// execution.
+pub type ListFieldsDebouncer = AsyncDebouncer<RootListFieldsKey, crate::Result<ListFieldsResponse>>;
 
 /// Index metas needed for executing a leaf list fields request.
 #[derive(Clone, Debug)]
@@ -47,11 +94,28 @@ struct IndexMetasForLeafSearch {
 }
 
 /// Performs a distributed list fields request.
-/// 1. Sends leaf requests over gRPC to multiple leaf nodes.
-/// 2. Merges the search results.
-/// 3. Builds the response and returns.
+/// 1. Deduplicates identical in-flight requests via `debouncer`.
+/// 2. Sends leaf requests over gRPC to multiple leaf nodes.
+/// 3. Merges the search results.
+/// 4. Builds the response and returns.
 #[instrument(skip_all, fields(index_id_patterns = ?list_fields_req.index_id_patterns))]
 pub async fn root_list_fields(
+    list_fields_req: ListFieldsRequest,
+    cluster_client: &ClusterClient,
+    metastore: &MetastoreServiceClient,
+    debouncer: &ListFieldsDebouncer,
+) -> crate::Result<ListFieldsResponse> {
+    let key = RootListFieldsKey::from_request(&list_fields_req);
+    let cluster_client = cluster_client.clone();
+    let metastore = metastore.clone();
+    debouncer
+        .get_or_create(key, || async move {
+            execute_root_list_fields(list_fields_req, &cluster_client, &metastore).await
+        })
+        .await
+}
+
+async fn execute_root_list_fields(
     list_fields_req: ListFieldsRequest,
     cluster_client: &ClusterClient,
     metastore: &MetastoreServiceClient,
@@ -211,4 +275,138 @@ async fn merge_fields_metadata(
         })
         .await
         .context("failed to merge leaf list fields responses")?
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use quickwit_common::ServiceStream;
+    use quickwit_indexing::MockSplitBuilder;
+    use quickwit_metastore::{
+        IndexMetadata, ListIndexesMetadataResponseExt, ListSplitsResponseExt,
+    };
+    use quickwit_proto::metastore::{
+        ListIndexesMetadataResponse, ListSplitsResponse, MockMetastoreService,
+    };
+    use quickwit_proto::search::ListFieldsType;
+
+    use super::*;
+    use crate::search_job_placer::SearchJobPlacer;
+    use crate::{MockSearchService, searcher_pool_for_test};
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn root_list_fields_debounces_concurrent_requests_within_snap_window() {
+        let mut mock_metastore = MockMetastoreService::new();
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        let index_uid = index_metadata.index_uid.clone();
+
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let started_tx = Mutex::new(Some(started_tx));
+        let release_rx = Mutex::new(release_rx);
+
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .times(1)
+            .returning(move |_| {
+                if let Some(tx) = started_tx.lock().unwrap().take() {
+                    let _ = tx.send(());
+                }
+                tokio::task::block_in_place(|| {
+                    let _ = release_rx.lock().unwrap().recv();
+                });
+                Ok(ListIndexesMetadataResponse::for_test(vec![
+                    index_metadata.clone(),
+                ]))
+            });
+        mock_metastore
+            .expect_list_splits()
+            .times(1)
+            .returning(move |_| {
+                let split = MockSplitBuilder::new("split1")
+                    .with_index_uid(&index_uid)
+                    .build();
+                let splits_response = ListSplitsResponse::try_from_splits(vec![split]).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits_response)]))
+            });
+
+        let expected_entry = ListFieldsEntry {
+            field_name: "service".to_string(),
+            field_type: ListFieldsType::Str as i32,
+            searchable: true,
+            aggregatable: true,
+            index_ids: vec!["test-index".to_string()],
+            non_searchable_index_ids: Vec::new(),
+            non_aggregatable_index_ids: Vec::new(),
+            num_splits: 1,
+        };
+        let leaf_entry = expected_entry.clone();
+        let mut mock_search_service = MockSearchService::new();
+        mock_search_service
+            .expect_leaf_list_fields()
+            .times(1)
+            .returning(move |_| {
+                Ok(ListFieldsResponse {
+                    entries: vec![leaf_entry.clone()],
+                })
+            });
+
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
+        let cluster_client = ClusterClient::new(SearchJobPlacer::new(searcher_pool));
+        let metastore = MetastoreServiceClient::from_mock(mock_metastore);
+        let debouncer = Arc::new(ListFieldsDebouncer::default());
+
+        let first_task = {
+            let cluster_client = cluster_client.clone();
+            let metastore = metastore.clone();
+            let debouncer = debouncer.clone();
+            tokio::spawn(async move {
+                let request = ListFieldsRequest {
+                    index_id_patterns: vec!["test-index".to_string()],
+                    field_patterns: vec!["b*".to_string(), "a*".to_string()],
+                    start_timestamp: Some(1_200),
+                    end_timestamp: Some(3_600),
+                    query_ast: None,
+                    limit: Some(10),
+                };
+                root_list_fields(request, &cluster_client, &metastore, &debouncer).await
+            })
+        };
+
+        started_rx.await.unwrap();
+
+        // Concurrent requests within the same 10-minute timestamp bucket and with reordered
+        // patterns join the in-flight execution.
+        let mut joined_tasks = Vec::new();
+        for offset_secs in 1..=5 {
+            let cluster_client = cluster_client.clone();
+            let metastore = metastore.clone();
+            let debouncer = debouncer.clone();
+            joined_tasks.push(tokio::spawn(async move {
+                let request = ListFieldsRequest {
+                    index_id_patterns: vec!["test-index".to_string()],
+                    field_patterns: vec!["a*".to_string(), "b*".to_string(), "a*".to_string()],
+                    start_timestamp: Some(1_200 + offset_secs * 30),
+                    end_timestamp: Some(3_600 + offset_secs * 30),
+                    query_ast: None,
+                    limit: Some(10),
+                };
+                root_list_fields(request, &cluster_client, &metastore, &debouncer).await
+            }));
+        }
+
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(debouncer.len(), 1);
+
+        release_tx.send(()).unwrap();
+
+        let first_response = first_task.await.unwrap().unwrap();
+        assert_eq!(first_response.entries, [expected_entry]);
+        for task in joined_tasks {
+            assert_eq!(task.await.unwrap().unwrap(), first_response);
+        }
+    }
 }
