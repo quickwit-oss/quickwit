@@ -28,7 +28,45 @@ use super::pipeline_schedule::{MAX_PIPELINE_TIMEOUT_NUDGE, PipelineSchedule};
 #[derive(Clone)]
 pub enum IndexingMode {
     Spread,
-    Cooperative { indexing_permits: Arc<Semaphore> },
+    /// Cooperative indexing is a mechanism to deal with a large amount of pipelines.
+    ///
+    /// Instead of having all pipelines index concurrently, cooperative indexing:
+    /// - have them take turn, making sure that at most only N pipelines are indexing at the same
+    ///   time. This has the benefit is reducing RAM using (by having a limited number of
+    ///   `IndexWriter` at the same time), reducing context switching.
+    /// - keeps the different pipelines work uniformously spread in time. If the system is not at
+    ///   capacity, we prefer to have the indexing pipeline as desynchronized as possible to make
+    ///   sure they don't all use the same resources (disk/cpu/network) at the same time.
+    ///
+    /// It works by:
+    /// - a semaphore is used to restrict the number of pipelines indexing at the same time.
+    /// - in the indexer when `on_drain` is called, the indexer will cut a split and "go to sleep"
+    ///   for a given amount of time.
+    ///
+    /// The key logic is in the computation of that sleep time.
+    ///
+    /// We want to set it in order to steer the pipeline toward the ideal cycle of its
+    /// `PipelineSchedule`.
+    ///
+    /// Each period of this cycle is divided into three stages.
+    /// - waking [t_wake..t_work_start) acquisition of the period guard (this is instantaneous)
+    ///   acquisition of the semaphore
+    /// - working [t_work_start..t_work_end)
+    /// - sleeping [t=t_work_end..t_sleep_end)
+    ///
+    /// The idea is to first pick the sleep time to to create a cycle of period
+    /// `commit_timeout`.
+    ///   sleep_time := max(0, commit_timeout - (t_workend - t_wake))
+    ///
+    /// If the work phase is too long, the regular commit timeout mechanism
+    /// kicks in an the pipeline will create a split without waiting for the
+    /// mailbox to be drained.
+    ///
+    /// We then allow ourselves to tweak the sleep time one way or another by at
+    /// most `MAX_PIPELINE_TIMEOUT_NUDGE` to eventually nudge the system toward the target phase.
+    Cooperative {
+        indexing_permits: Arc<Semaphore>,
+    },
 }
 
 impl IndexingMode {
@@ -92,42 +130,6 @@ impl PipelineIndexingMode {
     }
 }
 
-/// Cooperative indexing is a mechanism to deal with a large amount of pipelines.
-///
-/// Instead of having all pipelines index concurrently, cooperative indexing:
-/// - have them take turn, making sure that at most only N pipelines are indexing at the same time.
-///   This has the benefit is reducing RAM using (by having a limited number of `IndexWriter` at the
-///   same time), reducing context switching.
-/// - keeps the different pipelines work uniformously spread in time. If the system is not at
-///   capacity, we prefer to have the indexing pipeline as desynchronized as possible to make sure
-///   they don't all use the same resources (disk/cpu/network) at the same time.
-///
-/// It works by:
-/// - a semaphore is used to restrict the number of pipelines indexing at the same time.
-/// - in the indexer when `on_drain` is called, the indexer will cut a split and "go to sleep" for a
-///   given amount of time.
-///
-/// The key logic is in the computation of that sleep time.
-///
-/// We want to set it in order to steer the pipeline toward the ideal cycle of its
-/// `PipelineSchedule`.
-///
-/// Each period of this cycle is divided into three stages.
-/// - waking [t_wake..t_work_start) acquisition of the period guard (this is instantaneous)
-///   acquisition of the semaphore
-/// - working [t_work_start..t_work_end)
-/// - sleeping [t=t_work_end..t_sleep_end)
-///
-/// The idea is to first pick the sleep time to to create a cycle of period
-/// `commit_timeout`.
-///   sleep_time := max(0, commit_timeout - (t_workend - t_wake))
-///
-/// If the work phase is too long, the regular commit timeout mechanism
-/// kicks in an the pipeline will create a split without waiting for the
-/// mailbox to be drained.
-///
-/// We then allow ourselves to tweak the sleep time one way or another by at
-/// most `MAX_PIPELINE_TIMEOUT_NUDGE` to eventually nudge the system toward the target phase.
 pub(crate) struct CooperativeIndexingCycle {
     schedule: PipelineSchedule,
     indexing_permits: Arc<Semaphore>,
