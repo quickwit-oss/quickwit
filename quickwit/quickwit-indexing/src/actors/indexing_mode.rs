@@ -16,6 +16,7 @@ use std::hash::Hash;
 use std::sync::Arc;
 use std::time::Duration;
 
+use quickwit_config::IndexerConfig;
 use quickwit_proto::indexing::{
     CpuCapacity, IndexingPipelineId, PIPELINE_FULL_CAPACITY, PipelineMetrics,
 };
@@ -24,27 +25,48 @@ use tokio::time::Instant;
 
 use super::pipeline_schedule::{MAX_PIPELINE_TIMEOUT_NUDGE, PipelineSchedule};
 
+#[derive(Clone)]
+pub enum IndexingMode {
+    Spread,
+    Cooperative { indexing_permits: Arc<Semaphore> },
+}
+
+impl IndexingMode {
+    pub(super) fn from_indexer_config(
+        indexer_config: &IndexerConfig,
+        num_blocking_threads: usize,
+    ) -> Self {
+        if indexer_config.enable_cooperative_indexing {
+            Self::Cooperative {
+                indexing_permits: Arc::new(Semaphore::new(num_blocking_threads)),
+            }
+        } else {
+            Self::Spread
+        }
+    }
+
+    pub(super) fn for_pipeline(
+        self,
+        pipeline_id: &IndexingPipelineId,
+        commit_timeout: Duration,
+    ) -> PipelineIndexingMode {
+        match self {
+            Self::Cooperative { indexing_permits } => PipelineIndexingMode::Cooperative(
+                CooperativeIndexingCycle::new(pipeline_id, commit_timeout, indexing_permits),
+            ),
+            Self::Spread => {
+                PipelineIndexingMode::Spread(PipelineSchedule::new(pipeline_id, commit_timeout))
+            }
+        }
+    }
+}
+
 pub(super) enum PipelineIndexingMode {
     Spread(PipelineSchedule),
     Cooperative(CooperativeIndexingCycle),
 }
 
 impl PipelineIndexingMode {
-    pub fn from_settings(
-        pipeline_id: &IndexingPipelineId,
-        commit_timeout: Duration,
-        cooperative_indexing_permits_opt: Option<Arc<Semaphore>>,
-    ) -> Self {
-        match cooperative_indexing_permits_opt {
-            Some(permits) => Self::Cooperative(CooperativeIndexingCycle::new(
-                pipeline_id,
-                commit_timeout,
-                permits,
-            )),
-            None => Self::Spread(PipelineSchedule::new(pipeline_id, commit_timeout)),
-        }
-    }
-
     pub fn initial_sleep_duration(&self) -> Option<Duration> {
         match self {
             // when spreading indexing pipelines is enabled, start indexing immediately and nudge

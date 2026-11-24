@@ -46,13 +46,12 @@ use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, DocId, IndexBuilder, IndexSettings};
 use tokio::runtime::Handle;
-use tokio::sync::Semaphore;
 use tokio::time::Instant;
 use tracing::{Span, debug, info_span, warn};
 use ulid::Ulid;
 
 use super::IndexSerializer;
-use super::indexing_mode::{IndexingPermit, PipelineIndexingMode};
+use super::indexing_mode::{IndexingMode, IndexingPermit, PipelineIndexingMode};
 use crate::docs_clustering::{DocIdClusterer, Fingerprinter};
 use crate::metrics::SPLIT_BUILDERS;
 use crate::models::{
@@ -525,7 +524,7 @@ impl Indexer {
         metastore: MetastoreServiceClient,
         indexing_directory: TempDirectory,
         indexing_settings: IndexingSettings,
-        cooperative_indexing_permits_opt: Option<Arc<Semaphore>>,
+        indexing_mode: IndexingMode,
         index_serializer_mailbox: Mailbox<IndexSerializer>,
         fingerprinter_opt: Option<Fingerprinter>,
         indexing_io_throughput_limiter_opt: Option<Limiter>,
@@ -543,11 +542,8 @@ impl Indexer {
             // A configured fingerprinter supplies the mapping when the split is finalized.
             manual_doc_id_mapping: fingerprinter_opt.is_some(),
         };
-        let indexing_mode = PipelineIndexingMode::from_settings(
-            &pipeline_id,
-            indexing_settings.commit_timeout(),
-            cooperative_indexing_permits_opt,
-        );
+        let indexing_mode =
+            indexing_mode.for_pipeline(&pipeline_id, indexing_settings.commit_timeout());
         Self {
             indexer_state: IndexerState {
                 pipeline_id,
@@ -702,6 +698,7 @@ mod tests {
     use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
     use tantivy::schema::Value;
     use tantivy::{DateTime, DocAddress, TantivyDocument, doc};
+    use tokio::sync::Semaphore;
 
     use super::{IndexerCounters, record_timestamp, *};
     use crate::actors::pipeline_schedule::{MAX_PIPELINE_TIMEOUT_NUDGE, PipelineSchedule};
@@ -714,7 +711,7 @@ mod tests {
         metastore: MetastoreServiceClient,
         indexing_directory: TempDirectory,
         indexing_settings: IndexingSettings,
-        cooperative_indexing_permits_opt: Option<Arc<Semaphore>>,
+        indexing_mode: IndexingMode,
         index_serializer_mailbox: Mailbox<IndexSerializer>,
         fingerprinter_opt: Option<Fingerprinter>,
     ) -> Indexer {
@@ -724,7 +721,7 @@ mod tests {
             metastore,
             indexing_directory,
             indexing_settings,
-            cooperative_indexing_permits_opt,
+            indexing_mode,
             index_serializer_mailbox,
             fingerprinter_opt,
             None,
@@ -795,7 +792,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
-            None,
+            IndexingMode::Spread,
             index_serializer_mailbox,
             None,
         );
@@ -936,7 +933,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
-            None,
+            IndexingMode::Spread,
             index_serializer_mailbox,
             None,
         );
@@ -1014,7 +1011,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
-            None,
+            IndexingMode::Spread,
             index_serializer_mailbox,
             None,
         );
@@ -1098,7 +1095,9 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
-            Some(Arc::new(Semaphore::new(1))),
+            IndexingMode::Cooperative {
+                indexing_permits: Arc::new(Semaphore::new(1)),
+            },
             index_serializer_mailbox,
             None,
         );
@@ -1187,7 +1186,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
-            None,
+            IndexingMode::Spread,
             index_serializer_mailbox,
             None,
         );
@@ -1255,7 +1254,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             TempDirectory::for_test(),
             IndexingSettings::for_test(),
-            None,
+            IndexingMode::Spread,
             index_serializer_mailbox,
             Some(Fingerprinter::new(
                 &serde_json::from_value::<DocsClusteringConfig>(serde_json::json!([
@@ -1392,7 +1391,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
-            None,
+            IndexingMode::Spread,
             index_serializer_mailbox,
             None,
         );
@@ -1491,7 +1490,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
-            None,
+            IndexingMode::Spread,
             index_serializer_mailbox,
             None,
         );
@@ -1564,7 +1563,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
-            None,
+            IndexingMode::Spread,
             index_serializer_mailbox,
             None,
         );
@@ -1638,7 +1637,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
-            None,
+            IndexingMode::Spread,
             index_serializer_mailbox,
             None,
         );
@@ -1704,7 +1703,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
-            None,
+            IndexingMode::Spread,
             index_serializer_mailbox,
             None,
         );
@@ -1774,7 +1773,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
-            None,
+            IndexingMode::Spread,
             index_serializer_mailbox,
             None,
         );
@@ -1849,7 +1848,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             TempDirectory::for_test(),
             indexing_settings,
-            None,
+            IndexingMode::Spread,
             index_serializer_mailbox,
             None,
         );
