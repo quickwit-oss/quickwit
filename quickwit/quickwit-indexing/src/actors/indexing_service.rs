@@ -55,11 +55,12 @@ use quickwit_proto::types::{IndexId, IndexUid, IndexingPlanId, NodeId, PipelineU
 use quickwit_storage::StorageResolver;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
-use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
-use super::{FinishPendingMergesAndShutdownPipeline, MergePlanner, MergeSchedulerService};
+use super::{
+    FinishPendingMergesAndShutdownPipeline, IndexingMode, MergePlanner, MergeSchedulerService,
+};
 use crate::docs_clustering::Fingerprinter;
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
 use crate::source::{AssignShards, Assignment};
@@ -118,7 +119,7 @@ pub struct IndexingService {
     merge_scheduler_service_opt: Option<Mailbox<MergeSchedulerService>>,
     split_cache: Arc<IndexingSplitCache>,
     merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
-    cooperative_indexing_permits: Option<Arc<Semaphore>>,
+    indexing_mode: IndexingMode,
     fingerprinter_opt: Option<Fingerprinter>,
     indexing_io_throughput_limiter_opt: Option<io::Limiter>,
     merge_io_throughput_limiter_opt: Option<io::Limiter>,
@@ -159,11 +160,8 @@ impl IndexingService {
         let indexing_root_directory =
             temp_dir::create_or_purge_directory(&data_dir_path.join(INDEXING_DIR_NAME)).await?;
         let queue_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-        let cooperative_indexing_permits = if indexer_config.enable_cooperative_indexing {
-            Some(Arc::new(Semaphore::new(num_blocking_threads)))
-        } else {
-            None
-        };
+        let indexing_mode =
+            IndexingMode::from_indexer_config(&indexer_config, num_blocking_threads);
         Ok(IndexingService {
             node_id,
             indexing_root_directory,
@@ -183,7 +181,7 @@ impl IndexingService {
             fingerprinter_opt,
             indexing_io_throughput_limiter_opt,
             merge_io_throughput_limiter_opt,
-            cooperative_indexing_permits,
+            indexing_mode,
             event_broker,
         })
     }
@@ -393,7 +391,7 @@ impl IndexingService {
             fingerprinter_opt: self.fingerprinter_opt.clone(),
             split_store,
             max_concurrent_split_uploads_index,
-            cooperative_indexing_permits: self.cooperative_indexing_permits.clone(),
+            indexing_mode: self.indexing_mode.clone(),
             indexing_io_throughput_limiter_opt: self.indexing_io_throughput_limiter_opt.clone(),
             merge_policy,
             retention_policy,

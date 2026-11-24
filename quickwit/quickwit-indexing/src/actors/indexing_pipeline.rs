@@ -37,7 +37,7 @@ use quickwit_storage::{Storage, StorageResolver};
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument, warn};
 
-use super::{DocProcessor, IndexSerializer, Indexer, MergePlanner, Packager};
+use super::{DocProcessor, IndexSerializer, Indexer, IndexingMode, MergePlanner, Packager};
 use crate::SplitsUpdateMailbox;
 use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
@@ -403,7 +403,7 @@ impl IndexingPipeline {
             self.params.metastore.clone(),
             self.params.indexing_directory.clone(),
             self.params.indexing_settings.clone(),
-            self.params.cooperative_indexing_permits.clone(),
+            self.params.indexing_mode.clone(),
             index_serializer_mailbox,
             self.params.fingerprinter_opt.clone(),
             self.params.indexing_io_throughput_limiter_opt.clone(),
@@ -589,7 +589,7 @@ pub struct IndexingPipelineParams {
     pub fingerprinter_opt: Option<Fingerprinter>,
     pub split_store: IndexingSplitStore,
     pub max_concurrent_split_uploads_index: usize,
-    pub cooperative_indexing_permits: Option<Arc<Semaphore>>,
+    pub indexing_mode: IndexingMode,
     pub indexing_io_throughput_limiter_opt: Option<io::Limiter>,
 
     // Merge-related parameters
@@ -734,7 +734,7 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
-            cooperative_indexing_permits: None,
+            indexing_mode: IndexingMode::Spread,
             indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             event_broker: EventBroker::default(),
@@ -842,7 +842,7 @@ mod tests {
             retention_policy: None,
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
-            cooperative_indexing_permits: None,
+            indexing_mode: IndexingMode::Spread,
             indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             params_fingerprint: 42u64,
@@ -973,7 +973,7 @@ mod tests {
             retention_policy: None,
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
-            cooperative_indexing_permits: None,
+            indexing_mode: IndexingMode::Spread,
             indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             event_broker: Default::default(),
@@ -1075,7 +1075,7 @@ mod tests {
             retention_policy: None,
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
-            cooperative_indexing_permits: None,
+            indexing_mode: IndexingMode::Spread,
             indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox.clone()),
             event_broker: Default::default(),
@@ -1160,7 +1160,7 @@ mod tests {
             retention_policy: None,
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
-            cooperative_indexing_permits: None,
+            indexing_mode: IndexingMode::Spread,
             indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: None,
             event_broker: Default::default(),
@@ -1315,7 +1315,7 @@ mod tests {
             retention_policy: None,
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
-            cooperative_indexing_permits: None,
+            indexing_mode: IndexingMode::Spread,
             indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             params_fingerprint: 42u64,

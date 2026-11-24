@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod cooperative_indexing;
 mod doc_processor;
 mod index_serializer;
 mod indexer;
+mod indexing_mode;
 mod indexing_pipeline;
 mod indexing_service;
 mod merge_executor;
@@ -34,6 +34,7 @@ mod vrl_processing;
 pub use doc_processor::{DocProcessor, DocProcessorCounters};
 pub use index_serializer::IndexSerializer;
 pub use indexer::{Indexer, IndexerCounters};
+pub use indexing_mode::IndexingMode;
 pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineParams};
 pub use indexing_service::{INDEXING_DIR_NAME, IndexingService, IndexingServiceCounters};
 pub use merge_executor::{MergeExecutor, combine_partition_ids, merge_split_attrs};
