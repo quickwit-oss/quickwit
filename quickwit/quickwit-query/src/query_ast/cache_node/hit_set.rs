@@ -57,6 +57,41 @@ impl HitSet {
         hits
     }
 
+    /// Checks the document count, index offsets, bit widths, and payload lengths.
+    /// Returns `None` for malformed layouts. Document IDs are assumed to be strictly
+    /// sorted, exclude `TERMINATED`, and agree with the indexed first IDs.
+    pub fn try_from_buffer(buffer: OwnedBytes) -> Option<Self> {
+        let num_docs = u32::from_ne_bytes(buffer.get(..4)?.try_into().ok()?) as usize;
+        let num_blocks = num_docs.div_ceil(BLOCK_LEN);
+        let payload_start = 4 + num_blocks * 8;
+        let index = buffer.get(4..payload_start)?;
+        let payload = buffer.get(payload_start..)?;
+        let mut offset = 0;
+        for (block, entry) in index.as_chunks::<8>().0.iter().enumerate() {
+            let indexed_offset = u32::from_ne_bytes(entry[4..].try_into().ok()?) as usize;
+            if indexed_offset != offset {
+                return None;
+            }
+            let len = (num_docs - block * BLOCK_LEN).min(BLOCK_LEN);
+            let remaining = payload.get(offset..)?;
+            let payload_len = if len == BLOCK_LEN {
+                let &num_bits = remaining.first()?;
+                if num_bits > 32 {
+                    return None;
+                }
+                1 + BitPacker4x::compressed_block_size(num_bits)
+            } else {
+                len * 4
+            };
+            remaining.get(..payload_len)?;
+            offset += payload_len;
+        }
+        if offset != payload.len() {
+            return None;
+        }
+        Some(Self::from_buffer(buffer))
+    }
+
     /// Returns the serialized hitset, without preserving the iterator position.
     pub fn into_buffer(self) -> OwnedBytes {
         self.buffer
@@ -268,7 +303,7 @@ mod tests {
     }
 
     fn check(docs: &[u32], targets: &[u32]) {
-        let hits = build(docs);
+        let hits = HitSet::try_from_buffer(build(docs).into_buffer()).unwrap();
         let mut scan = HitSet::from_buffer(hits.clone().into_buffer());
         assert_eq!(scan.size_hint() as usize, docs.len());
         let first_doc = scan.doc();
@@ -307,6 +342,48 @@ mod tests {
                     .find(|&doc| doc >= target)
                     .unwrap_or(TERMINATED)
             );
+        }
+    }
+
+    #[test]
+    fn test_rejects_malformed_layouts() {
+        for count in [0, 1, 127, 128, 129, 256, 257] {
+            let docs: Vec<_> = (0..count).map(|doc| doc * 3).collect();
+            let buffer = build(&docs).into_buffer();
+            assert!(HitSet::try_from_buffer(buffer.clone()).is_some());
+            // Every truncation, including the count, index, packed blocks, and raw tail.
+            for len in 0..buffer.len() {
+                assert!(HitSet::try_from_buffer(buffer.slice(0..len)).is_none());
+            }
+            let mut trailing = buffer.to_vec();
+            trailing.push(0);
+            assert!(HitSet::try_from_buffer(OwnedBytes::new(trailing)).is_none());
+            let num_blocks = (count as usize).div_ceil(BLOCK_LEN);
+            for block in 0..num_blocks {
+                let offset_pos = 4 + block * 8 + 4;
+                let offset =
+                    u32::from_ne_bytes(buffer[offset_pos..offset_pos + 4].try_into().unwrap());
+                // Reject gaps, overlapping blocks, and out-of-bounds offsets.
+                for bad_offset in [0, offset + 1, u32::MAX] {
+                    if bad_offset == offset {
+                        continue;
+                    }
+                    let mut malformed = buffer.to_vec();
+                    malformed[offset_pos..offset_pos + 4]
+                        .copy_from_slice(&bad_offset.to_ne_bytes());
+                    assert!(HitSet::try_from_buffer(OwnedBytes::new(malformed)).is_none());
+                }
+                if (block + 1) * BLOCK_LEN <= count as usize {
+                    for num_bits in [33, 128, 255] {
+                        let mut malformed = buffer.to_vec();
+                        malformed[4 + num_blocks * 8 + offset as usize] = num_bits;
+                        assert!(HitSet::try_from_buffer(OwnedBytes::new(malformed)).is_none());
+                    }
+                }
+            }
+            let mut wrong_count = buffer.to_vec();
+            wrong_count[..4].copy_from_slice(&u32::MAX.to_ne_bytes());
+            assert!(HitSet::try_from_buffer(OwnedBytes::new(wrong_count)).is_none());
         }
     }
 

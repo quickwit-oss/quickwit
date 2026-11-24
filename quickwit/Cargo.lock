@@ -1968,6 +1968,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cpu-time"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9e393a7668fe1fad3075085b86c781883000b4ede868f43627b34a87c8b7ded"
+dependencies = [
+ "libc",
+ "winapi",
+]
+
+[[package]]
 name = "cpubits"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3185,6 +3195,77 @@ dependencies = [
 ]
 
 [[package]]
+name = "feuer"
+version = "0.23.0-dev"
+source = "git+https://github.com/PSeitz/feuer?rev=cff661183a34a0522350e1928da862d32b41a87c#cff661183a34a0522350e1928da862d32b41a87c"
+dependencies = [
+ "bytes",
+ "feuer-historian",
+ "feuer-memory",
+ "feuer-storage",
+ "feuer-utils",
+ "futures-util",
+ "mixtrics",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
+name = "feuer-historian"
+version = "0.23.0-dev"
+source = "git+https://github.com/PSeitz/feuer?rev=cff661183a34a0522350e1928da862d32b41a87c#cff661183a34a0522350e1928da862d32b41a87c"
+dependencies = [
+ "feuer-utils",
+ "parking_lot",
+ "rustc-hash",
+]
+
+[[package]]
+name = "feuer-memory"
+version = "0.23.0-dev"
+source = "git+https://github.com/PSeitz/feuer?rev=cff661183a34a0522350e1928da862d32b41a87c#cff661183a34a0522350e1928da862d32b41a87c"
+dependencies = [
+ "bytes",
+ "bytesize",
+ "feuer-historian",
+ "feuer-utils",
+ "libc",
+ "mixtrics",
+ "parking_lot",
+ "rustc-hash",
+]
+
+[[package]]
+name = "feuer-storage"
+version = "0.23.0-dev"
+source = "git+https://github.com/PSeitz/feuer?rev=cff661183a34a0522350e1928da862d32b41a87c#cff661183a34a0522350e1928da862d32b41a87c"
+dependencies = [
+ "bytes",
+ "feuer-historian",
+ "feuer-memory",
+ "feuer-utils",
+ "fs4",
+ "io-uring",
+ "libc",
+ "mixtrics",
+ "rustc-hash",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "twox-hash",
+]
+
+[[package]]
+name = "feuer-utils"
+version = "0.23.0-dev"
+source = "git+https://github.com/PSeitz/feuer?rev=cff661183a34a0522350e1928da862d32b41a87c#cff661183a34a0522350e1928da862d32b41a87c"
+dependencies = [
+ "bytesize",
+ "getrandom 0.4.3",
+ "siphasher",
+]
+
+[[package]]
 name = "ff"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4396,6 +4477,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "io-uring"
+version = "0.7.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "878c26bc5e45fe089ce2ca25689260c152a87ce1d7de2ca86101efeea6973932"
+dependencies = [
+ "bitflags 2.13.2",
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
 name = "ipcrypt-rs"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5198,6 +5290,16 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "mixtrics"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c46b5adfb7a3ae4996d327a5bdc90e78fec025806dd312bdbe6f07a755e0ec9"
+dependencies = [
+ "itertools 0.15.0",
+ "parking_lot",
 ]
 
 [[package]]
@@ -7950,9 +8052,12 @@ name = "quickwit-query"
 version = "0.9.3"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64 0.23.1",
  "bitpacking",
+ "cpu-time",
  "criterion",
+ "futures",
  "hex",
  "lru 0.19.0",
  "proptest",
@@ -7969,6 +8074,7 @@ dependencies = [
  "tantivy-fst",
  "thiserror 2.0.21",
  "time",
+ "tokio",
  "tracing",
  "unicode-segmentation",
 ]
@@ -8008,6 +8114,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "bytesize",
+ "feuer",
  "fnv",
  "futures",
  "http 1.5.0",
@@ -8017,6 +8124,7 @@ dependencies = [
  "postcard",
  "proptest",
  "prost 0.14.4",
+ "quick_cache",
  "quickwit-common",
  "quickwit-config",
  "quickwit-directories",
@@ -8031,8 +8139,8 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
- "siphasher",
  "tantivy",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
@@ -8141,6 +8249,7 @@ dependencies = [
  "bytes",
  "bytesize",
  "crc-fast",
+ "feuer",
  "futures",
  "http 1.5.0",
  "http-body-util",
@@ -8148,7 +8257,10 @@ dependencies = [
  "itertools 0.15.0",
  "lru 0.19.0",
  "md5",
+ "metrics",
+ "metrics-util",
  "mini-moka",
+ "mixtrics",
  "mockall",
  "opendal",
  "opendal-http-transport-reqwest",

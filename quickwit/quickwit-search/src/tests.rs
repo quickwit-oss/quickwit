@@ -2243,7 +2243,8 @@ async fn test_cached_hits_prune_uncached_splits_before_warmup() {
                     };
                     let count_response = searcher_context
                         .leaf_search_cache
-                        .get(splits[1].clone(), count_request)
+                        .get_async(splits[1].clone(), count_request)
+                        .await
                         .expect("the uncached split should have executed a count-only request");
                     assert_eq!(count_response.num_hits, 1);
                     assert!(count_response.partial_hits.is_empty());
@@ -2320,6 +2321,7 @@ async fn test_negative_cache_records_term_absence() {
         searcher_context
             .predicate_cache
             .get(split_id.clone(), key.clone())
+            .await
             .is_none()
     );
 
@@ -2336,7 +2338,7 @@ async fn test_negative_cache_records_term_absence() {
 
     // The absent term was recorded per-term, so any later query carrying it — with any
     // other filters or time window — can short-circuit before warmup.
-    let entry = searcher_context.predicate_cache.get(split_id, key);
+    let entry = searcher_context.predicate_cache.get(split_id, key).await;
     let (_segment_id, hits) = entry.expect("absent term should be recorded");
     assert!(hits.is_empty());
 
@@ -2373,9 +2375,13 @@ async fn test_negative_cache_short_circuits_query_with_extra_terms() {
     let key = term_absence_key_for(&doc_mapper, "body", "hello");
     let segment_id =
         tantivy::index::SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
-    searcher_context
-        .predicate_cache
-        .put(split_id, key, segment_id, HitSet::empty());
+    searcher_context.predicate_cache.put(
+        split_id,
+        key,
+        segment_id,
+        HitSet::empty(),
+        std::time::Duration::ZERO,
+    );
 
     // A *larger* query that merely contains `hello` as a required term: despite `hello`
     // (and `world`) being present, the cached absence of `hello` proves the whole
@@ -2436,6 +2442,7 @@ async fn test_negative_cache_records_then_prunes_query_with_added_term() {
     let (_segment_id, hits) = searcher_context
         .predicate_cache
         .get(split_id, key)
+        .await
         .expect("the first query should have recorded the absent term");
     assert!(hits.is_empty());
 
@@ -2733,6 +2740,7 @@ async fn test_time_bounded_query_populates_and_reuses_complete_predicate_cache()
     let (_segment_id, complete_hits) = searcher_context
         .predicate_cache
         .get(split_id.clone(), predicate_key)
+        .await
         .expect("the first window should populate the predicate cache");
     assert_eq!(complete_hits.size_hint(), 10);
 
@@ -2798,6 +2806,7 @@ async fn test_time_bounded_query_populates_and_reuses_complete_predicate_cache()
     let (_segment_id, different_hits) = searcher_context
         .predicate_cache
         .get(split_id, different_predicate_key)
+        .await
         .expect("a different predicate should populate a separate entry");
     assert_eq!(different_hits.size_hint(), 1);
 
@@ -2837,9 +2846,13 @@ async fn test_negative_cache_short_circuits_across_time_windows() {
     let key = term_absence_key_for(&doc_mapper, "body", "info");
     let segment_id =
         tantivy::index::SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
-    searcher_context
-        .predicate_cache
-        .put(split_id, key, segment_id, HitSet::empty());
+    searcher_context.predicate_cache.put(
+        split_id,
+        key,
+        segment_id,
+        HitSet::empty(),
+        std::time::Duration::ZERO,
+    );
 
     // Query a specific, different window: despite `info` matching, the seeded absence
     // short-circuits the search.
