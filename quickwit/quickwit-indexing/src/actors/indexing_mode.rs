@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::hash::Hash;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -88,102 +87,66 @@ impl IndexingMode {
         pipeline_id: &IndexingPipelineId,
         commit_timeout: Duration,
     ) -> PipelineIndexingMode {
-        match self {
-            Self::Cooperative { indexing_permits } => PipelineIndexingMode::Cooperative(
-                CooperativeIndexingCycle::new(pipeline_id, commit_timeout, indexing_permits),
-            ),
-            Self::Spread => {
-                PipelineIndexingMode::Spread(PipelineSchedule::new(pipeline_id, commit_timeout))
-            }
-        }
-    }
-}
-
-pub(super) enum PipelineIndexingMode {
-    Spread(PipelineSchedule),
-    Cooperative(CooperativeIndexingCycle),
-}
-
-impl PipelineIndexingMode {
-    pub fn initial_sleep_duration(&self) -> Option<Duration> {
-        match self {
-            // when spreading indexing pipelines is enabled, start indexing immediately and nudge
-            // pipelines on further commit timeout. This way, we are using all available CPU
-            // right away instead of idling on the first indexing cycle
-            Self::Spread(_) => None,
-            Self::Cooperative(cycle) => Some(cycle.initial_sleep_duration()),
-        }
-    }
-
-    pub fn commit_timeout(&self, now: Instant) -> Duration {
-        match self {
-            Self::Spread(schedule) => schedule.nudged_commit_timeout(now),
-            Self::Cooperative(cycle) => cycle.commit_timeout(),
-        }
-    }
-
-    pub async fn acquire_indexing_permit(&self) -> Option<IndexingPermit> {
-        match self {
-            Self::Spread(_) => None,
-            Self::Cooperative(cycle) => Some(cycle.acquire_indexing_permit().await),
-        }
-    }
-}
-
-pub(crate) struct CooperativeIndexingCycle {
-    schedule: PipelineSchedule,
-    indexing_permits: Arc<Semaphore>,
-}
-
-impl CooperativeIndexingCycle {
-    /// Creates a new cooperative indexing cycle object.
-    /// `phase_seed` is hashed to compute the target phase.
-    pub fn new(
-        phase_seed: &(impl Hash + ?Sized),
-        commit_timeout: Duration,
-        indexing_permits: Arc<Semaphore>,
-    ) -> CooperativeIndexingCycle {
-        CooperativeIndexingCycle {
-            schedule: PipelineSchedule::new(phase_seed, commit_timeout),
-            indexing_permits,
+        PipelineIndexingMode {
+            mode: self,
+            schedule: PipelineSchedule::new(pipeline_id, commit_timeout),
         }
     }
 
     #[cfg(test)]
-    fn with_schedule(schedule: PipelineSchedule, indexing_permits: Arc<Semaphore>) -> Self {
-        CooperativeIndexingCycle {
+    pub(super) fn with_schedule(self, schedule: PipelineSchedule) -> PipelineIndexingMode {
+        PipelineIndexingMode {
+            mode: self,
             schedule,
-            indexing_permits,
         }
     }
+}
 
-    pub fn initial_sleep_duration(&self) -> Duration {
+pub(super) struct PipelineIndexingMode {
+    mode: IndexingMode,
+    schedule: PipelineSchedule,
+}
+
+impl PipelineIndexingMode {
+    pub fn initial_sleep_duration(&self) -> Option<Duration> {
+        let IndexingMode::Cooperative { .. } = self.mode else {
+            // when spreading indexing pipelines is enabled, start indexing immediately and nudge
+            // pipelines on further commit timeout. This way, we are using all available CPU
+            // right away instead of idling on the first indexing cycle
+            return None;
+        };
         let initial_sleep = self.schedule.time_until_target_phase(Instant::now());
         if initial_sleep + 2 * MAX_PIPELINE_TIMEOUT_NUDGE > self.schedule.period() {
             // We are reasonably close to the target phase. No need to sleep. The nudge
             // will be enough.
-            return Duration::default();
+            return Some(Duration::default());
         }
-        initial_sleep
+        Some(initial_sleep)
     }
 
-    // with cooperative indexing, the nudging is done only when the actor mailbox is empty
-    pub fn commit_timeout(&self) -> Duration {
-        self.schedule.period()
+    pub fn commit_timeout(&self, now: Instant) -> Duration {
+        match self.mode {
+            IndexingMode::Spread => self.schedule.nudged_commit_timeout(now),
+            // with cooperative indexing, the nudging is done only when the actor mailbox is empty
+            IndexingMode::Cooperative { .. } => self.schedule.period(),
+        }
     }
 
-    pub async fn acquire_indexing_permit(&self) -> IndexingPermit {
+    pub async fn acquire_indexing_permit(&self) -> Option<IndexingPermit> {
+        let IndexingMode::Cooperative { indexing_permits } = &self.mode else {
+            return None;
+        };
         let t_wake = Instant::now();
-        let permit = Semaphore::acquire_owned(self.indexing_permits.clone())
+        let permit = Semaphore::acquire_owned(indexing_permits.clone())
             .await
             .unwrap();
         let t_work_start = Instant::now();
-        IndexingPermit {
+        Some(IndexingPermit {
             t_wake,
             t_work_start,
             schedule: self.schedule,
             _permit: permit,
-        }
+        })
     }
 }
 
@@ -274,12 +237,15 @@ mod tests {
                 let target_phase = Duration::from_secs(target_phase_secs);
                 let semaphore = Arc::new(Semaphore::new(1));
                 tokio::time::sleep(Duration::from_secs(start_time_secs)).await;
-                let cooperative_indexing = CooperativeIndexingCycle::with_schedule(
-                    PipelineSchedule::new_with_phase(target_phase, Duration::from_secs(30)),
-                    semaphore.clone(),
-                );
+                let cooperative_indexing = IndexingMode::Cooperative {
+                    indexing_permits: semaphore.clone(),
+                }
+                .with_schedule(PipelineSchedule::new_with_phase(
+                    target_phase,
+                    Duration::from_secs(30),
+                ));
                 let initial_sleep_duration: Duration =
-                    cooperative_indexing.initial_sleep_duration();
+                    cooperative_indexing.initial_sleep_duration().unwrap();
                 tokio::time::sleep(initial_sleep_duration).await;
                 let target_phase_millis =
                     cooperative_indexing.schedule.target_phase().as_millis() as i64;
@@ -296,9 +262,14 @@ mod tests {
     async fn test_cooperative_indexing_simple() {
         tokio::time::pause();
         let semaphore = Arc::new(Semaphore::new(1));
-        let cooperative_indexing =
-            CooperativeIndexingCycle::new("id", Duration::from_secs(30), semaphore.clone());
-        let guard = cooperative_indexing.acquire_indexing_permit().await;
+        let cooperative_indexing = IndexingMode::Cooperative {
+            indexing_permits: semaphore.clone(),
+        }
+        .with_schedule(PipelineSchedule::new("id", Duration::from_secs(30)));
+        let guard = cooperative_indexing
+            .acquire_indexing_permit()
+            .await
+            .unwrap();
         tokio::time::advance(Duration::from_secs(10)).await;
         let (sleep_time, metrics) = guard.release(100_000_000);
         assert_approx_equal_sleep_time(sleep_time, Duration::from_secs(20));
@@ -320,11 +291,16 @@ mod tests {
     async fn test_cooperative_indexing_maximum_throughput() {
         tokio::time::pause();
         let semaphore = Arc::new(Semaphore::new(1));
-        let cooperative_indexing =
-            CooperativeIndexingCycle::new("id", Duration::from_secs(30), semaphore.clone());
+        let cooperative_indexing = IndexingMode::Cooperative {
+            indexing_permits: semaphore.clone(),
+        }
+        .with_schedule(PipelineSchedule::new("id", Duration::from_secs(30)));
         let semaphore_guard = Semaphore::acquire_owned(semaphore).await;
         drop_after(semaphore_guard, Duration::from_secs(30));
-        let cycle_guard = cooperative_indexing.acquire_indexing_permit().await;
+        let cycle_guard = cooperative_indexing
+            .acquire_indexing_permit()
+            .await
+            .unwrap();
         tokio::time::advance(Duration::from_secs(15)).await;
         let (sleep_time, metrics) = cycle_guard.release(30_000_000);
         let expected_metrics = PipelineMetrics {
@@ -339,11 +315,16 @@ mod tests {
     async fn test_cooperative_indexing_simple_contention() {
         tokio::time::pause();
         let semaphore = Arc::new(Semaphore::new(1));
-        let cooperative_indexing =
-            CooperativeIndexingCycle::new("id", Duration::from_secs(30), semaphore.clone());
+        let cooperative_indexing = IndexingMode::Cooperative {
+            indexing_permits: semaphore.clone(),
+        }
+        .with_schedule(PipelineSchedule::new("id", Duration::from_secs(30)));
         let semaphore_guard = Semaphore::acquire_owned(semaphore).await;
         drop_after(semaphore_guard, Duration::from_secs(10));
-        let cycle_guard = cooperative_indexing.acquire_indexing_permit().await;
+        let cycle_guard = cooperative_indexing
+            .acquire_indexing_permit()
+            .await
+            .unwrap();
         tokio::time::advance(Duration::from_secs(10)).await;
         let (sleep_time, metrics) = cycle_guard.release(100_000_000);
         assert_approx_equal_sleep_time(sleep_time, Duration::from_secs(10));
@@ -367,14 +348,20 @@ mod tests {
         for i in 0..num_pipelines {
             let target_phase =
                 Duration::from_millis(commit_timeout.as_millis() as u64 * i / num_pipelines);
-            let cooperative_indexing = CooperativeIndexingCycle::with_schedule(
-                PipelineSchedule::new_with_phase(target_phase, commit_timeout),
-                semaphore.clone(),
-            );
+            let cooperative_indexing = IndexingMode::Cooperative {
+                indexing_permits: semaphore.clone(),
+            }
+            .with_schedule(PipelineSchedule::new_with_phase(
+                target_phase,
+                commit_timeout,
+            ));
             let join_handle = tokio::task::spawn(async move {
                 let mut last_phase = 0;
                 for _ in 0..num_steps {
-                    let cycle_guard = cooperative_indexing.acquire_indexing_permit().await;
+                    let cycle_guard = cooperative_indexing
+                        .acquire_indexing_permit()
+                        .await
+                        .unwrap();
                     let work_time = Duration::from_millis(10);
                     tokio::time::sleep(work_time).await;
                     last_phase =

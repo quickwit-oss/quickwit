@@ -1852,16 +1852,12 @@ mod tests {
             index_serializer_mailbox,
             None,
         );
-        assert!(matches!(
-            indexer.indexer_state.indexing_mode,
-            PipelineIndexingMode::Spread(_)
-        ));
 
         // Make the pipeline more than `MAX_PIPELINE_TIMEOUT_NUDGE` behind its target phase.
         let current_phase = PipelineSchedule::new_with_phase(Duration::default(), commit_timeout)
             .current_phase(Instant::now());
         indexer.indexer_state.indexing_mode =
-            PipelineIndexingMode::Spread(PipelineSchedule::new_with_phase(
+            IndexingMode::Spread.with_schedule(PipelineSchedule::new_with_phase(
                 current_phase + MAX_PIPELINE_TIMEOUT_NUDGE * 2,
                 commit_timeout,
             ));
