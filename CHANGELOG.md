@@ -9,13 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Azure Blob Storage: support custom endpoints via `endpoint` and `endpoint_suffix` configuration options for sovereign clouds (#6624)
+- Azure Blob Storage: document `AZURE_CREDENTIAL_KIND`, which pins the token credential, and add the `managedidentity` value (#6672)
 - `searcher.warmup_single_split_max_allocation`: maximum warmup memory a single split search can reserve, `max(warmup_single_split_initial_allocation, min(4GB, warmup_memory_budget / 4))` by default. A split search that would need more memory fails
 
 ### Fixed
 - (Jaeger) Query resource attributes when Jaeger request carries tags
+- Azure Blob Storage: workload identity no longer fails 24 hours after start, since `azure_identity` 1.0 re-reads the projected service account token (#6672)
 - A source whose VRL transform no longer compiles, for example after a VRL upgrade, no longer makes its index metadata unreadable, which failed index listing and control plane startup. Transforms are compiled when a source is created or updated and when its indexing pipeline starts
 
 ### Changed
+- Azure Blob Storage: migrate to `azure_storage_blob` 1.0, the rewritten Azure SDK (#6672). Behavior changes with it:
+  - the Azure CLI is no longer tried as a fallback, set `AZURE_CREDENTIAL_KIND=azurecli` to use it
+  - `AZURE_CLIENT_ID` on its own selects a user-assigned managed identity, set `AZURE_CREDENTIAL_KIND=virtualmachine` to keep the system-assigned one
+  - an unknown `AZURE_CREDENTIAL_KIND` is an error
+  - token credentials require an `https` endpoint
+  - TLS certificates are checked against the system trust store instead of bundled roots, so a CA bundle such as `ca-certificates` must be installed
 - Ingest V2 flushes every WAL write to the OS before acknowledging it, instead of keeping the tail of the last write buffered in the process, so acknowledged documents survive an indexer process crash
 - Upgrade VRL to 0.38. `to_unix_timestamp` with `unit: "nanoseconds"` is now fallible, so a source transform that calls it without handling the error no longer compiles: creating or updating such a source is rejected, and the indexing pipelines of an existing one fail to start until the source is updated. Before upgrading, change these calls to `to_unix_timestamp!(...)`, which earlier versions accept with a warning. `http_request` now verifies HTTPS certificates with the platform verifier
 - The `quickwit_search_leaf_search_warmup_ongoing_num_bytes` gauge now reports the warmup memory reserved by split searches, including the initial allocation of granted permits, instead of the bytes held in warmup caches once the warmup is done
@@ -32,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Removed
+- Azure Blob Storage: `AZURE_FEDERATED_TOKEN`, which the 1.0 SDK no longer reads; use `AZURE_FEDERATED_TOKEN_FILE` (#6672)
 
 ### Security
 - Bound the size of decompressed ingest request bodies (`ingest_api.max_decompressed_body_size`, default 256 MiB) so a single decompression-bomb request can no longer exhaust memory. The limit is enforced as the body is inflated, so an oversized payload is never fully decompressed. The limit is per request: to bound total memory across concurrent requests, set `QW_INGEST_MAX_CONCURRENCY` and/or `QW_INGEST_MAX_IN_FLIGHT`.
