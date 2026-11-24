@@ -517,7 +517,8 @@ mod tests {
         let _ = directory.drain_read_operations();
         let initial_cached_bytes = cache.get_num_bytes();
         let _reservation = reserver
-            .try_reserve_memory(budget_bytes - reserver.reserved())
+            .reserve_memory(budget_bytes - reserver.reserved())
+            .await
             .unwrap();
         let executor = Executor::single_thread();
         let subset_bitset = inverted_index
