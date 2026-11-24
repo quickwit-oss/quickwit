@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -728,8 +729,11 @@ fn with_causes(error: &AzureError) -> String {
     let mut rendered = error.to_string();
     let mut cause = std::error::Error::source(error);
     while let Some(current) = cause {
-        rendered.push_str(": ");
-        rendered.push_str(&current.to_string());
+        let message = current.to_string();
+        if !rendered.ends_with(&message) {
+            // Writing to a `String` is infallible.
+            let _ = write!(rendered, ": {message}");
+        }
         cause = current.source();
     }
     rendered
@@ -801,7 +805,7 @@ mod tests {
     }
 
     #[test]
-    fn test_azure_error_display_includes_the_cause() {
+    fn test_azure_error_display_includes_each_cause_once() {
         let error = AzureError::with_error(
             ErrorKind::Credential,
             std::io::Error::other("dns error"),
@@ -812,6 +816,10 @@ mod tests {
             rendered.contains("will not be retried: dns error"),
             "{rendered}"
         );
+
+        let error = AzureError::new(ErrorKind::Io, std::io::Error::other("connection reset"));
+        let rendered = AzureErrorWrapper::from(error).to_string();
+        assert_eq!(rendered, "Azure error wrapper(inner=connection reset)");
     }
 
     #[test]
