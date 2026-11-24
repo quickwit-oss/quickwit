@@ -91,22 +91,17 @@ fn select_token_credential_kind(
     };
 
     let Some(credential_kind) = var(AZURE_CREDENTIAL_KIND) else {
+        if let Some(kind) = workload_identity().or_else(client_secret) {
+            return Ok(kind);
+        }
         reject_inline_token()?;
-        let kind = workload_identity()
-            .or_else(client_secret)
-            .unwrap_or_else(|| {
-                info!(
-                    "no workload identity or client secret configured, using managed identity: \
-                     set `{AZURE_CREDENTIAL_KIND}=azurecli` to use `az login` instead"
-                );
-                managed_identity(var(AZURE_CLIENT_ID))
-            });
-        return Ok(kind);
+        info!(
+            "no workload identity or client secret configured, using managed identity: set \
+             `{AZURE_CREDENTIAL_KIND}=azurecli` to use `az login` instead"
+        );
+        return Ok(managed_identity(var(AZURE_CLIENT_ID)));
     };
     let normalized_kind = credential_kind.replace(' ', "").to_lowercase();
-    if matches!(normalized_kind.as_str(), "environment" | "workloadidentity") {
-        reject_inline_token()?;
-    }
     let kind_opt = match normalized_kind.as_str() {
         "environment" => workload_identity().or_else(client_secret),
         "workloadidentity" => workload_identity(),
@@ -123,6 +118,10 @@ fn select_token_credential_kind(
             ));
         }
     };
+    if kind_opt.is_none() && matches!(normalized_kind.as_str(), "environment" | "workloadidentity")
+    {
+        reject_inline_token()?;
+    }
     kind_opt.ok_or_else(|| {
         format!(
             "`{AZURE_CREDENTIAL_KIND}` is `{credential_kind}`, but the environment variables it \
@@ -367,6 +366,16 @@ mod tests {
         assert_eq!(select_pinned("appservice"), managed_identity(None));
         assert_eq!(select_pinned(" Azure CLI "), TokenCredentialKind::AzureCli);
         assert_eq!(select_pinned("  "), client_secret);
+    }
+
+    #[test]
+    fn test_inline_federated_token_is_rejected_without_another_credential() {
+        let mut env = SERVICE_PRINCIPAL.to_vec();
+        env.push((AZURE_FEDERATED_TOKEN, "token"));
+        assert_eq!(select(&env).unwrap(), select(&SERVICE_PRINCIPAL).unwrap());
+
+        let error = select(&[(AZURE_FEDERATED_TOKEN, "token")]).unwrap_err();
+        assert!(error.contains(AZURE_FEDERATED_TOKEN_FILE), "{error}");
     }
 
     #[test]
