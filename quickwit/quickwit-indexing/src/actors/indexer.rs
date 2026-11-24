@@ -16,7 +16,6 @@ use std::collections::hash_map::Entry;
 use std::num::NonZeroU32;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
-use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -53,8 +52,7 @@ use tracing::{Span, debug, info_span, warn};
 use ulid::Ulid;
 
 use super::IndexSerializer;
-use super::cooperative_indexing::{CooperativeIndexingCycle, CooperativeIndexingPeriod};
-use super::pipeline_schedule::PipelineSchedule;
+use super::indexing_mode::{IndexingPermit, PipelineIndexingMode};
 use crate::docs_clustering::{DocIdClusterer, Fingerprinter};
 use crate::metrics::SPLIT_BUILDERS;
 use crate::models::{
@@ -68,62 +66,6 @@ pub(crate) const OTHER_PARTITION_ID: u64 = 3264326757911759461u64;
 #[derive(Debug)]
 struct CommitTimeout {
     workbench_id: Ulid,
-}
-
-enum IndexingMode {
-    Spread(PipelineSchedule),
-    Cooperative(CooperativeIndexingCycle),
-}
-
-impl IndexingMode {
-    fn from_settings(
-        pipeline_id: &IndexingPipelineId,
-        commit_timeout: Duration,
-        cooperative_indexing_permits_opt: Option<Arc<Semaphore>>,
-    ) -> Self {
-        match cooperative_indexing_permits_opt {
-            Some(permits) => Self::Cooperative(CooperativeIndexingCycle::new(
-                pipeline_id,
-                commit_timeout,
-                permits,
-            )),
-            None => Self::Spread(PipelineSchedule::new(pipeline_id, commit_timeout)),
-        }
-    }
-
-    fn initial_sleep_duration(&self) -> Option<Duration> {
-        match self {
-            // when spreading indexing pipelines is enabled, start indexing immediately and nudge
-            // pipelines on further commit timeout. This way, we are using all available CPU
-            // right away instead of idling on the first indexing cycle
-            Self::Spread(_) => None,
-            Self::Cooperative(cycle) => Some(cycle.initial_sleep_duration()),
-        }
-    }
-
-    fn commit_timeout(&self, now: Instant) -> Duration {
-        match self {
-            Self::Spread(schedule) => schedule.nudged_commit_timeout(now),
-            Self::Cooperative(cycle) => cycle.commit_timeout(),
-        }
-    }
-
-    async fn acquire_indexing_permit(&self) -> Option<IndexingPermit> {
-        match self {
-            Self::Spread(_) => None,
-            Self::Cooperative(cycle) => {
-                Some(IndexingPermit(cycle.cooperative_indexing_period().await))
-            }
-        }
-    }
-}
-
-struct IndexingPermit(CooperativeIndexingPeriod);
-
-impl IndexingPermit {
-    fn release(self, uncompressed_num_bytes: u64) -> (Duration, PipelineMetrics) {
-        self.0.end_of_work(uncompressed_num_bytes)
-    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
@@ -159,7 +101,7 @@ struct IndexerState {
     tokenizer_manager: TokenizerManager,
     max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,
-    indexing_mode: IndexingMode,
+    indexing_mode: PipelineIndexingMode,
     indexing_io_throughput_limiter_opt: Option<Limiter>,
 }
 
@@ -601,7 +543,7 @@ impl Indexer {
             // A configured fingerprinter supplies the mapping when the split is finalized.
             manual_doc_id_mapping: fingerprinter_opt.is_some(),
         };
-        let indexing_mode = IndexingMode::from_settings(
+        let indexing_mode = PipelineIndexingMode::from_settings(
             &pipeline_id,
             indexing_settings.commit_timeout(),
             cooperative_indexing_permits_opt,
@@ -762,7 +704,7 @@ mod tests {
     use tantivy::{DateTime, DocAddress, TantivyDocument, doc};
 
     use super::{IndexerCounters, record_timestamp, *};
-    use crate::actors::pipeline_schedule::MAX_PIPELINE_TIMEOUT_NUDGE;
+    use crate::actors::pipeline_schedule::{MAX_PIPELINE_TIMEOUT_NUDGE, PipelineSchedule};
     use crate::docs_clustering::Fingerprint;
 
     #[allow(clippy::too_many_arguments)]
@@ -1913,14 +1855,14 @@ mod tests {
         );
         assert!(matches!(
             indexer.indexer_state.indexing_mode,
-            IndexingMode::Spread(_)
+            PipelineIndexingMode::Spread(_)
         ));
 
         // Make the pipeline more than `MAX_PIPELINE_TIMEOUT_NUDGE` behind its target phase.
         let current_phase = PipelineSchedule::new_with_phase(Duration::default(), commit_timeout)
             .current_phase(Instant::now());
         indexer.indexer_state.indexing_mode =
-            IndexingMode::Spread(PipelineSchedule::new_with_phase(
+            PipelineIndexingMode::Spread(PipelineSchedule::new_with_phase(
                 current_phase + MAX_PIPELINE_TIMEOUT_NUDGE * 2,
                 commit_timeout,
             ));

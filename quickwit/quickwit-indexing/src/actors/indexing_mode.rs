@@ -16,11 +16,69 @@ use std::hash::Hash;
 use std::sync::Arc;
 use std::time::Duration;
 
-use quickwit_proto::indexing::{CpuCapacity, PIPELINE_FULL_CAPACITY, PipelineMetrics};
+use quickwit_proto::indexing::{
+    CpuCapacity, IndexingPipelineId, PIPELINE_FULL_CAPACITY, PipelineMetrics,
+};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
 
 use super::pipeline_schedule::{MAX_PIPELINE_TIMEOUT_NUDGE, PipelineSchedule};
+
+pub(super) enum PipelineIndexingMode {
+    Spread(PipelineSchedule),
+    Cooperative(CooperativeIndexingCycle),
+}
+
+impl PipelineIndexingMode {
+    pub fn from_settings(
+        pipeline_id: &IndexingPipelineId,
+        commit_timeout: Duration,
+        cooperative_indexing_permits_opt: Option<Arc<Semaphore>>,
+    ) -> Self {
+        match cooperative_indexing_permits_opt {
+            Some(permits) => Self::Cooperative(CooperativeIndexingCycle::new(
+                pipeline_id,
+                commit_timeout,
+                permits,
+            )),
+            None => Self::Spread(PipelineSchedule::new(pipeline_id, commit_timeout)),
+        }
+    }
+
+    pub fn initial_sleep_duration(&self) -> Option<Duration> {
+        match self {
+            // when spreading indexing pipelines is enabled, start indexing immediately and nudge
+            // pipelines on further commit timeout. This way, we are using all available CPU
+            // right away instead of idling on the first indexing cycle
+            Self::Spread(_) => None,
+            Self::Cooperative(cycle) => Some(cycle.initial_sleep_duration()),
+        }
+    }
+
+    pub fn commit_timeout(&self, now: Instant) -> Duration {
+        match self {
+            Self::Spread(schedule) => schedule.nudged_commit_timeout(now),
+            Self::Cooperative(cycle) => cycle.commit_timeout(),
+        }
+    }
+
+    pub async fn acquire_indexing_permit(&self) -> Option<IndexingPermit> {
+        match self {
+            Self::Spread(_) => None,
+            Self::Cooperative(cycle) => {
+                Some(IndexingPermit(cycle.cooperative_indexing_period().await))
+            }
+        }
+    }
+}
+
+pub(super) struct IndexingPermit(CooperativeIndexingPeriod);
+
+impl IndexingPermit {
+    pub fn release(self, uncompressed_num_bytes: u64) -> (Duration, PipelineMetrics) {
+        self.0.end_of_work(uncompressed_num_bytes)
+    }
+}
 
 /// Cooperative indexing is a mechanism to deal with a large amount of pipelines.
 ///
