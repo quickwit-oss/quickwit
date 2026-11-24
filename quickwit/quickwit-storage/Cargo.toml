@@ -21,6 +21,7 @@ crc-fast = { workspace = true, optional = true, features = ["std"] }
 futures = { workspace = true }
 http-body-util = { workspace = true}
 hyper = { workspace = true }
+itertools = { workspace = true, optional = true }
 lru = { workspace = true }
 md5 = { workspace = true }
 mini-moka = { workspace = true }
@@ -87,6 +88,7 @@ azure = [
   "azure_identity",
   "azure_storage_blob",
   "dep:crc-fast",
+  "dep:itertools",
 ]
 gcs = ["dep:opendal", "opendal/services-gcs", "dep:reqsign-core", "dep:reqsign-google"]
 ci-test = []

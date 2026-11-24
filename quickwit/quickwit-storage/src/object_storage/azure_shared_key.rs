@@ -27,6 +27,7 @@ use azure_core::http::headers::{HeaderName, Headers};
 use azure_core::http::policies::{Policy, PolicyResult};
 use azure_core::http::{Context, Method, Request, Url};
 use azure_core::time::{OffsetDateTime, to_rfc7231};
+use itertools::Itertools;
 
 const X_MS_DATE: &str = "x-ms-date";
 const CONTENT_LENGTH: &str = "content-length";
@@ -48,7 +49,7 @@ impl fmt::Debug for SharedKeyAuthorizationPolicy {
 }
 
 impl SharedKeyAuthorizationPolicy {
-    pub(crate) fn new(account: String, key: String) -> azure_core::Result<Self> {
+    pub(crate) fn try_new(account: String, key: String) -> azure_core::Result<Self> {
         azure_core::base64::decode(&key)?;
         Ok(Self {
             account,
@@ -131,8 +132,8 @@ fn canonicalized_headers(headers: &Headers) -> String {
     for (header_name, header_value) in headers.iter() {
         let name = header_name.as_str().to_lowercase();
         if name.starts_with("x-ms-") {
-            let value = header_value.as_str().split_whitespace().collect::<Vec<_>>();
-            ms_headers.push((name, value.join(" ")));
+            let value = header_value.as_str().split_whitespace().join(" ");
+            ms_headers.push((name, value));
         }
     }
     ms_headers.sort_unstable();
@@ -172,16 +173,13 @@ fn canonicalized_resource(account: &str, url: &Url) -> String {
     let mut current_name: Option<String> = None;
     for (name, value) in query_pairs {
         let name = name.to_lowercase();
-        match current_name.as_deref() {
-            Some(previous) if previous == name => {
-                resource.push(',');
-            }
-            _ => {
-                resource.push('\n');
-                resource.push_str(&name);
-                resource.push(':');
-                current_name = Some(name);
-            }
+        if current_name.as_deref() == Some(name.as_str()) {
+            resource.push(',');
+        } else {
+            resource.push('\n');
+            resource.push_str(&name);
+            resource.push(':');
+            current_name = Some(name);
         }
         resource.push_str(&value);
     }

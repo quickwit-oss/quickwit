@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::env;
 use std::sync::Arc;
 
 use azure_core::credentials::{Secret, TokenCredential};
@@ -24,6 +23,7 @@ use azure_identity::{
     WorkloadIdentityCredentialOptions,
 };
 use azure_storage_blob::{BlobContainerClient, BlobContainerClientOptions};
+use quickwit_common::get_from_env_opt;
 use quickwit_config::AzureStorageConfig;
 use tracing::info;
 
@@ -142,7 +142,7 @@ pub(crate) fn resolve_credential(
     if let Some(access_key) = azure_storage_config.resolve_access_key() {
         return Ok(AzureCredential::SharedKey(access_key));
     }
-    let kind = select_token_credential_kind(|name| env::var(name).ok())
+    let kind = select_token_credential_kind(|name| get_from_env_opt(name, true))
         .map_err(StorageResolverError::InvalidConfig)?;
     let token_credential = build_token_credential(kind).map_err(|error| {
         StorageResolverError::InvalidConfig(format!(
@@ -230,7 +230,7 @@ pub(crate) fn build_container_client(
     let token_credential = match credential {
         AzureCredential::SharedKey(access_key) => {
             let policy =
-                SharedKeyAuthorizationPolicy::new(storage_account_name.to_owned(), access_key)
+                SharedKeyAuthorizationPolicy::try_new(storage_account_name.to_owned(), access_key)
                     .map_err(|error| {
                         StorageResolverError::InvalidConfig(format!(
                             "invalid Azure storage access key: {error}"

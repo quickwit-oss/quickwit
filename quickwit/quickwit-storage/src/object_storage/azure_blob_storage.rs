@@ -129,7 +129,7 @@ impl fmt::Debug for AzureBlobStorage {
 
 impl AzureBlobStorage {
     /// Creates a new [`AzureBlobStorage`] instance.
-    pub(crate) fn new(
+    pub(crate) fn try_new(
         storage_account_name: &str,
         credential: AzureCredential,
         transport: Option<Transport>,
@@ -241,7 +241,7 @@ impl AzureBlobStorage {
             StorageResolverError::InvalidUri(message)
         })?;
         let blob_service_uri = azure_storage_config.resolve_blob_service_uri(&storage_account_name);
-        let azure_blob_storage = AzureBlobStorage::new(
+        let azure_blob_storage = AzureBlobStorage::try_new(
             &storage_account_name,
             credential,
             transport,
@@ -750,7 +750,7 @@ impl Retryable for AzureErrorWrapper {
                     | StatusCode::BadRequest
                     | StatusCode::Forbidden
             ),
-            ErrorKind::Io | ErrorKind::Connection => true,
+            ErrorKind::Connection | ErrorKind::Io => true,
             _ => false,
         }
     }
@@ -777,7 +777,7 @@ impl From<AzureErrorWrapper> for StorageError {
                 StatusCode::NotFound => StorageErrorKind::NotFound.with_error(err),
                 _ => StorageErrorKind::Service.with_error(err),
             },
-            ErrorKind::Io | ErrorKind::Connection => StorageErrorKind::Io.with_error(err),
+            ErrorKind::Connection | ErrorKind::Io => StorageErrorKind::Io.with_error(err),
             ErrorKind::Credential => StorageErrorKind::Unauthorized.with_error(err),
             _ => StorageErrorKind::Internal.with_error(err),
         }
@@ -820,7 +820,7 @@ mod tests {
 
     #[test]
     fn test_blob_name_trims_slashes() {
-        let storage = AzureBlobStorage::new(
+        let storage = AzureBlobStorage::try_new(
             "devstoreaccount1",
             AzureCredential::SharedKey(
                 "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/\
