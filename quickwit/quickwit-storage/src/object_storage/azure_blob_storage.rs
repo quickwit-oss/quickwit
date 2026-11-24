@@ -350,18 +350,19 @@ impl AzureBlobStorage {
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(payload.len());
         let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_PUT_OBJECT_DURATION);
         let block_blob_client = self.container_client.blob_client(name).block_blob_client();
-        let mut block_ids = Vec::new();
-        // `Put Block` rejects empty blocks: an empty blob commits an empty block list.
-        if payload.len() > 0 {
-            let block_id = format_block_id(Ulid::generate(), 0);
-            retry(&self.retry_params, || async {
+        retry(&self.retry_params, || async {
+            let mut block_ids = Vec::new();
+            // `Put Block` rejects empty blocks: an empty blob commits an empty block list.
+            if payload.len() > 0 {
+                let block_id = format_block_id(Ulid::generate(), 0);
                 let data = Bytes::from(payload.read_all().await?.to_vec());
-                stage_block(&block_blob_client, &block_id, data).await
-            })
-            .await?;
-            block_ids.push(block_id);
-        }
-        self.commit_block_list(&block_blob_client, block_ids).await
+                stage_block(&block_blob_client, &block_id, data).await?;
+                block_ids.push(block_id);
+            }
+            commit_block_list(&block_blob_client, block_ids).await
+        })
+        .await?;
+        Ok(())
     }
 
     /// Performs a multipart upload.
@@ -407,26 +408,8 @@ impl AzureBlobStorage {
             .await
             .map_err(StorageError::from)?;
         block_ids.sort_unstable();
-        self.commit_block_list(block_blob_client, block_ids).await
-    }
-
-    /// Lists blocks as `latest`, not `uncommitted`, so that retrying a commit that already
-    /// succeeded finds them among the committed blocks.
-    async fn commit_block_list(
-        &self,
-        block_blob_client: &BlockBlobClient,
-        block_ids: Vec<String>,
-    ) -> StorageResult<()> {
-        let block_lookup_list = BlockLookupList {
-            latest: Some(block_ids.into_iter().map(String::into_bytes).collect()),
-            ..Default::default()
-        };
-        retry(&self.retry_params, || async {
-            let block_list_content = RequestContent::try_from(block_lookup_list.clone())?;
-            block_blob_client
-                .commit_block_list(block_list_content, None)
-                .await?;
-            Result::<(), AzureErrorWrapper>::Ok(())
+        retry(&self.retry_params, || {
+            commit_block_list(block_blob_client, block_ids.clone())
         })
         .await?;
         Ok(())
@@ -664,6 +647,23 @@ async fn stage_block(
     Ok(())
 }
 
+/// Lists blocks as `latest`, not `uncommitted`, so that retrying a commit that already
+/// succeeded finds them among the committed blocks.
+async fn commit_block_list(
+    block_blob_client: &BlockBlobClient,
+    block_ids: Vec<String>,
+) -> Result<(), AzureErrorWrapper> {
+    let block_lookup_list = BlockLookupList {
+        latest: Some(block_ids.into_iter().map(String::into_bytes).collect()),
+        ..Default::default()
+    };
+    let block_list_content = RequestContent::try_from(block_lookup_list)?;
+    block_blob_client
+        .commit_block_list(block_list_content, None)
+        .await?;
+    Ok(())
+}
+
 #[cfg(feature = "integration-testsuite")]
 fn build_emulated_container_client(container: &str) -> BlobContainerClient {
     const EMULATOR_ACCOUNT: &str = "devstoreaccount1";
@@ -738,6 +738,11 @@ fn with_causes(error: &AzureError) -> String {
 impl Retryable for AzureErrorWrapper {
     fn is_retryable(&self) -> bool {
         match self.inner.kind() {
+            // A concurrent put of the same blob discarded the blocks being committed.
+            ErrorKind::HttpResponse {
+                error_code: Some(error_code),
+                ..
+            } if error_code == "InvalidBlockList" => true,
             ErrorKind::HttpResponse { status, .. } => !matches!(
                 status,
                 StatusCode::NotFound
@@ -839,7 +844,7 @@ mod tests {
         use quickwit_common::rand::append_random_suffix;
         use ulid::Ulid;
 
-        use super::{format_block_id, stage_block};
+        use super::{commit_block_list, format_block_id, stage_block};
         use crate::Storage;
 
         let container_name = append_random_suffix("quickwit-commit-retry").to_lowercase();
@@ -852,14 +857,38 @@ mod tests {
         let block_id = format_block_id(Ulid::generate(), 0);
         stage_block(&block_blob_client, &block_id, Bytes::from_static(b"hello")).await?;
 
-        storage
-            .commit_block_list(&block_blob_client, vec![block_id.clone()])
-            .await?;
-        storage
-            .commit_block_list(&block_blob_client, vec![block_id])
-            .await?;
+        commit_block_list(&block_blob_client, vec![block_id.clone()]).await?;
+        commit_block_list(&block_blob_client, vec![block_id]).await?;
         let content = storage.get_all(Path::new("blob")).await?;
         assert_eq!(content.as_slice(), b"hello");
+
+        AzureBlobStorage::delete_emulated_container(&container_name).await?;
+        Ok(())
+    }
+
+    #[cfg(feature = "integration-testsuite")]
+    #[tokio::test]
+    #[cfg_attr(not(feature = "ci-test"), ignore)]
+    async fn test_concurrent_puts_of_a_blob_succeed() -> anyhow::Result<()> {
+        use quickwit_common::rand::append_random_suffix;
+        use quickwit_common::retry::RetryParams;
+
+        use crate::Storage;
+
+        let container_name = append_random_suffix("quickwit-concurrent-puts").to_lowercase();
+        AzureBlobStorage::create_emulated_container(&container_name).await?;
+        let mut storage = AzureBlobStorage::new_emulated(&container_name);
+        let payloads = [b"first".to_vec(), b"second".to_vec(), b"third".to_vec()];
+        storage.retry_params = RetryParams {
+            max_attempts: payloads.len(),
+            ..RetryParams::for_test()
+        };
+        let puts = payloads
+            .iter()
+            .map(|payload| storage.put(Path::new("blob"), Box::new(payload.clone())));
+        futures::future::try_join_all(puts).await?;
+        let content = storage.get_all(Path::new("blob")).await?;
+        assert!(payloads.iter().any(|payload| payload == content.as_slice()));
 
         AzureBlobStorage::delete_emulated_container(&container_name).await?;
         Ok(())
