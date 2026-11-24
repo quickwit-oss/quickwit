@@ -87,18 +87,8 @@ impl PipelineIndexingMode {
     pub async fn acquire_indexing_permit(&self) -> Option<IndexingPermit> {
         match self {
             Self::Spread(_) => None,
-            Self::Cooperative(cycle) => {
-                Some(IndexingPermit(cycle.cooperative_indexing_period().await))
-            }
+            Self::Cooperative(cycle) => Some(cycle.acquire_indexing_permit().await),
         }
-    }
-}
-
-pub(super) struct IndexingPermit(CooperativeIndexingPeriod);
-
-impl IndexingPermit {
-    pub fn release(self, uncompressed_num_bytes: u64) -> (Duration, PipelineMetrics) {
-        self.0.end_of_work(uncompressed_num_bytes)
     }
 }
 
@@ -180,13 +170,13 @@ impl CooperativeIndexingCycle {
         self.schedule.period()
     }
 
-    pub async fn cooperative_indexing_period(&self) -> CooperativeIndexingPeriod {
+    pub async fn acquire_indexing_permit(&self) -> IndexingPermit {
         let t_wake = Instant::now();
         let permit = Semaphore::acquire_owned(self.indexing_permits.clone())
             .await
             .unwrap();
         let t_work_start = Instant::now();
-        CooperativeIndexingPeriod {
+        IndexingPermit {
             t_wake,
             t_work_start,
             schedule: self.schedule,
@@ -195,7 +185,7 @@ impl CooperativeIndexingCycle {
     }
 }
 
-pub(crate) struct CooperativeIndexingPeriod {
+pub(super) struct IndexingPermit {
     // measured right before the acquisition of the indexing semaphore
     t_wake: Instant,
     // measured after the acquisition of the semaphore.
@@ -204,7 +194,7 @@ pub(crate) struct CooperativeIndexingPeriod {
     _permit: OwnedSemaphorePermit,
 }
 
-impl CooperativeIndexingPeriod {
+impl IndexingPermit {
     fn compute_pipeline_metrics(
         &self,
         end: Instant,
@@ -232,7 +222,7 @@ impl CooperativeIndexingPeriod {
 
     /// This drops the indexing permit, allowing another indexer to start indexing.
     /// This function also returns the amount of time to sleep until the next period.
-    pub fn end_of_work(self, uncompressed_num_bytes: u64) -> (Duration, PipelineMetrics) {
+    pub fn release(self, uncompressed_num_bytes: u64) -> (Duration, PipelineMetrics) {
         let end = Instant::now();
         let sleep_duration = self.compute_sleep_duration(end);
         let metrics = self.compute_pipeline_metrics(end, uncompressed_num_bytes);
@@ -306,9 +296,9 @@ mod tests {
         let semaphore = Arc::new(Semaphore::new(1));
         let cooperative_indexing =
             CooperativeIndexingCycle::new("id", Duration::from_secs(30), semaphore.clone());
-        let guard = cooperative_indexing.cooperative_indexing_period().await;
+        let guard = cooperative_indexing.acquire_indexing_permit().await;
         tokio::time::advance(Duration::from_secs(10)).await;
-        let (sleep_time, metrics) = guard.end_of_work(100_000_000);
+        let (sleep_time, metrics) = guard.release(100_000_000);
         assert_approx_equal_sleep_time(sleep_time, Duration::from_secs(20));
         let expected_metrics = PipelineMetrics {
             cpu_load: CpuCapacity::from_cpu_millis(PIPELINE_FULL_CAPACITY.cpu_millis() * 10 / 30),
@@ -332,9 +322,9 @@ mod tests {
             CooperativeIndexingCycle::new("id", Duration::from_secs(30), semaphore.clone());
         let semaphore_guard = Semaphore::acquire_owned(semaphore).await;
         drop_after(semaphore_guard, Duration::from_secs(30));
-        let cycle_guard = cooperative_indexing.cooperative_indexing_period().await;
+        let cycle_guard = cooperative_indexing.acquire_indexing_permit().await;
         tokio::time::advance(Duration::from_secs(15)).await;
-        let (sleep_time, metrics) = cycle_guard.end_of_work(30_000_000);
+        let (sleep_time, metrics) = cycle_guard.release(30_000_000);
         let expected_metrics = PipelineMetrics {
             cpu_load: CpuCapacity::from_cpu_millis(PIPELINE_FULL_CAPACITY.cpu_millis() * 15 / 30),
             throughput_mb_per_sec: 1u16,
@@ -351,9 +341,9 @@ mod tests {
             CooperativeIndexingCycle::new("id", Duration::from_secs(30), semaphore.clone());
         let semaphore_guard = Semaphore::acquire_owned(semaphore).await;
         drop_after(semaphore_guard, Duration::from_secs(10));
-        let cycle_guard = cooperative_indexing.cooperative_indexing_period().await;
+        let cycle_guard = cooperative_indexing.acquire_indexing_permit().await;
         tokio::time::advance(Duration::from_secs(10)).await;
-        let (sleep_time, metrics) = cycle_guard.end_of_work(100_000_000);
+        let (sleep_time, metrics) = cycle_guard.release(100_000_000);
         assert_approx_equal_sleep_time(sleep_time, Duration::from_secs(10));
         let expected_metrics = PipelineMetrics {
             cpu_load: CpuCapacity::from_cpu_millis(PIPELINE_FULL_CAPACITY.cpu_millis() * 10 / 30),
@@ -382,12 +372,12 @@ mod tests {
             let join_handle = tokio::task::spawn(async move {
                 let mut last_phase = 0;
                 for _ in 0..num_steps {
-                    let cycle_guard = cooperative_indexing.cooperative_indexing_period().await;
+                    let cycle_guard = cooperative_indexing.acquire_indexing_permit().await;
                     let work_time = Duration::from_millis(10);
                     tokio::time::sleep(work_time).await;
                     last_phase =
                         t0.elapsed().as_millis() as u64 % commit_timeout.as_millis() as u64;
-                    let (sleep_time, _) = cycle_guard.end_of_work(1_000_000);
+                    let (sleep_time, _) = cycle_guard.release(1_000_000);
                     tokio::time::sleep(sleep_time).await;
                 }
                 last_phase
