@@ -30,7 +30,7 @@ use azure_storage_blob::models::{
     HttpRange,
 };
 use azure_storage_blob::{BlobContainerClient, BlockBlobClient};
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 use bytesize::ByteSize;
 use futures::io::Error as FutureError;
 use futures::stream::{StreamExt, TryStreamExt};
@@ -283,22 +283,18 @@ impl AzureBlobStorage {
                 .blob_client(&name)
                 .download(Some(download_options(range_opt.as_ref())))
                 .await?;
-            let capacity = if range_opt.is_some() {
-                range_num_bytes
-            } else {
-                download_response
-                    .properties
-                    .content_length
-                    .and_then(|num_bytes| usize::try_from(num_bytes).ok())
-                    .unwrap_or(0)
-            };
             let mut body = download_response.body;
-            let mut bytes = BytesMut::with_capacity(capacity);
+            let mut chunks: Vec<Bytes> = Vec::new();
             while let Some(chunk) = body.next().await {
-                bytes.extend_from_slice(&chunk?);
+                chunks.push(chunk?);
             }
+            let bytes = if chunks.len() == 1 {
+                chunks.swap_remove(0)
+            } else {
+                Bytes::from(chunks.concat())
+            };
             crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(bytes.len() as u64);
-            Result::<_, AzureErrorWrapper>::Ok(bytes.freeze())
+            Result::<_, AzureErrorWrapper>::Ok(bytes)
         })
         .await
         .map_err(StorageError::from)
