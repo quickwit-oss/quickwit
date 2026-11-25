@@ -17,6 +17,7 @@ use std::sync::OnceLock;
 use std::{env, fmt};
 
 use anyhow::ensure;
+use bytesize::ByteSize;
 use itertools::Itertools;
 use quickwit_common::{get_bool_from_env, get_from_env_opt};
 use serde::{Deserialize, Serialize};
@@ -119,6 +120,15 @@ impl StorageConfigs {
             ensure!(
                 left != right,
                 "{left:?} storage config is defined multiple times",
+            );
+        }
+        if let Some(max_download_bytes_per_sec) = self
+            .find_s3()
+            .and_then(|s3_config| s3_config.max_download_bytes_per_sec)
+        {
+            ensure!(
+                max_download_bytes_per_sec.as_u64() > 0,
+                "storage.s3.max_download_bytes_per_sec must be greater than zero"
             );
         }
         Ok(())
@@ -399,6 +409,9 @@ pub struct S3StorageConfig {
     pub disable_stalled_stream_protection_upload: bool,
     #[serde(default)]
     pub disable_stalled_stream_protection_download: bool,
+    /// Maximum aggregate S3 download throughput for this process. Unlimited by default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_download_bytes_per_sec: Option<ByteSize>,
 }
 
 impl S3StorageConfig {
@@ -478,6 +491,10 @@ impl fmt::Debug for S3StorageConfig {
             .field(
                 "disable_stalled_stream_protection_download",
                 &self.disable_stalled_stream_protection_download,
+            )
+            .field(
+                "max_download_bytes_per_sec",
+                &self.max_download_bytes_per_sec,
             )
             .finish()
     }
@@ -603,6 +620,16 @@ mod tests {
             .into(),
         ]);
         storage_configs.validate().unwrap_err();
+
+        let storage_configs = StorageConfigs(vec![
+            S3StorageConfig {
+                max_download_bytes_per_sec: Some(ByteSize::b(0)),
+                ..Default::default()
+            }
+            .into(),
+        ]);
+        let error = storage_configs.validate().unwrap_err();
+        assert!(error.to_string().contains("must be greater than zero"));
     }
 
     #[test]
@@ -769,6 +796,7 @@ mod tests {
                 checksum_algorithm: disabled
                 disable_stalled_stream_protection_upload: true
                 disable_stalled_stream_protection_download: true
+                max_download_bytes_per_sec: 500MB
             "#;
             let s3_storage_config: S3StorageConfig =
                 serde_yaml::from_str(s3_storage_config_yaml).unwrap();
@@ -782,6 +810,7 @@ mod tests {
                 checksum_algorithm: ChecksumAlgorithm::Disabled,
                 disable_stalled_stream_protection_upload: true,
                 disable_stalled_stream_protection_download: true,
+                max_download_bytes_per_sec: Some(ByteSize::mb(500)),
                 ..Default::default()
             };
             assert_eq!(s3_storage_config, expected_s3_config);
