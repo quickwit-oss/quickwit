@@ -53,18 +53,18 @@ impl TimeoutAndRetryStorage {
         }
     }
 
-    async fn retry_with_timeout<T, S: Send + ?Sized>(
+    async fn retry_with_timeout<T, S, F>(
         &self,
         path: &Path,
         num_bytes: usize,
         timeout_num_bytes: usize,
         state: &mut S,
-        mut op: impl for<'a> FnMut(
-            &'a dyn Storage,
-            &'a Path,
-            &'a mut S,
-        ) -> BoxFuture<'a, StorageResult<T>>,
-    ) -> StorageResult<T> {
+        mut op: F,
+    ) -> StorageResult<T>
+    where
+        S: Send + ?Sized,
+        F: for<'a> FnMut(&'a dyn Storage, &'a Path, &'a mut S) -> BoxFuture<'a, StorageResult<T>>,
+    {
         for (attempt_id, timeout_duration) in self
             .storage_timeout_policy
             .compute_timeout(timeout_num_bytes)
