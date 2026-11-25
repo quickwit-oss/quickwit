@@ -26,7 +26,7 @@ use opendal::Operator;
 use opendal::layers::{ConcurrentLimitLayer, RetryLayer, TimeoutLayer};
 use quickwit_common::get_from_env_cached;
 use quickwit_common::uri::Uri;
-use quickwit_metrics::{GaugeGuard, HistogramTimer};
+use quickwit_metrics::HistogramTimer;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt as TokioAsyncWriteExt, ReadBuf};
 use tokio_util::compat::{FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt};
 use tracing::instrument;
@@ -44,7 +44,6 @@ const GCS_READ_IO_TIMEOUT: Duration = Duration::from_secs(5);
 
 struct OpendalAsyncRead<R: AsyncRead + Send + Unpin> {
     read: R,
-    _in_flight_guards: (GaugeGuard, GaugeGuard),
     _timer: HistogramTimer,
 }
 
@@ -273,6 +272,7 @@ impl Storage for OpendalStorage {
         if buffer.is_empty() {
             return Ok(());
         }
+        let _in_flight_guards = object_storage_get_slice_in_flight_guards(buffer.len());
         crate::default_get_slice_into(self, path, range, buffer).await
     }
 
@@ -283,9 +283,7 @@ impl Storage for OpendalStorage {
         range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
         let path = path.as_os_str().to_string_lossy();
-        let num_bytes = range.len();
         let range = range.start as u64..range.end as u64;
-        let in_flight_guards = object_storage_get_slice_in_flight_guards(num_bytes);
         crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
         let timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
         let storage_reader = self
@@ -297,7 +295,6 @@ impl Storage for OpendalStorage {
             .compat();
         Ok(Box::new(OpendalAsyncRead {
             read: storage_reader,
-            _in_flight_guards: in_flight_guards,
             _timer: timer,
         }))
     }

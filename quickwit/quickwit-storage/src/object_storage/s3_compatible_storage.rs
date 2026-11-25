@@ -52,7 +52,7 @@ use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
 use quickwit_config::S3StorageConfig;
-use quickwit_metrics::{GaugeGuard, HistogramTimer, counter, label_values};
+use quickwit_metrics::{HistogramTimer, counter, label_values};
 use regex::Regex;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::sync::Semaphore;
@@ -75,12 +75,11 @@ static REQUEST_SEMAPHORE: LazyLock<Semaphore> = LazyLock::new(|| {
     Semaphore::new(num_permits)
 });
 
-/// Wrap the async read handle together with a permit and in-flight gauges until the handle is
-/// dropped, counting downloaded bytes as they are read.
+/// Wrap the async read handle together with a permit until the handle is dropped, counting
+/// downloaded bytes as they are read.
 struct S3AsyncRead<T: AsyncRead + Send + Unpin> {
     pub read: T,
     pub _permit: Result<tokio::sync::SemaphorePermit<'static>, tokio::sync::AcquireError>,
-    pub _in_flight_guards: (GaugeGuard, GaugeGuard),
 }
 
 impl<T: AsyncRead + Send + Unpin> AsyncRead for S3AsyncRead<T> {
@@ -1114,6 +1113,10 @@ impl Storage for S3CompatibleObjectStorage {
         range: Range<usize>,
         buffer: &mut [u8],
     ) -> StorageResult<()> {
+        if buffer.is_empty() {
+            return Ok(());
+        }
+        let _in_flight_guards = object_storage_get_slice_in_flight_guards(buffer.len());
         default_get_slice_into(self, path, range, buffer).await
     }
 
@@ -1128,11 +1131,9 @@ impl Storage for S3CompatibleObjectStorage {
             self.get_object(path, Some(range.clone()))
         })
         .await?;
-        let in_flight_guards = object_storage_get_slice_in_flight_guards(range.len());
         Ok(Box::new(S3AsyncRead {
             read: get_object_output.body.into_async_read(),
             _permit: permit,
-            _in_flight_guards: in_flight_guards,
         }))
     }
 
@@ -1831,7 +1832,8 @@ mod tests {
             assert_eq!(requests[0].headers().get("range"), Some("bytes=2-6"));
         }
 
-        // Streaming keeps in-flight gauges active until dropped and counts bytes as read.
+        // Streaming counts bytes as read without charging the full range to allocated-memory
+        // in-flight gauges.
         let client = StaticReplayClient::new(vec![ReplayEvent::new(
             http::Request::builder().body(SdkBody::empty()).unwrap(),
             http::Response::builder()
@@ -1848,13 +1850,10 @@ mod tests {
             .get_slice_stream(Path::new("object"), 2..7)
             .await
             .unwrap();
-        assert_eq!(
-            OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT.get(),
-            count_before + 1.0
-        );
+        assert_eq!(OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT.get(), count_before);
         assert_eq!(
             OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_NUM_BYTES.get(),
-            in_flight_bytes_before + 5.0
+            in_flight_bytes_before
         );
         let mut prefix = [0; 2];
         reader.read_exact(&mut prefix).await.unwrap();
