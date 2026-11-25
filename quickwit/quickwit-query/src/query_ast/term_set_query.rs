@@ -17,8 +17,10 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use serde::{Deserialize, Serialize};
 use tantivy::Term;
 use tantivy::query::{BooleanQuery, ConstScoreQuery};
-use tantivy::schema::IndexRecordOption;
+use tantivy::schema::{FieldType, IndexRecordOption};
 
+use super::regex_query::json_str_term_prefix;
+use super::{RegexQuery, get_or_compile_cached_fst_regex};
 use crate::InvalidQuery;
 use crate::query_ast::{
     BoolQuery, BuildTantivyAst, BuildTantivyAstContext, QueryAst, TantivyQueryAst, TermQuery,
@@ -33,7 +35,79 @@ pub struct TermSetQuery {
     pub terms_per_field: BTreeMap<String, BTreeSet<String>>,
 }
 
+/// Emit a balanced alternation so `tantivy-fst`'s recursive `Dfa::add` stays O(log N) deep.
+fn push_literal_alternation(literals: &[&str], pattern: &mut String) {
+    const MAX_FLAT_BRANCHES: usize = 128;
+    if literals.len() > MAX_FLAT_BRANCHES {
+        let (left, right) = literals.split_at(literals.len() / 2);
+        pattern.push('(');
+        push_literal_alternation(left, pattern);
+        pattern.push_str(")|(");
+        push_literal_alternation(right, pattern);
+        pattern.push(')');
+        return;
+    }
+    for (i, literal) in literals.iter().enumerate() {
+        if i != 0 {
+            pattern.push('|');
+        }
+        regex_syntax::escape_into(literal, pattern);
+    }
+}
+
 impl TermSetQuery {
+    /// Tries to rewrite a single-field indexed string (or string-only JSON) term set
+    /// into an equivalent `RegexQuery`. Returns `None` if ineligible or if compilation fails.
+    pub fn try_to_regex_query(&self, context: &BuildTantivyAstContext) -> Option<RegexQuery> {
+        if self.terms_per_field.len() != 1 {
+            return None;
+        }
+        let (full_path, values) = self.terms_per_field.iter().next()?;
+        if values.len() < 2 {
+            return None;
+        }
+        let (field, entry, path) =
+            super::utils::find_field_or_hit_dynamic(full_path, context.schema)?;
+        let (tokenizer_name, json_path) = match entry.field_type() {
+            FieldType::Str(opts) => (opts.get_indexing_options()?.tokenizer(), None),
+            FieldType::JsonObject(opts) => (
+                opts.get_text_indexing_options()?.tokenizer(),
+                Some(json_str_term_prefix(field, path, opts)),
+            ),
+            _ => return None,
+        };
+        let terms = self.make_term_iterator(context).ok()?;
+        let prefix = json_path.as_deref().unwrap_or_default();
+        let mut literals = Vec::with_capacity(terms.len());
+        for term in &terms {
+            // Mixed string/numeric JSON sets fail `strip_prefix` and keep the exact plan.
+            let bytes = term.serialized_value_bytes().strip_prefix(prefix)?;
+            literals.push(std::str::from_utf8(bytes).ok()?);
+        }
+        if literals.len() < 2 {
+            return None;
+        }
+        literals.sort_unstable();
+        let does_lowercasing = context
+            .tokenizer_manager
+            .tokenizer_does_lowercasing(tokenizer_name)
+            .unwrap_or(false);
+        let mut pattern = String::new();
+        if does_lowercasing {
+            // Preserve exact case-sensitive matching; `RegexQuery::to_resolved` otherwise adds `(?i)`.
+            pattern.push_str("(?-i)(");
+            push_literal_alternation(&literals, &mut pattern);
+            pattern.push(')');
+        } else {
+            push_literal_alternation(&literals, &mut pattern);
+        }
+        get_or_compile_cached_fst_regex(&pattern)?;
+        Some(RegexQuery {
+            field: full_path.clone(),
+            regex: pattern,
+        })
+    }
+
     fn has_fast_only_field(&self, context: &BuildTantivyAstContext) -> bool {
         for full_path in self.terms_per_field.keys() {
             if let Some((_, field_entry, _)) =

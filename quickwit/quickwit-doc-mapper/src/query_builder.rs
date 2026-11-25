@@ -140,12 +140,33 @@ impl<'a> QueryAstVisitor<'a> for GetRequiredFastFieldsVisitor<'_> {
     }
 }
 
+struct TermSetToRegexTransformer<'a> {
+    context: &'a BuildTantivyAstContext<'a>,
+}
+
+impl QueryAstTransformer for TermSetToRegexTransformer<'_> {
+    type Err = Infallible;
+
+    fn transform_term_set(
+        &mut self,
+        term_set_query: TermSetQuery,
+    ) -> Result<Option<QueryAst>, Self::Err> {
+        if let Some(regex_query) = term_set_query.try_to_regex_query(self.context) {
+            return Ok(Some(regex_query.into()));
+        }
+        Ok(Some(term_set_query.into()))
+    }
+}
+
 /// Build a `Query` with field resolution & forbidding range clauses.
 pub(crate) fn build_query(
     query_ast: QueryAst,
     context: &BuildTantivyAstContext,
     cache_context: Option<(Arc<dyn quickwit_query::query_ast::PredicateCache>, String)>,
 ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
+    let Ok(query_ast) = TermSetToRegexTransformer { context }.transform(query_ast);
+    let query_ast = query_ast.unwrap_or(QueryAst::MatchAll);
+
     let query_ast = if let Some((cache, split_id)) = cache_context {
         let Ok(query_ast) = quickwit_query::query_ast::PredicateCacheInjector { cache, split_id }
             .transform(query_ast);
@@ -398,6 +419,121 @@ mod test {
             expression: deserialize(expression).unwrap(),
         }
         .into()
+    }
+
+    fn terms(field: &str, values: &[&str]) -> QueryAst {
+        quickwit_query::query_ast::TermSetQuery {
+            terms_per_field: [(
+                field.to_string(),
+                values.iter().map(|value| value.to_string()).collect(),
+            )]
+            .into(),
+        }
+        .into()
+    }
+
+    #[test]
+    fn test_term_set_regex_hits_scores_and_fallback() -> anyhow::Result<()> {
+        use tantivy::collector::TopDocs;
+        use tantivy::{Index, doc};
+
+        let mut builder = Schema::builder();
+        let field = builder.add_text_field("service", STRING);
+        let schema = builder.build();
+        let index = Index::create_in_ram(schema.clone());
+        let mut writer = index.writer_with_num_threads(1, 20_000_000)?;
+        // Each term is below the raw tokenizer's length limit; together they exceed the
+        // regex compiler's state budget. The fallback must retain even the last term.
+        let services: Vec<_> = (0..128).map(|n| format!("svc-{n:03}-production")).collect();
+        let large: Vec<_> = std::iter::once("x|y")
+            .chain(services.iter().map(String::as_str))
+            .collect();
+        for document in [
+            doc!(field => "a.b"),
+            doc!(field => "x|y"),
+            doc!(field => "a.b", field => "x|y"),
+            doc!(field => "axb"),
+            doc!(field => "A.B"),
+            doc!(field => "x"),
+            doc!(field => "a.b-extra"),
+            doc!(field => services.last().unwrap().as_str()),
+            doc!(field => "svc.000"),
+            doc!(field => "svc.255"),
+            doc!(field => "svc.256"),
+        ] {
+            writer.add_document(document)?;
+        }
+        writer.commit()?;
+        let searcher = index.reader()?.searcher();
+        let ctx = BuildTantivyAstContext::for_test(&schema).without_validation();
+        let wide: Vec<_> = (0..256).map(|n| format!("svc.{n:03}")).collect();
+        for (values, regex_plan, expected) in [
+            (vec!["a.b", "x|y", "missing"], true, vec![0, 1, 2]),
+            (wide.iter().map(String::as_str).collect(), true, vec![8, 9]),
+            (large, false, vec![1, 2, 7]),
+            (vec![], false, vec![]),
+        ] {
+            let (query, warmup) = build_query(terms("service", &values), &ctx, None)?;
+            assert_eq!(
+                warmup.automatons_grouped_by_field.contains_key(&field),
+                regex_plan
+            );
+            assert_eq!(
+                warmup.terms_grouped_by_field.contains_key(&field),
+                !regex_plan && !values.is_empty()
+            );
+            let hits = searcher.search(&*query, &TopDocs::with_limit(10).order_by_score())?;
+            let hits: Vec<_> = hits
+                .into_iter()
+                .map(|(score, addr)| {
+                    assert_eq!(score, 1.0);
+                    addr.doc_id
+                })
+                .collect();
+            assert_eq!(hits, expected);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_term_set_regex_json_path_and_mixed_types() {
+        let mut builder = Schema::builder();
+        let dynamic = builder.add_json_field(DYNAMIC_FIELD_NAME, STRING);
+        let schema = builder.build();
+        let ctx = BuildTantivyAstContext::for_test(&schema);
+        let mut path = Term::from_field_json_path(dynamic, "custom.level", false);
+        path.append_type_and_str("");
+        let (_, warmup) =
+            build_query(terms("custom.level", &["ERROR", "WARN"]), &ctx, None).unwrap();
+        assert_eq!(
+            warmup.automatons_grouped_by_field[&dynamic],
+            HashSet::from([Automaton::Regex(
+                Some(path.serialized_value_bytes().to_vec()),
+                "ERROR|WARN".into()
+            )])
+        );
+        let (_, warmup) = build_query(terms("custom.level", &["42", "WARN"]), &ctx, None).unwrap();
+        assert!(warmup.automatons_grouped_by_field.is_empty());
+        assert!(warmup.terms_grouped_by_field[&dynamic].len() >= 2);
+
+        // Lowercasing text fields must stay case-sensitive (not rewritten to `(?i)`).
+        let mut text_builder = Schema::builder();
+        let text_field = text_builder.add_text_field("event_type", TEXT);
+        let text_schema = text_builder.build();
+        let text_ctx = BuildTantivyAstContext::for_test(&text_schema);
+        let (_, warmup) = build_query(
+            terms("event_type", &["PushEvent", "CreateEvent"]),
+            &text_ctx,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            warmup.automatons_grouped_by_field[&text_field],
+            HashSet::from([Automaton::Regex(
+                None,
+                "(?-i)(CreateEvent|PushEvent)".into()
+            )])
+        );
     }
 
     fn expected_fast_fields(names: &[&str]) -> HashSet<FastFieldWarmupInfo> {
