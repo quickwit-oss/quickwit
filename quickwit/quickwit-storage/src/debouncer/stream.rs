@@ -26,6 +26,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::Instant;
 use tokio_util::io::{ReaderStream, StreamReader};
 use tokio_util::task::AbortOnDropHandle;
+use tracing::Instrument;
 
 use super::{CLEANUP_INTERVAL, DebouncerKey};
 use crate::{Storage, StorageErrorKind, StorageResult};
@@ -105,12 +106,15 @@ impl StreamDebouncer {
         joining_readers_sender
             .send(reader)
             .expect("receiver is still owned here");
-        let task = tokio::spawn(share_stream(
-            storage,
-            key.clone(),
-            join_deadline,
-            joining_readers_receiver,
-        ));
+        let task = tokio::spawn(
+            share_stream(
+                storage,
+                key.clone(),
+                join_deadline,
+                joining_readers_receiver,
+            )
+            .in_current_span(),
+        );
         let group = Arc::new(StreamGroup {
             _producer_task: AbortOnDropHandle::new(task),
             joining_readers: joining_readers_sender,
