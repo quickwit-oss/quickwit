@@ -67,10 +67,11 @@ pub(crate) fn jaeger_api_handlers(
         .boxed()
 }
 
-fn jaeger_api_path_filter() -> impl Filter<Extract = (Vec<String>,), Error = Rejection> + Clone {
+fn jaeger_api_path_filter() -> warp::filters::BoxedFilter<(Vec<String>,)> {
     warp::path!(String / "jaeger" / "api" / ..)
         .and(warp::get())
         .and_then(extract_index_id_patterns)
+        .boxed()
 }
 
 #[utoipa::path(

@@ -15,6 +15,7 @@
 use bytes::Bytes;
 use bytesize::ByteSize;
 use serde::de::DeserializeOwned;
+use warp::filters::BoxedFilter;
 use warp::reject::LengthRequired;
 use warp::{Filter, Rejection};
 
@@ -68,15 +69,16 @@ pub(crate) fn elasticsearch_filter()
 pub(crate) fn elastic_bulk_filter(
     max_body_size: ByteSize,
     max_decompressed_body_size: ByteSize,
-) -> impl Filter<Extract = (Body, ElasticBulkOptions), Error = Rejection> + Clone {
+) -> BoxedFilter<(Body, ElasticBulkOptions)> {
     warp::path!("_elastic" / "_bulk")
-        .and(warp::post().or(warp::put()).unify())
+        .and(warp::post().or(warp::put()).unify().boxed())
         .and(get_body_bytes(
             max_body_size,
             max_decompressed_body_size,
             "elasticsearch_bulk",
         ))
         .and(warp::query())
+        .boxed()
 }
 
 #[utoipa::path(
@@ -94,20 +96,24 @@ pub(crate) fn elastic_bulk_filter(
 pub(crate) fn elastic_index_bulk_filter(
     max_body_size: ByteSize,
     max_decompressed_body_size: ByteSize,
-) -> impl Filter<Extract = (String, Body, ElasticBulkOptions), Error = Rejection> + Clone {
+) -> BoxedFilter<(String, Body, ElasticBulkOptions)> {
     warp::path!("_elastic" / String / "_bulk")
-        .and(warp::post().or(warp::put()).unify())
+        .and(warp::post().or(warp::put()).unify().boxed())
         .and(get_body_bytes(
             max_body_size,
             max_decompressed_body_size,
             "elasticsearch_bulk",
         ))
         .and(warp::query::<ElasticBulkOptions>())
+        .boxed()
+}
+
+fn get_or_post() -> BoxedFilter<()> {
+    warp::get().or(warp::post()).unify().boxed()
 }
 
 /// Like the warp json filter, but accepts an empty body and interprets it as `T::default`.
-fn json_or_empty<T: DeserializeOwned + Send + Default>()
--> impl Filter<Extract = (T,), Error = Rejection> + Copy {
+fn json_or_empty<T: DeserializeOwned + Send + Default + 'static>() -> BoxedFilter<(T,)> {
     warp::body::content_length_limit(BODY_LENGTH_LIMIT.as_u64())
         .and(warp::body::bytes().and_then(|buf: Bytes| async move {
             if buf.is_empty() {
@@ -126,38 +132,35 @@ fn json_or_empty<T: DeserializeOwned + Send + Default>()
             }
         })
         .unify()
+        .boxed()
 }
 
 #[utoipa::path(get, tag = "Metadata", path = "/{index}/_field_caps")]
-pub(crate) fn elastic_index_field_capabilities_filter() -> impl Filter<
-    Extract = (
-        Vec<String>,
-        FieldCapabilityQueryParams,
-        FieldCapabilityRequestBody,
-    ),
-    Error = Rejection,
-> + Clone {
+pub(crate) fn elastic_index_field_capabilities_filter() -> BoxedFilter<(
+    Vec<String>,
+    FieldCapabilityQueryParams,
+    FieldCapabilityRequestBody,
+)> {
     warp::path!("_elastic" / String / "_field_caps")
         .and_then(extract_index_id_patterns)
-        .and(warp::get().or(warp::post()).unify())
+        .and(get_or_post())
         .and(warp::query())
         .and(json_or_empty())
+        .boxed()
 }
 
 #[utoipa::path(get, tag = "Metadata", path = "/_field_caps")]
-pub(crate) fn elastic_field_capabilities_filter() -> impl Filter<
-    Extract = (
-        Vec<String>,
-        FieldCapabilityQueryParams,
-        FieldCapabilityRequestBody,
-    ),
-    Error = Rejection,
-> + Clone {
+pub(crate) fn elastic_field_capabilities_filter() -> BoxedFilter<(
+    Vec<String>,
+    FieldCapabilityQueryParams,
+    FieldCapabilityRequestBody,
+)> {
     warp::path!("_elastic" / "_field_caps")
         .and_then(extract_index_id_patterns_default)
-        .and(warp::get().or(warp::post()).unify())
+        .and(get_or_post())
         .and(warp::query())
         .and(json_or_empty())
+        .boxed()
 }
 
 #[utoipa::path(get, tag = "Metadata", path = "/_resolve/index/{index}")]
@@ -170,22 +173,22 @@ pub(crate) fn elastic_resolve_index_filter()
 
 #[utoipa::path(get, tag = "Count", path = "/{index}/_count")]
 pub(crate) fn elastic_index_count_filter()
--> impl Filter<Extract = (Vec<String>, SearchQueryParamsCount, SearchBody), Error = Rejection> + Clone
-{
+-> BoxedFilter<(Vec<String>, SearchQueryParamsCount, SearchBody)> {
     warp::path!("_elastic" / String / "_count")
         .and_then(extract_index_id_patterns)
-        .and(warp::get().or(warp::post()).unify())
+        .and(get_or_post())
         .and(warp::query())
         .and(json_or_empty())
+        .boxed()
 }
 
 #[utoipa::path(delete, tag = "Indexes", path = "/{index}")]
-pub(crate) fn elastic_delete_index_filter()
--> impl Filter<Extract = (Vec<String>, DeleteQueryParams), Error = Rejection> + Clone {
+pub(crate) fn elastic_delete_index_filter() -> BoxedFilter<(Vec<String>, DeleteQueryParams)> {
     warp::path!("_elastic" / String)
         .and(warp::delete())
         .and_then(extract_index_id_patterns)
         .and(warp::query())
+        .boxed()
 }
 
 // No support for any query parameters for now.
@@ -209,40 +212,42 @@ pub(crate) fn elastic_cluster_health_filter() -> impl Filter<Extract = (), Error
 }
 
 #[utoipa::path(get, tag = "Search", path = "/_cat/indices/{index}")]
-pub(crate) fn elastic_index_cat_indices_filter()
--> impl Filter<Extract = (Vec<String>, CatIndexQueryParams), Error = Rejection> + Clone {
+pub(crate) fn elastic_index_cat_indices_filter() -> BoxedFilter<(Vec<String>, CatIndexQueryParams)>
+{
     warp::path!("_elastic" / "_cat" / "indices" / String)
         .and_then(extract_index_id_patterns)
         .and(warp::get())
         .and(warp::query())
+        .boxed()
 }
 
 #[utoipa::path(get, tag = "Search", path = "/_cat/indices")]
-pub(crate) fn elastic_cat_indices_filter()
--> impl Filter<Extract = (CatIndexQueryParams,), Error = Rejection> + Clone {
+pub(crate) fn elastic_cat_indices_filter() -> BoxedFilter<(CatIndexQueryParams,)> {
     warp::path!("_elastic" / "_cat" / "indices")
         .and(warp::get())
         .and(warp::query())
+        .boxed()
 }
 
 #[utoipa::path(get, tag = "Search", path = "/{index}/_search")]
 pub(crate) fn elastic_index_search_filter()
--> impl Filter<Extract = (Vec<String>, SearchQueryParams, SearchBody), Error = Rejection> + Clone {
+-> BoxedFilter<(Vec<String>, SearchQueryParams, SearchBody)> {
     warp::path!("_elastic" / String / "_search")
         .and_then(extract_index_id_patterns)
-        .and(warp::get().or(warp::post()).unify())
+        .and(get_or_post())
         .and(warp::query())
         .and(json_or_empty())
+        .boxed()
 }
 
 #[utoipa::path(post, tag = "Search", path = "/_msearch")]
-pub(crate) fn elastic_multi_search_filter()
--> impl Filter<Extract = (Bytes, MultiSearchQueryParams), Error = Rejection> + Clone {
+pub(crate) fn elastic_multi_search_filter() -> BoxedFilter<(Bytes, MultiSearchQueryParams)> {
     warp::path!("_elastic" / "_msearch")
         .and(warp::body::content_length_limit(BODY_LENGTH_LIMIT.as_u64()))
         .and(warp::body::bytes())
         .and(warp::post())
         .and(warp::query())
+        .boxed()
 }
 
 fn merge_scroll_body_params(
@@ -265,11 +270,10 @@ pub(crate) fn elastic_search_shards_filter()
 }
 
 #[utoipa::path(post, tag = "Search", path = "/_search/scroll")]
-pub(crate) fn elastic_scroll_filter()
--> impl Filter<Extract = (ScrollQueryParams,), Error = Rejection> + Clone {
+pub(crate) fn elastic_scroll_filter() -> BoxedFilter<(ScrollQueryParams,)> {
     warp::path!("_elastic" / "_search" / "scroll")
         .and(warp::body::content_length_limit(BODY_LENGTH_LIMIT.as_u64()))
-        .and(warp::get().or(warp::post()).unify())
+        .and(get_or_post())
         .and(warp::query())
         .and(json_or_empty())
         .map(
@@ -277,6 +281,7 @@ pub(crate) fn elastic_scroll_filter()
                 merge_scroll_body_params(scroll_query_params, scroll_body)
             },
         )
+        .boxed()
 }
 
 pub(crate) fn elastic_delete_scroll_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone
@@ -288,11 +293,11 @@ pub(crate) fn elastic_aliases_filter() -> impl Filter<Extract = (), Error = Reje
     warp::path!("_elastic" / "_aliases").and(warp::get())
 }
 
-pub(crate) fn elastic_index_mapping_filter()
--> impl Filter<Extract = (String, IndexMappingQueryParams), Error = Rejection> + Clone {
+pub(crate) fn elastic_index_mapping_filter() -> BoxedFilter<(String, IndexMappingQueryParams)> {
     warp::path!("_elastic" / String / "_mapping")
         .or(warp::path!("_elastic" / String / "_mappings"))
         .unify()
         .and(warp::get())
         .and(warp::query())
+        .boxed()
 }

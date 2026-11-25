@@ -24,6 +24,7 @@ use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_metrics::GaugeGuard;
 use thiserror::Error;
 use warp::Filter;
+use warp::filters::BoxedFilter;
 use warp::reject::Reject;
 
 use crate::body_limit::{ReadDecodedError, bounded_body_bytes, read_decoded};
@@ -179,7 +180,7 @@ pub(crate) fn get_body_bytes(
     max_body_size: ByteSize,
     max_decompressed_body_size: ByteSize,
     endpoint: &'static str,
-) -> impl Filter<Extract = (Body,), Error = warp::Rejection> + Clone {
+) -> BoxedFilter<(Body,)> {
     warp::header::optional("content-encoding")
         .and(bounded_body_bytes(max_body_size))
         .and_then(move |encoding: Option<String>, body: Bytes| async move {
@@ -188,6 +189,7 @@ pub(crate) fn get_body_bytes(
                 .await
                 .map(|content| Body::new(content, permit))
         })
+        .boxed()
 }
 
 pub(crate) struct Body {

@@ -21,6 +21,7 @@ use quickwit_query::query_ast::{QueryAst, query_ast_from_user_text};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use tracing::warn;
+use warp::filters::BoxedFilter;
 use warp::{Filter, Rejection};
 
 use super::get_index_metadata_handler;
@@ -77,9 +78,10 @@ pub fn log_failure<T, E: std::fmt::Display>(
     }
 }
 
-pub fn json_body<T: DeserializeOwned + Send>()
--> impl Filter<Extract = (T,), Error = warp::Rejection> + Clone {
-    warp::body::content_length_limit(1024 * 1024).and(warp::body::json())
+pub fn json_body<T: DeserializeOwned + Send + 'static>() -> BoxedFilter<(T,)> {
+    warp::body::content_length_limit(1024 * 1024)
+        .and(warp::body::json())
+        .boxed()
 }
 
 pub fn index_management_handlers(

@@ -17,8 +17,9 @@ use std::fmt;
 use quickwit_config::ConfigFormat;
 use serde::{self, Deserialize, Serialize, Serializer};
 use thiserror::Error;
+use warp::Filter;
+use warp::filters::BoxedFilter;
 use warp::hyper::header::CONTENT_TYPE;
-use warp::{Filter, Rejection};
 
 /// Body output format used for the REST API.
 #[derive(Deserialize, Clone, Debug, Eq, PartialEq, Copy, utoipa::ToSchema)]
@@ -78,9 +79,10 @@ struct FormatQueryString {
     pub format: BodyFormat,
 }
 
-pub(crate) fn extract_format_from_qs()
--> impl Filter<Extract = (BodyFormat,), Error = Rejection> + Clone {
-    warp::query::<FormatQueryString>().map(|format_qs: FormatQueryString| format_qs.format)
+pub(crate) fn extract_format_from_qs() -> BoxedFilter<(BodyFormat,)> {
+    warp::query::<FormatQueryString>()
+        .map(|format_qs: FormatQueryString| format_qs.format)
+        .boxed()
 }
 
 #[derive(Debug, Error)]
@@ -92,10 +94,9 @@ pub(crate) struct UnsupportedMediaType;
 
 impl warp::reject::Reject for UnsupportedMediaType {}
 
-pub(crate) fn extract_config_format()
--> impl Filter<Extract = (ConfigFormat,), Error = Rejection> + Copy {
-    warp::filters::header::optional::<mime_guess::Mime>(CONTENT_TYPE.as_str()).and_then(
-        |mime_opt: Option<mime_guess::Mime>| {
+pub(crate) fn extract_config_format() -> BoxedFilter<(ConfigFormat,)> {
+    warp::filters::header::optional::<mime_guess::Mime>(CONTENT_TYPE.as_str())
+        .and_then(|mime_opt: Option<mime_guess::Mime>| {
             if let Some(mime) = mime_opt {
                 let config_format = match mime.subtype().as_str() {
                     "json" => ConfigFormat::Json,
@@ -108,6 +109,6 @@ pub(crate) fn extract_config_format()
                 return futures::future::ok(config_format);
             }
             futures::future::ok(ConfigFormat::Json)
-        },
-    )
+        })
+        .boxed()
 }
