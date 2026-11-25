@@ -236,7 +236,9 @@ async fn load_node_config(
 ) -> anyhow::Result<NodeConfig> {
     let config_content = load_file(&StorageResolver::unconfigured(), config_uri)
         .await
-        .context("failed to load node config")?;
+        .context(r#"
+            Could not find Quickwit config in quickwit/quickwit.yaml.
+            Use the `--config` parameter to specify location or see https://quickwit.io/docs/get-started/installation#install-script for expected directory structure."#)?;
     let config_format = ConfigFormat::sniff_from_uri(config_uri)?;
     let config = NodeConfig::load_with_enabled_services(
         config_format,
