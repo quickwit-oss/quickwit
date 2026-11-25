@@ -19,3 +19,14 @@ expected:
   hits:
     total:
       value: 61
+---
+# Explicit keyword field; `$` is a literal, not a regex anchor.
+endpoint: "simple_es_compat/_search"
+json:
+  query:
+    terms:
+      keyword_text: ["gold$", "missing"]
+expected:
+  hits:
+    total:
+      value: 1

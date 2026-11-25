@@ -13,16 +13,20 @@
 // limitations under the License.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tantivy::Term;
 use tantivy::query::{BooleanQuery, ConstScoreQuery};
-use tantivy::schema::IndexRecordOption;
+use tantivy::schema::{FieldType, IndexRecordOption, Schema};
 
+use super::regex_query::json_str_term_prefix;
+use super::{AutomatonQuery, JsonPathPrefix, ResolvedRegex, get_or_compile_cached_fst_regex};
 use crate::InvalidQuery;
 use crate::query_ast::{
     BoolQuery, BuildTantivyAst, BuildTantivyAstContext, QueryAst, TantivyQueryAst, TermQuery,
 };
+use crate::tokenizers::TokenizerManager;
 
 /// TermSetQuery matches the same document set as if it was a union of
 /// the equivalent set of TermQueries.
@@ -31,6 +35,29 @@ use crate::query_ast::{
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct TermSetQuery {
     pub terms_per_field: BTreeMap<String, BTreeSet<String>>,
+}
+
+/// Emit one alternation, not multiple queries. tantivy-fst recursively follows the splits in
+/// its instruction graph while compiling, before its DFA state limit can trigger. Keep wide
+/// alternations shallow. Capturing groups survive regex-syntax's alternation flattening;
+/// tantivy-fst ignores the captures when matching. This is not a limit on the term set.
+fn push_literal_alternation(literals: &[&str], pattern: &mut String) {
+    const MAX_FLAT_BRANCHES: usize = 128;
+    if literals.len() > MAX_FLAT_BRANCHES {
+        let (left, right) = literals.split_at(literals.len() / 2);
+        pattern.push('(');
+        push_literal_alternation(left, pattern);
+        pattern.push_str(")|(");
+        push_literal_alternation(right, pattern);
+        pattern.push(')');
+        return;
+    }
+    for (i, literal) in literals.iter().enumerate() {
+        if i != 0 {
+            pattern.push('|');
+        }
+        regex_syntax::escape_into(literal, pattern);
+    }
 }
 
 impl TermSetQuery {
@@ -72,12 +99,84 @@ impl TermSetQuery {
         bool_query.build_tantivy_ast_impl(context)
     }
 
-    // Build a union of normalized terms, using exact dictionary lookups rather than an automaton.
-    fn build_term_disjunction(
+    /// Returns the resolved regex automaton when this term set lowers to a literal alternation.
+    pub fn to_resolved_regex(
+        &self,
+        schema: &Schema,
+        tokenizer_manager: &TokenizerManager,
+    ) -> Option<ResolvedRegex> {
+        if self.terms_per_field.len() != 1 {
+            return None;
+        }
+        let context = BuildTantivyAstContext {
+            schema,
+            tokenizer_manager,
+            search_fields: &[],
+            with_validation: false,
+        };
+        let terms = self.make_term_iterator(&context).ok()?;
+        self.try_compile_regex(&terms, schema)
+            .map(|(resolved, _)| resolved)
+    }
+
+    // Work on the indexed terms, not the request strings: term resolution may normalize text
+    // or produce several typed terms for a single JSON value.
+    fn try_compile_regex(
+        &self,
+        terms: &HashSet<Term>,
+        schema: &Schema,
+    ) -> Option<(ResolvedRegex, Arc<tantivy_fst::Regex>)> {
+        if terms.len() < 2 || self.terms_per_field.len() != 1 {
+            return None;
+        }
+        let full_path = self.terms_per_field.keys().next()?;
+        let (field, entry, path) = super::utils::find_field_or_hit_dynamic(full_path, schema)?;
+        let json_path = match entry.field_type() {
+            FieldType::Str(_) if entry.is_indexed() => None,
+            FieldType::JsonObject(opts) if entry.is_indexed() => {
+                Some(json_str_term_prefix(field, path, opts))
+            }
+            _ => return None,
+        };
+        let prefix = json_path.as_deref().unwrap_or_default();
+        let mut literals = Vec::with_capacity(terms.len());
+        for term in terms {
+            // The JSON prefix includes both path and type; mixed string/numeric sets fall back
+            // intact.
+            let bytes = term.serialized_value_bytes().strip_prefix(prefix)?;
+            literals.push(std::str::from_utf8(bytes).ok()?);
+        }
+        literals.sort_unstable(); // Stable cache key across splits and requests.
+        let mut pattern = String::new();
+        push_literal_alternation(&literals, &mut pattern);
+        // A rejected optimization is not an invalid terms query (also in lenient mode).
+        let regex = get_or_compile_cached_fst_regex(&pattern)?;
+        Some((
+            ResolvedRegex {
+                field,
+                json_path,
+                regex: pattern,
+            },
+            regex,
+        ))
+    }
+
+    fn build_indexed_query(
         &self,
         context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
         let terms = self.make_term_iterator(context)?;
+        if let Some((resolved, regex)) = self.try_compile_regex(&terms, context.schema) {
+            let automaton = JsonPathPrefix {
+                prefix: resolved.json_path.unwrap_or_default(),
+                automaton: regex,
+            };
+            return Ok(AutomatonQuery {
+                field: resolved.field,
+                automaton: Arc::new(automaton),
+            }
+            .into());
+        }
         let term_queries = terms
             .into_iter()
             .map(|term| {
@@ -131,7 +230,7 @@ impl BuildTantivyAst for TermSetQuery {
         if self.has_fast_only_field(context) {
             self.build_bool_query(context)
         } else {
-            self.build_term_disjunction(context)
+            self.build_indexed_query(context)
         }
     }
 }
