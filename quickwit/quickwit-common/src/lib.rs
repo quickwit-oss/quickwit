@@ -19,6 +19,7 @@ mod env;
 
 #[cfg(feature = "jemalloc-profiled")]
 pub(crate) mod alloc_tracker;
+mod allocated_bytes;
 pub mod binary_heap;
 mod cpus;
 pub mod fs;
@@ -55,6 +56,7 @@ use std::fmt::Display;
 use std::future::Future;
 use std::ops::{Range, RangeInclusive};
 
+pub use allocated_bytes::{CountingAllocator, allocated_bytes};
 pub use coolid::new_coolid;
 pub use cpus::num_cpus;
 pub use env::{

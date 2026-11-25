@@ -58,6 +58,11 @@ pub mod split;
 pub mod stats;
 pub mod tool;
 
+#[cfg(not(feature = "jemalloc"))]
+#[global_allocator]
+static GLOBAL: quickwit_common::CountingAllocator<std::alloc::System> =
+    quickwit_common::CountingAllocator(std::alloc::System);
+
 /// Throughput calculation window size.
 const THROUGHPUT_WINDOW_SIZE: usize = 5;
 
