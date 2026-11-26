@@ -31,7 +31,7 @@ use warp::{Filter, Rejection};
 use crate::decompression::get_body_bytes;
 use crate::rest::recover_fn;
 use crate::rest_api_response::into_rest_api_response;
-use crate::{Body, BodyFormat, require, with_arg};
+use crate::{Body, BodyFormat, require};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(
@@ -103,6 +103,7 @@ pub(crate) fn otlp_default_logs_handler(
             max_decompressed_body_size,
             "otlp_logs",
         ))
+        .boxed()
         .then(
             |otlp_logs_service, index_id: Option<String>, body| async move {
                 let index_id =
@@ -110,8 +111,7 @@ pub(crate) fn otlp_default_logs_handler(
                 otlp_ingest_logs(otlp_logs_service, index_id, body).await
             },
         )
-        .and(with_arg(BodyFormat::default()))
-        .map(into_rest_api_response)
+        .map(|res| into_rest_api_response(res, BodyFormat::default()))
         .boxed()
 }
 /// Open Telemetry REST/Protobuf logs ingest endpoint.
@@ -141,9 +141,9 @@ pub(crate) fn otlp_logs_handler(
             max_decompressed_body_size,
             "otlp_logs",
         ))
+        .boxed()
         .then(otlp_ingest_logs)
-        .and(with_arg(BodyFormat::default()))
-        .map(into_rest_api_response)
+        .map(|res| into_rest_api_response(res, BodyFormat::default()))
         .boxed()
 }
 
@@ -177,6 +177,7 @@ pub(crate) fn otlp_default_traces_handler(
             max_decompressed_body_size,
             "otlp_traces",
         ))
+        .boxed()
         .then(
             |otlp_traces_service, index_id: Option<String>, body| async move {
                 let index_id =
@@ -184,8 +185,7 @@ pub(crate) fn otlp_default_traces_handler(
                 otlp_ingest_traces(otlp_traces_service, index_id, body).await
             },
         )
-        .and(with_arg(BodyFormat::default()))
-        .map(into_rest_api_response)
+        .map(|res| into_rest_api_response(res, BodyFormat::default()))
         .boxed()
 }
 /// Open Telemetry REST/Protobuf traces ingest endpoint.
@@ -215,9 +215,9 @@ pub(crate) fn otlp_ingest_traces_handler(
             max_decompressed_body_size,
             "otlp_traces",
         ))
+        .boxed()
         .then(otlp_ingest_traces)
-        .and(with_arg(BodyFormat::default()))
-        .map(into_rest_api_response)
+        .map(|res| into_rest_api_response(res, BodyFormat::default()))
         .boxed()
 }
 
