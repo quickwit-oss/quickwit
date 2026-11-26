@@ -390,9 +390,8 @@ pub(crate) async fn warmup(
         warm_up_automatons_future,
     )?;
 
-    if abort_token
-        .as_ref()
-        .is_some_and(CancellationToken::is_cancelled)
+    if let Some(token) = &abort_token
+        && token.is_cancelled()
     {
         return Ok(WarmupOutcome::NoMatches);
     }
