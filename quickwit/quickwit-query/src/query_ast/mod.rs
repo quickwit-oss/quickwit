@@ -26,6 +26,7 @@ mod cache_node;
 mod calc_field_query;
 mod field_presence;
 mod full_text_query;
+mod merge_wildcards;
 mod phrase_prefix_query;
 mod query_features;
 mod range_query;
@@ -48,7 +49,7 @@ pub use full_text_query::{FullTextMode, FullTextParams, FullTextQuery};
 pub use phrase_prefix_query::PhrasePrefixQuery;
 pub use query_features::QueryFeatureCounts;
 pub use range_query::RangeQuery;
-pub use regex_extract_eq::get_or_compile_cached_fst_regex;
+pub use regex_extract_eq::{compile_cached_fst_regex, get_or_compile_cached_fst_regex};
 pub use regex_query::{AutomatonQuery, JsonPathPrefix, RegexQuery, ResolvedRegex};
 use tantivy_query_ast::TantivyQueryAst;
 pub use term_query::TermQuery;
@@ -180,6 +181,16 @@ impl QueryAst {
                 }
             }
         }
+    }
+
+    /// Merges ORed wildcard queries targeting the same field and JSON path
+    /// into a single [`RegexQuery`] when the combined FST automaton compiles safely.
+    pub fn merge_or_wildcards(
+        self,
+        schema: &TantivySchema,
+        tokenizer_manager: &TokenizerManager,
+    ) -> Self {
+        merge_wildcards::merge_or_wildcards(self, schema, tokenizer_manager)
     }
 }
 

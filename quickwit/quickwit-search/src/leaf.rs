@@ -764,18 +764,23 @@ async fn leaf_search_single_split(
         agg_context_params,
     )?;
 
-    let predicate_cache =
-        if collector.requires_scoring() || !ctx.searcher_context.predicate_cache.is_enabled() {
-            None
-        } else {
-            Some((
-                ctx.searcher_context.predicate_cache.clone() as Arc<dyn PredicateCache>,
-                split.split_id.clone(),
-            ))
-        };
-    let (query, mut warmup_info) =
-        ctx.doc_mapper
-            .query(index.schema(), query_ast.clone(), false, predicate_cache)?;
+    let requires_scoring = collector.requires_scoring();
+    let predicate_cache = if requires_scoring || !ctx.searcher_context.predicate_cache.is_enabled()
+    {
+        None
+    } else {
+        Some((
+            ctx.searcher_context.predicate_cache.clone() as Arc<dyn PredicateCache>,
+            split.split_id.clone(),
+        ))
+    };
+    let (query, mut warmup_info) = ctx.doc_mapper.query(
+        index.schema(),
+        query_ast.clone(),
+        false,
+        requires_scoring,
+        predicate_cache,
+    )?;
 
     let collector_warmup_info = collector.warmup_info();
     warmup_info.merge(collector_warmup_info);

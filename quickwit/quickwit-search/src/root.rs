@@ -253,9 +253,11 @@ fn validate_request_and_build_metadata(
         )?;
 
         // Validates the query by effectively building it against the current schema.
+        // Skip wildcard merging during validation since the built query is discarded.
         doc_mapper.query(
             doc_mapper.schema(),
             query_ast_resolved_for_index,
+            true,
             true,
             None,
         )?;
@@ -1664,13 +1666,14 @@ pub async fn search_plan(
     )
     .await?;
 
+    let merge_collector = make_merge_collector(&search_request, Default::default())?;
     let (query, mut warmup_info) = doc_mapper.query(
         doc_mapper.schema(),
         request_metadata.query_ast_resolved.clone(),
         true,
+        merge_collector.requires_scoring(),
         None,
     )?;
-    let merge_collector = make_merge_collector(&search_request, Default::default())?;
     warmup_info.merge(merge_collector.warmup_info());
     warmup_info.simplify();
 

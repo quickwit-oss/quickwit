@@ -559,7 +559,7 @@ impl MergeExecutor {
                     parsed_query_ast
                 );
                 let (query, _) =
-                    doc_mapper.query(union_index.schema(), parsed_query_ast, false, None)?;
+                    doc_mapper.query(union_index.schema(), parsed_query_ast, false, false, None)?;
                 index_writer.delete_query(query)?;
             }
             debug!("commit-delete-operations");

@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use tantivy::Term;
 use tantivy::schema::{Field, FieldType, JsonObjectOptions, Schema as TantivySchema};
 
-use super::{BuildTantivyAst, BuildTantivyAstContext, QueryAst};
+use super::{BuildTantivyAst, BuildTantivyAstContext, QueryAst, compile_cached_fst_regex};
 use crate::query_ast::TantivyQueryAst;
 use crate::tokenizers::TokenizerManager;
 use crate::{InvalidQuery, find_field_or_hit_dynamic};
@@ -164,10 +164,10 @@ impl BuildTantivyAst for RegexQuery {
     ) -> Result<TantivyQueryAst, InvalidQuery> {
         let resolved = self.to_resolved(context.schema, Some(context.tokenizer_manager))?;
 
-        let regex = tantivy_fst::Regex::new(&resolved.regex).context("failed to parse regex")?;
+        let regex = compile_cached_fst_regex(&resolved.regex).context("failed to parse regex")?;
         let regex_automaton_with_path = JsonPathPrefix {
             prefix: resolved.json_path.unwrap_or_default(),
-            automaton: regex.into(),
+            automaton: regex,
         };
         let regex_query_with_path = AutomatonQuery {
             field: resolved.field,

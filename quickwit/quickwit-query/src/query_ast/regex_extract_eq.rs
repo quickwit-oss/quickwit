@@ -30,22 +30,32 @@ use super::{JsonPathPrefix, RegexQuery, TantivyQueryAst};
 
 const CACHE_CAPACITY: NonZeroUsize = NonZeroUsize::new(256).unwrap();
 
-type FstRegexCompilationSlot = Arc<OnceLock<Option<Arc<tantivy_fst::Regex>>>>;
+type FstRegexCompilationSlot = Arc<OnceLock<Result<Arc<tantivy_fst::Regex>, String>>>;
 
 static FST_REGEX_CACHE: LazyLock<Mutex<LruCache<String, FstRegexCompilationSlot>>> =
     LazyLock::new(|| Mutex::new(LruCache::new(CACHE_CAPACITY)));
 
 /// Returns the cached FST regex for `pattern`, compiling it on a cache miss.
 ///
-/// Compilation failures are cached too, so unsupported patterns consistently stay on the JIT path.
-pub fn get_or_compile_cached_fst_regex(pattern: &str) -> Option<Arc<tantivy_fst::Regex>> {
+/// Compilation failures are cached too so invalid or oversized patterns are not recompiled.
+pub fn compile_cached_fst_regex(pattern: &str) -> anyhow::Result<Arc<tantivy_fst::Regex>> {
     let slot = FST_REGEX_CACHE
         .lock()
         .expect("FST regex cache lock should not be poisoned")
         .get_or_insert(pattern.to_string(), FstRegexCompilationSlot::default)
         .clone();
-    slot.get_or_init(|| tantivy_fst::Regex::new(pattern).ok().map(Arc::new))
-        .clone()
+    slot.get_or_init(|| {
+        tantivy_fst::Regex::new(pattern)
+            .map(Arc::new)
+            .map_err(|err| err.to_string())
+    })
+    .clone()
+    .map_err(anyhow::Error::msg)
+}
+
+/// Returns the cached FST regex for `pattern`, or `None` if compilation fails.
+pub fn get_or_compile_cached_fst_regex(pattern: &str) -> Option<Arc<tantivy_fst::Regex>> {
+    compile_cached_fst_regex(pattern).ok()
 }
 
 type ExactRegexCompilationSlot = Arc<OnceLock<Option<Arc<regex::Regex>>>>;

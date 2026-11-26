@@ -21,7 +21,10 @@ use tantivy::Term;
 use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
 
 use super::{BuildTantivyAst, QueryAst};
-use crate::query_ast::{AutomatonQuery, BuildTantivyAstContext, JsonPathPrefix, TantivyQueryAst};
+use crate::query_ast::{
+    AutomatonQuery, BuildTantivyAstContext, JsonPathPrefix, TantivyQueryAst,
+    compile_cached_fst_regex,
+};
 use crate::tokenizers::TokenizerManager;
 use crate::{InvalidQuery, find_field_or_hit_dynamic};
 
@@ -192,11 +195,11 @@ impl BuildTantivyAst for WildcardQuery {
             }
             Err(e) => return Err(e),
         };
-        let regex =
-            tantivy_fst::Regex::new(&regex).context("failed to parse regex built from wildcard")?;
+        let regex = compile_cached_fst_regex(&regex)
+            .context("failed to parse regex built from wildcard")?;
         let regex_automaton_with_path = JsonPathPrefix {
             prefix: path.unwrap_or_default(),
-            automaton: regex.into(),
+            automaton: regex,
         };
         let regex_query_with_path = AutomatonQuery {
             field,

@@ -639,6 +639,7 @@ impl DocMapper {
         split_schema: Schema,
         query_ast: QueryAst,
         with_validation: bool,
+        requires_scoring: bool,
         cache_context: Option<(Arc<dyn quickwit_query::query_ast::PredicateCache>, String)>,
     ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
         build_query(
@@ -649,6 +650,7 @@ impl DocMapper {
                 search_fields: &self.default_search_field_names[..],
                 with_validation,
             },
+            requires_scoring,
             cache_context,
         )
     }
@@ -2318,7 +2320,7 @@ mod tests {
             .parse_user_query(doc_mapper.default_search_fields())
             .map_err(|err| err.to_string())?;
         let (query, _) = doc_mapper
-            .query(doc_mapper.schema(), query_ast, true, None)
+            .query(doc_mapper.schema(), query_ast, true, false, None)
             .map_err(|err| err.to_string())?;
         Ok(format!("{query:?}"))
     }
