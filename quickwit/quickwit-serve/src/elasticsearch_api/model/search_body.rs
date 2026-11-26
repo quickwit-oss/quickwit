@@ -17,7 +17,7 @@ use std::fmt;
 
 use quickwit_proto::search::SortOrder;
 use quickwit_query::{ElasticQueryDsl, OneFieldMap};
-use serde::de::{MapAccess, Visitor};
+use serde::de::{Error as _, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use super::ElasticDateFormat;
@@ -31,6 +31,7 @@ enum FieldSortParamsForDeser {
     Object {
         order: Option<SortOrder>,
         format: Option<ElasticDateFormat>,
+        missing: Option<serde_json::Value>,
     },
     String(SortOrder),
 }
@@ -41,10 +42,16 @@ impl From<FieldSortParamsForDeser> for FieldSortParams {
             FieldSortParamsForDeser::Object {
                 order,
                 format: date_format,
-            } => FieldSortParams { order, date_format },
+                missing,
+            } => FieldSortParams {
+                order,
+                date_format,
+                missing,
+            },
             FieldSortParamsForDeser::String(order) => FieldSortParams {
                 order: Some(order),
                 date_format: None,
+                missing: None,
             },
         }
     }
@@ -59,6 +66,21 @@ struct FieldSortParams {
     #[serde(default)]
     #[serde(rename = "format")]
     pub date_format: Option<ElasticDateFormat>,
+    #[serde(default)]
+    pub missing: Option<serde_json::Value>,
+}
+
+impl FieldSortParams {
+    fn check_missing(&self, field_name: &str) -> Result<(), String> {
+        match &self.missing {
+            None => Ok(()),
+            Some(serde_json::Value::String(missing)) if missing == "_last" => Ok(()),
+            Some(missing) => Err(format!(
+                "unsupported `missing` value {missing} for sort field `{field_name}`, only \
+                 `_last` is supported"
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Deserialize, PartialEq)]
@@ -104,27 +126,30 @@ enum StringOrMapFieldSort {
     Sort(OneFieldMap<FieldSortParams>),
 }
 
-impl From<StringOrMapFieldSort> for SortField {
-    fn from(string_or_map_field_sort: StringOrMapFieldSort) -> Self {
+impl TryFrom<StringOrMapFieldSort> for SortField {
+    type Error = String;
+
+    fn try_from(string_or_map_field_sort: StringOrMapFieldSort) -> Result<Self, String> {
         match string_or_map_field_sort {
             StringOrMapFieldSort::FieldNameOnly(field_name) => {
                 let order = default_elasticsearch_sort_order(&field_name);
-                SortField {
+                Ok(SortField {
                     field: field_name,
                     order,
                     date_format: None,
-                }
+                })
             }
             StringOrMapFieldSort::Sort(sort) => {
+                sort.value.check_missing(&sort.field)?;
                 let order = sort
                     .value
                     .order
                     .unwrap_or_else(|| default_elasticsearch_sort_order(&sort.field));
-                SortField {
+                Ok(SortField {
                     field: sort.field,
                     order,
                     date_format: sort.value.date_format,
-                }
+                })
             }
         }
     }
@@ -151,7 +176,8 @@ impl<'de> Visitor<'de> for FieldSortVecVisitor {
     where A: serde::de::SeqAccess<'de> {
         let mut sort_fields: Vec<SortField> = Vec::new();
         while let Some(field_sort) = seq.next_element::<StringOrMapFieldSort>()? {
-            sort_fields.push(field_sort.into());
+            let sort_field = SortField::try_from(field_sort).map_err(A::Error::custom)?;
+            sort_fields.push(sort_field);
         }
         Ok(sort_fields)
     }
@@ -162,6 +188,9 @@ impl<'de> Visitor<'de> for FieldSortVecVisitor {
         while let Some((field_sort_key, field_sort_params)) =
             map.next_entry::<String, FieldSortParams>()?
         {
+            field_sort_params
+                .check_missing(&field_sort_key)
+                .map_err(M::Error::custom)?;
             let sort_order = field_sort_params
                 .order
                 .unwrap_or_else(|| default_elasticsearch_sort_order(&field_sort_key));
@@ -253,6 +282,34 @@ mod tests {
         assert_eq!(field_sorts.len(), 1);
         assert_eq!(field_sorts[0].field, "timestamp");
         assert_eq!(field_sorts[0].order, SortOrder::Asc);
+    }
+
+    #[test]
+    fn test_sort_field_missing() {
+        let json = r#"{ "sort": [{ "rank": { "order": "asc", "missing": "_last" } }] }"#;
+        let field_sorts = serde_json::from_str::<SearchBody>(json)
+            .unwrap()
+            .sort
+            .unwrap();
+        assert_eq!(field_sorts[0].field, "rank");
+        assert_eq!(field_sorts[0].order, SortOrder::Asc);
+
+        let json = r#"{ "sort": { "rank": { "missing": "_last" } } }"#;
+        serde_json::from_str::<SearchBody>(json).unwrap();
+
+        for json in [
+            r#"{ "sort": [{ "rank": { "order": "asc", "missing": "_first" } }] }"#,
+            r#"{ "sort": { "rank": { "missing": "_first" } } }"#,
+            r#"{ "sort": [{ "rank": { "missing": 0 } }] }"#,
+        ] {
+            let error_msg = serde_json::from_str::<SearchBody>(json)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error_msg.contains("unsupported `missing` value"),
+                "{error_msg}"
+            );
+        }
     }
 
     #[test]
