@@ -75,8 +75,8 @@ static REQUEST_SEMAPHORE: LazyLock<Semaphore> = LazyLock::new(|| {
     Semaphore::new(num_permits)
 });
 
-/// Wrap the async read handle together with a permit to keep the permit alive
-/// until the handle is dropped
+/// Wrap the async read handle together with a permit until the handle is dropped, counting
+/// downloaded bytes as they are read.
 struct S3AsyncRead<T: AsyncRead + Send + Unpin> {
     pub read: T,
     pub _permit: Result<tokio::sync::SemaphorePermit<'static>, tokio::sync::AcquireError>,
@@ -89,7 +89,13 @@ impl<T: AsyncRead + Send + Unpin> AsyncRead for S3AsyncRead<T> {
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         let self_unpin = self.get_mut();
-        Pin::new(&mut self_unpin.read).poll_read(cx, buf)
+        let filled_before = buf.filled().len();
+        let poll_result = Pin::new(&mut self_unpin.read).poll_read(cx, buf);
+        if let Poll::Ready(Ok(())) = &poll_result {
+            let num_bytes_read = buf.filled().len() - filled_before;
+            crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes_read as u64);
+        }
+        poll_result
     }
 }
 
@@ -1111,10 +1117,7 @@ impl Storage for S3CompatibleObjectStorage {
             return Ok(());
         }
         let _in_flight_guards = object_storage_get_slice_in_flight_guards(buffer.len());
-        default_get_slice_into(self, path, range, buffer).await?;
-        // The streaming path bypasses download_all, which accounts for collected bodies.
-        crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(buffer.len() as u64);
-        Ok(())
+        default_get_slice_into(self, path, range, buffer).await
     }
 
     #[instrument(name = "storage.s3.get_slice_stream", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
@@ -1776,12 +1779,13 @@ mod tests {
             OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_NUM_BYTES,
         };
 
-        // Only complete, exact-length downloads count. Empty reads must not issue a request.
-        for (status, payload, succeeds) in [
-            (206, "world", true),
-            (206, "abcd", false),
-            (206, "abcdef", false),
-            (404, "", false),
+        // Downloaded bytes are counted as read from the stream. Empty reads must not issue a
+        // request.
+        for (status, payload, succeeds, expected_bytes) in [
+            (206, "world", true, 5),
+            (206, "abcd", false, 4),
+            (206, "abcdef", false, 6),
+            (404, "", false, 0),
         ] {
             let client = StaticReplayClient::new(vec![ReplayEvent::new(
                 http::Request::builder().body(SdkBody::empty()).unwrap(),
@@ -1816,7 +1820,7 @@ mod tests {
             }
             assert_eq!(
                 OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.get() - bytes_before,
-                if succeeds { 5 } else { 0 },
+                expected_bytes,
             );
             assert_eq!(OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT.get(), count_before);
             assert_eq!(
@@ -1827,6 +1831,40 @@ mod tests {
             assert_eq!(requests.len(), 1);
             assert_eq!(requests[0].headers().get("range"), Some("bytes=2-6"));
         }
+
+        // Streaming counts bytes as read without charging the full range to allocated-memory
+        // in-flight gauges.
+        let client = StaticReplayClient::new(vec![ReplayEvent::new(
+            http::Request::builder().body(SdkBody::empty()).unwrap(),
+            http::Response::builder()
+                .status(206)
+                .header("content-length", 5)
+                .body(SdkBody::from("world"))
+                .unwrap(),
+        )]);
+        let storage = make_s3_storage_with_replay(client, quickwit_config::ChecksumAlgorithm::Md5);
+        let bytes_before = OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.get();
+        let count_before = OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT.get();
+        let in_flight_bytes_before = OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_NUM_BYTES.get();
+        let mut reader = storage
+            .get_slice_stream(Path::new("object"), 2..7)
+            .await
+            .unwrap();
+        assert_eq!(OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT.get(), count_before);
+        assert_eq!(
+            OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_NUM_BYTES.get(),
+            in_flight_bytes_before
+        );
+        let mut prefix = [0; 2];
+        reader.read_exact(&mut prefix).await.unwrap();
+        assert_eq!(&prefix, b"wo");
+        assert_eq!(OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.get() - bytes_before, 2);
+        drop(reader);
+        assert_eq!(OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT.get(), count_before);
+        assert_eq!(
+            OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_NUM_BYTES.get(),
+            in_flight_bytes_before
+        );
     }
 
     fn ok_put_response() -> ReplayEvent {

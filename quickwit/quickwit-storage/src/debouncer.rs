@@ -30,6 +30,9 @@ use tokio::io::AsyncRead;
 use crate::storage::SendableAsync;
 use crate::{BulkDeleteError, ListObjectsStream, Storage, StorageResult};
 
+mod stream;
+use stream::StreamDebouncer;
+
 /// The AsyncDebouncer debounces inflight Futures, so that concurrent async request to the same data
 /// source can be deduplicated.
 ///
@@ -144,6 +147,7 @@ pub(crate) struct DebouncedStorage<T> {
     // associated
     underlying: Arc<T>,
     slice_debouncer: Arc<AsyncDebouncer<DebouncerKey, StorageResult<OwnedBytes>>>,
+    stream_debouncer: StreamDebouncer,
 }
 
 impl<T> fmt::Debug for DebouncedStorage<T> {
@@ -157,6 +161,7 @@ impl<T: Storage> DebouncedStorage<T> {
         Self {
             underlying: Arc::new(underlying),
             slice_debouncer: Arc::new(AsyncDebouncer::default()),
+            stream_debouncer: StreamDebouncer::default(),
         }
     }
 }
@@ -204,8 +209,9 @@ impl<T: Storage> Storage for DebouncedStorage<T> {
         path: &Path,
         range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        // Getting a stream bypasses the debouncer
-        self.underlying.get_slice_stream(path, range).await
+        self.stream_debouncer
+            .get_slice_stream(self.underlying.clone(), path, range)
+            .await
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {

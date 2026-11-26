@@ -18,7 +18,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, io};
 
+mod coalesced_range_stream;
+
 use async_trait::async_trait;
+use futures::stream::BoxStream;
 use quickwit_common::uri::Uri;
 use quickwit_storage::{OwnedBytes, Storage};
 use tantivy::directory::FileHandle;
@@ -63,6 +66,17 @@ impl FileHandle for StorageDirectoryFileHandle {
             .get_slice(&self.path, byte_range)
             .await?;
         Ok(object_bytes)
+    }
+
+    fn stream_ranges(
+        &self,
+        ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
+    ) -> BoxStream<'_, io::Result<OwnedBytes>> {
+        coalesced_range_stream::download_ranges(
+            self.storage_directory.storage.as_ref(),
+            &self.path,
+            ranges,
+        )
     }
 }
 

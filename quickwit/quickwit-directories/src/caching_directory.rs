@@ -18,6 +18,7 @@ use std::sync::Arc;
 use std::{fmt, io};
 
 use async_trait::async_trait;
+use futures::stream::BoxStream;
 use quickwit_storage::{ByteRangeCache, FileByteRangeCache};
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, OwnedBytes};
@@ -131,6 +132,7 @@ impl MemoryReserver for NoopMemoryReserver {
 }
 
 /// The caching directory is a simple cache that wraps another directory.
+/// Streaming reads bypass cache lookups, insertion, and memory reservations.
 #[derive(Clone)]
 pub struct CachingDirectory {
     underlying: Arc<dyn Directory>,
@@ -224,6 +226,13 @@ impl FileHandle for CachingFileHandle {
         let num_added_bytes = self.cache.put_slice(byte_range, read_bytes.clone());
         read_reservation.keep(num_added_bytes);
         Ok(read_bytes)
+    }
+
+    fn stream_ranges(
+        &self,
+        ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
+    ) -> BoxStream<'_, io::Result<OwnedBytes>> {
+        self.underlying_filehandle.stream_ranges(ranges)
     }
 }
 
@@ -473,6 +482,56 @@ mod tests {
         file_handle.read_bytes_async(0..5).await.unwrap();
         assert_eq!(memory_reserver.reserved(), 5);
         assert_eq!(debug_proxy_directory.drain_read_operations().count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_automaton_bitset_bypasses_directory_cache_and_memory_budget()
+    -> tantivy::Result<()> {
+        use tantivy::schema::{STRING, Schema};
+        use tantivy::{Executor, Index, IndexWriter, doc};
+        use tantivy_fst::Regex;
+        use tantivy_fst::automaton::AlwaysMatch;
+
+        let directory = RamDirectory::create();
+        let mut schema = Schema::builder();
+        let field = schema.add_text_field("field", STRING);
+        let index = Index::create(directory.clone(), schema.build(), Default::default())?;
+        let mut writer: IndexWriter = index.writer_with_num_threads(1, 15_000_000)?;
+        for value in ["a", "m", "z"] {
+            writer.add_document(doc!(field => value))?;
+        }
+        writer.commit()?;
+
+        let cache = ByteRangeCache::with_infinite_capacity();
+        let budget_bytes = 32 * 1024 * 1024;
+        let reserver = LimitedMemoryReserver::new(budget_bytes);
+        let directory = DebugProxyDirectory::wrap(
+            CachingDirectory::new(Arc::new(directory), cache.clone())
+                .with_memory_reserver(reserver.clone()),
+        );
+        let index = Index::open(directory.clone())?;
+        let searcher = index.reader()?.searcher();
+        let segment = searcher.segment_reader(0);
+        let inverted_index = segment.inverted_index(field)?;
+        // Opening the index caches metadata. Exhaust remaining budget before streaming reads.
+        let _ = directory.drain_read_operations();
+        let initial_cached_bytes = cache.get_num_bytes();
+        let _reservation = reserver
+            .reserve_memory(budget_bytes - reserver.reserved())
+            .await
+            .unwrap();
+        let executor = Executor::single_thread();
+        let subset_bitset = inverted_index
+            .create_bitset_for_automaton(Regex::new("a|z").unwrap(), segment.max_doc(), &executor)
+            .await?;
+        assert!(subset_bitset.len() == 2 && subset_bitset.contains(0) && subset_bitset.contains(2));
+        let all_docs_bitset = inverted_index
+            .create_bitset_for_automaton(AlwaysMatch, segment.max_doc(), &executor)
+            .await?;
+        assert_eq!(all_docs_bitset.len(), 3);
+        assert_eq!(cache.get_num_bytes(), initial_cached_bytes);
+        assert_eq!(directory.drain_read_operations().count(), 0);
+        Ok(())
     }
 
     #[tokio::test]

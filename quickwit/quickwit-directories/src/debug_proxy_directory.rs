@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 use std::{fmt, io, mem};
 
 use async_trait::async_trait;
+use futures::stream::BoxStream;
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, OwnedBytes};
 use tantivy::{Directory, HasLen};
@@ -103,7 +104,7 @@ impl ReadOperationBuilder {
 }
 
 /// The debug proxy wraps another directory and simply acts as a proxy
-/// recording all of its read operations.
+/// recording its buffered read operations. Streaming reads pass through without recording.
 ///
 /// It has two purpose
 /// - It is used when building our hotcache, to identify the file sections that should be in the
@@ -125,7 +126,7 @@ impl<D: Directory> Clone for DebugProxyDirectory<D> {
 }
 
 impl<D: Directory> DebugProxyDirectory<D> {
-    /// Wraps another directory to log all of its read operations.
+    /// Wraps another directory to log its buffered read operations.
     pub fn wrap(directory: D) -> Self {
         DebugProxyDirectory {
             underlying: Arc::new(directory),
@@ -175,6 +176,13 @@ impl<D: Directory> FileHandle for DebugProxyFileHandle<D> {
         let read_operation = read_operation_builder.terminate(payload.len());
         self.directory.register_async(read_operation).await;
         Ok(payload)
+    }
+
+    fn stream_ranges(
+        &self,
+        ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
+    ) -> BoxStream<'_, io::Result<OwnedBytes>> {
+        self.underlying.stream_ranges(ranges)
     }
 }
 

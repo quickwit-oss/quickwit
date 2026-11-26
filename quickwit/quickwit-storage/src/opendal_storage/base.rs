@@ -14,7 +14,9 @@
 
 use std::ops::Range;
 use std::path::Path;
+use std::pin::Pin;
 use std::sync::LazyLock;
+use std::task::{Context, Poll};
 use std::time::Duration;
 use std::{fmt, io};
 
@@ -25,7 +27,7 @@ use opendal::layers::{ConcurrentLimitLayer, RetryLayer, TimeoutLayer};
 use quickwit_common::get_from_env_cached;
 use quickwit_common::uri::Uri;
 use quickwit_metrics::HistogramTimer;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt as TokioAsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt as TokioAsyncWriteExt, ReadBuf};
 use tokio_util::compat::{FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt};
 use tracing::instrument;
 
@@ -39,6 +41,28 @@ use crate::{
 
 const GCS_CONTROL_OP_TIMEOUT: Duration = Duration::from_secs(3);
 const GCS_READ_IO_TIMEOUT: Duration = Duration::from_secs(5);
+
+struct OpendalAsyncRead<R: AsyncRead + Send + Unpin> {
+    read: R,
+    _timer: HistogramTimer,
+}
+
+impl<R: AsyncRead + Send + Unpin> AsyncRead for OpendalAsyncRead<R> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        let filled_before = buf.filled().len();
+        let poll_result = Pin::new(&mut this.read).poll_read(cx, buf);
+        if let Poll::Ready(Ok(())) = &poll_result {
+            let num_bytes_read = buf.filled().len() - filled_before;
+            crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes_read as u64);
+        }
+        poll_result
+    }
+}
 
 /// OpenDAL based storage implementation.
 /// # TODO
@@ -249,8 +273,6 @@ impl Storage for OpendalStorage {
             return Ok(());
         }
         let _in_flight_guards = object_storage_get_slice_in_flight_guards(buffer.len());
-        crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
-        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
         crate::default_get_slice_into(self, path, range, buffer).await
     }
 
@@ -262,6 +284,8 @@ impl Storage for OpendalStorage {
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
         let path = path.as_os_str().to_string_lossy();
         let range = range.start as u64..range.end as u64;
+        crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
+        let timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
         let storage_reader = self
             .op_read
             .reader_with(&path)
@@ -269,7 +293,10 @@ impl Storage for OpendalStorage {
             .into_futures_async_read(range)
             .await?
             .compat();
-        Ok(Box::new(storage_reader))
+        Ok(Box::new(OpendalAsyncRead {
+            read: storage_reader,
+            _timer: timer,
+        }))
     }
 
     #[instrument(name = "storage.gcs.get_all", level = "debug", skip(self))]

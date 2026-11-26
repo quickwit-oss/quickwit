@@ -20,6 +20,7 @@ use std::{fmt, io};
 
 use anyhow::{Context, bail};
 use async_trait::async_trait;
+use futures::stream::BoxStream;
 use quickwit_storage::VersionedComponent;
 use serde::{Deserialize, Serialize};
 use tantivy::directory::error::OpenReadError;
@@ -403,6 +404,13 @@ impl FileHandle for FileSliceWithCache {
             return Ok(found_bytes);
         }
         self.underlying.read_bytes_slice_async(byte_range).await
+    }
+
+    fn stream_ranges(
+        &self,
+        ranges: Box<dyn Iterator<Item = Range<usize>> + Send>,
+    ) -> BoxStream<'_, io::Result<OwnedBytes>> {
+        self.underlying.stream_ranges(ranges)
     }
 }
 

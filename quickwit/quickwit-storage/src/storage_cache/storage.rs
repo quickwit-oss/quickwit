@@ -142,6 +142,19 @@ impl Storage for FeuerStorage {
         path: &Path,
         range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
+        if range.is_empty() {
+            return Ok(Box::new(tokio::io::empty()));
+        }
+        let object_uri = self
+            .inner
+            .uri()
+            .join(path)
+            .map_err(|error| StorageErrorKind::Internal.with_error(error))?
+            .into_string();
+        let cache_key = split_slice_key(&object_uri, &range);
+        if let Some(bytes) = self.cache.get(&cache_key).await {
+            return Ok(Box::new(io::Cursor::new(bytes)));
+        }
         self.inner.get_slice_stream(path, range).await
     }
 
@@ -183,7 +196,63 @@ fn split_slice_key<'a>(
 
 #[cfg(test)]
 mod tests {
+    use tokio::io::AsyncReadExt;
+
     use super::*;
+
+    #[tokio::test]
+    async fn test_get_slice_stream_serves_cache_hit_and_does_not_insert_on_miss() {
+        let mut backend = crate::MockStorage::new();
+        backend
+            .expect_uri()
+            .return_const(Uri::for_test("ram:///bucket"));
+        backend
+            .expect_get_slice_into()
+            .times(1)
+            .returning(|_, range, buffer| {
+                buffer.copy_from_slice(&b"hello world"[range]);
+                Ok(())
+            });
+        backend
+            .expect_get_slice_stream()
+            .times(2)
+            .returning(|_, range| Ok(Box::new(io::Cursor::new(b"hello world"[range].to_vec()))));
+
+        let cache = feuer::Cache::builder()
+            .memory_capacity(1024)
+            .open()
+            .unwrap();
+        let storage = wrap_storage_with_storage_cache(cache, Arc::new(backend));
+        let path = Path::new("split");
+
+        // Populate `0..5` via buffered read; streaming that exact range must hit cache.
+        assert_eq!(
+            storage.get_slice(path, 0..5).await.unwrap().as_slice(),
+            b"hello"
+        );
+        let mut buf = Vec::new();
+        storage
+            .get_slice_stream(path, 0..5)
+            .await
+            .unwrap()
+            .read_to_end(&mut buf)
+            .await
+            .unwrap();
+        assert_eq!(buf, b"hello");
+
+        // Streaming an uncached range must miss twice (never inserted into Feuer).
+        for _ in 0..2 {
+            buf.clear();
+            storage
+                .get_slice_stream(path, 6..11)
+                .await
+                .unwrap()
+                .read_to_end(&mut buf)
+                .await
+                .unwrap();
+            assert_eq!(buf, b"world");
+        }
+    }
 
     #[tokio::test]
     async fn test_cache_miss_does_not_wait_for_fallthrough_capacity() {
