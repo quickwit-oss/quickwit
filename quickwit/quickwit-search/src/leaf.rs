@@ -19,7 +19,7 @@ use std::num::NonZeroUsize;
 use std::ops::Bound;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -32,9 +32,7 @@ use quickwit_common::pretty::PrettySample;
 use quickwit_common::thread_pool::with_priority::Priority;
 use quickwit_common::uri::Uri;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
-use quickwit_doc_mapper::{
-    Automaton, AutomatonWarmup, DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo,
-};
+use quickwit_doc_mapper::{Automaton, DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo};
 use quickwit_metrics::HistogramTimer;
 use quickwit_proto::search::lambda_single_split_result::Outcome;
 use quickwit_proto::search::{
@@ -56,8 +54,8 @@ use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
 use tantivy::collector::Collector;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::index::SegmentId;
-use tantivy::schema::{Field, IndexRecordOption};
-use tantivy::{BitSet, DateTime, Index, ReloadPolicy, Searcher, TantivyError, Term};
+use tantivy::schema::Field;
+use tantivy::{DateTime, Index, ReloadPolicy, Searcher, TantivyError, Term};
 use tokio::task::{JoinError, JoinSet};
 use tokio_util::sync::CancellationToken;
 use tracing::*;
@@ -601,52 +599,60 @@ async fn warm_up_automatons(
                         .map_err(|_| {
                             SearchError::Internal("automaton compilation task panicked".to_string())
                         })??;
-                    // The callback API preserves request priority, unlike Tantivy's concrete
-                    // executor. Warmed directory reads are cached for synchronous decoding below.
-                    inv_idx
-                        .warm_postings_automaton(automaton.clone(), cpu_intensive_executor)
-                        .await
-                        .map_err(|error| {
-                            SearchError::from(error).with_context("failed to load automaton")
-                        })?;
-                    let AutomatonWarmup::CacheHits(cache_keys) = warmup else {
+                    if warmup.warm_postings {
+                        // The callback API preserves request priority, unlike Tantivy's concrete
+                        // executor.
+                        inv_idx
+                            .warm_postings_automaton(automaton.clone(), cpu_intensive_executor)
+                            .await
+                            .map_err(|error| {
+                                SearchError::from(error).with_context("failed to load automaton")
+                            })?;
+                    }
+                    if warmup.cache_keys.is_empty() {
                         return Ok::<_, SearchError>(WarmedHits::default());
-                    };
+                    }
                     if searcher.segment_readers().len() != 1 {
                         return Err(SearchError::Internal(
                             "predicate hitsets require a single-segment split".to_string(),
                         ));
                     }
+                    // Sum only CPU batch execution time (excluding streamed downloads and
+                    // executor queue wait) to estimate the work saved by caching.
+                    let cpu_nanos = Arc::new(AtomicU64::new(0));
+                    let timed_executor = |task: Box<dyn FnOnce() -> std::io::Result<()> + Send>| {
+                        let cpu_nanos = cpu_nanos.clone();
+                        cpu_intensive_executor(Box::new(move || {
+                            let start = Instant::now();
+                            let result = task();
+                            cpu_nanos.fetch_add(
+                                start.elapsed().as_nanos().min(u64::MAX as u128) as u64,
+                                Ordering::Relaxed,
+                            );
+                            result
+                        }))
+                    };
+                    let bitset = inv_idx
+                        .create_bitset_for_automaton(
+                            automaton,
+                            segment_reader.max_doc(),
+                            timed_executor,
+                        )
+                        .await
+                        .map_err(|error| {
+                            SearchError::from(error)
+                                .with_context("failed to build automaton hitset")
+                        })?;
                     let cache = predicate_cache.clone();
                     let split_id = split_id.to_string();
-                    let cache_keys = cache_keys.clone();
+                    let cache_keys = warmup.cache_keys.clone();
                     let segment_id = segment_reader.segment_id();
-                    let max_doc = segment_reader.max_doc();
                     crate::search_thread_pool()
                         .run_cpu_intensive_with_priority(priority, move || {
-                            // This synchronous CPU task's elapsed time estimates the cost saved
-                            // by caching, excluding download and executor queue time.
                             let start = Instant::now();
-                            let mut bitset = BitSet::with_max_value(max_doc);
-                            let mut terms = inv_idx
-                                .terms()
-                                .search(automaton)
-                                .without_keys()
-                                .into_stream()?;
-                            while terms.advance() {
-                                let mut postings = inv_idx.read_block_postings_from_terminfo(
-                                    terms.value(),
-                                    IndexRecordOption::Basic,
-                                )?;
-                                while !postings.docs().is_empty() {
-                                    for &doc in postings.docs() {
-                                        bitset.insert(doc);
-                                    }
-                                    postings.advance();
-                                }
-                            }
                             let hits = HitSet::from_bitset(bitset);
-                            let cpu_time = start.elapsed();
+                            let cpu_time = Duration::from_nanos(cpu_nanos.load(Ordering::Relaxed))
+                                + start.elapsed();
                             let mut warmed_hits = WarmedHits::default();
                             for key in cache_keys {
                                 if cache.is_enabled() {
@@ -3322,7 +3328,7 @@ mod tests {
         assert_eq!(
             warmup_info.automatons_grouped_by_field[&body]
                 [&Automaton::Regex(None, "(?i)a.*".to_string())],
-            AutomatonWarmup::PostingsOnly
+            quickwit_doc_mapper::AutomatonWarmup::postings_only()
         );
         let hits = warm_up_automatons(
             &searcher,
@@ -3340,6 +3346,86 @@ mod tests {
                 .await
                 .is_none()
         );
+    }
+
+    #[tokio::test]
+    async fn test_hitset_only_warmup_bypasses_directory_cache() {
+        let mut schema_builder = Schema::builder();
+        let body = schema_builder.add_text_field("body", tantivy::schema::TEXT);
+        let ram_dir = tantivy::directory::RamDirectory::create();
+        let index =
+            Index::create(ram_dir.clone(), schema_builder.build(), Default::default()).unwrap();
+        let mut writer = index.writer(15_000_000).unwrap();
+        for text in ["apple", "banana", "apricot"] {
+            let mut doc = TantivyDocument::default();
+            doc.add_text(body, text);
+            writer.add_document(doc).unwrap();
+        }
+        writer.commit().unwrap();
+
+        let byte_cache = ByteRangeCache::with_infinite_capacity();
+        let caching_dir = CachingDirectory::new(Arc::new(ram_dir), byte_cache.clone());
+        let searcher = Index::open(caching_dir)
+            .unwrap()
+            .reader_builder()
+            .reload_policy(ReloadPolicy::Manual)
+            .try_into()
+            .unwrap()
+            .searcher();
+        // Opening the inverted index caches its metadata (termdict footer/index).
+        let _ = searcher.segment_reader(0).inverted_index(body).unwrap();
+        let initial_cached_bytes = byte_cache.get_num_bytes();
+        let predicate_cache = SearcherContext::for_test().predicate_cache.clone();
+        let automaton = Automaton::Regex(None, "(?i)a.*".to_string());
+
+        let hitset_only_warmup = WarmupInfo {
+            automatons_grouped_by_field: HashMap::from([(
+                body,
+                HashMap::from([(
+                    automaton.clone(),
+                    quickwit_doc_mapper::AutomatonWarmup::cache_hits(HashSet::from([
+                        "hitset-key".to_string()
+                    ])),
+                )]),
+            )]),
+            ..Default::default()
+        };
+        let hits = warm_up_automatons(
+            &searcher,
+            &hitset_only_warmup,
+            predicate_cache.clone(),
+            "split",
+            Priority::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(byte_cache.get_num_bytes(), initial_cached_bytes);
+
+        let combined_warmup = WarmupInfo {
+            automatons_grouped_by_field: HashMap::from([(
+                body,
+                HashMap::from([(
+                    automaton,
+                    quickwit_doc_mapper::AutomatonWarmup {
+                        warm_postings: true,
+                        cache_keys: HashSet::from(["combined-key".to_string()]),
+                    },
+                )]),
+            )]),
+            ..Default::default()
+        };
+        let hits = warm_up_automatons(
+            &searcher,
+            &combined_warmup,
+            predicate_cache,
+            "split",
+            Priority::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert!(byte_cache.get_num_bytes() > initial_cached_bytes);
     }
 
     fn nz(n: usize) -> std::num::NonZeroUsize {

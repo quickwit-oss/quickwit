@@ -82,29 +82,41 @@ pub enum Automaton {
     // we could add termset query here, instead of downloading the whole dictionary
 }
 
-/// Work to perform when warming an automaton's postings.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AutomatonWarmup {
-    /// Load postings without caching hits. Calculated-field prefilters match any indexed value
-    /// in a multivalued column, but the predicate evaluates only the first value. Prefilter hits
-    /// therefore cannot be cached as final calculated-field predicate hits.
-    /// TODO: Revisit calculated-field multivalue behavior to merge the postings-only and
-    /// hitset-caching code paths.
-    PostingsOnly,
-    /// Also cache final predicate hits under these serialized predicate keys.
-    CacheHits(HashSet<String>),
+/// Work to perform when warming an automaton.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct AutomatonWarmup {
+    /// Load term dictionary and postings into the directory cache for synchronous execution.
+    /// Calculated-field prefilters match any indexed value in a multivalued column, while the
+    /// predicate evaluates only the first value, so prefilters warm postings without caching hits.
+    /// Scored queries also read postings synchronously during search.
+    pub warm_postings: bool,
+    /// Build a hitset by streaming term blocks and postings, and record it under these
+    /// serialized predicate cache keys.
+    pub cache_keys: HashSet<String>,
 }
 
 impl AutomatonWarmup {
-    /// Caching hits also warms postings, so it subsumes a postings-only request.
-    pub(crate) fn merge(&mut self, other: Self) {
-        let Self::CacheHits(keys) = other else {
-            return;
-        };
-        match self {
-            Self::PostingsOnly => *self = Self::CacheHits(keys),
-            Self::CacheHits(existing_keys) => existing_keys.extend(keys),
+    /// Warm only postings in the directory cache without building a hitset.
+    pub fn postings_only() -> Self {
+        Self {
+            warm_postings: true,
+            cache_keys: HashSet::new(),
         }
+    }
+
+    /// Build and cache a hitset under the given predicate cache keys without warming the
+    /// directory cache.
+    pub fn cache_hits(cache_keys: HashSet<String>) -> Self {
+        Self {
+            warm_postings: false,
+            cache_keys,
+        }
+    }
+
+    /// Combines two warmup requests for the same automaton.
+    pub(crate) fn merge(&mut self, other: Self) {
+        self.warm_postings |= other.warm_postings;
+        self.cache_keys.extend(other.cache_keys);
     }
 }
 
@@ -180,10 +192,7 @@ impl WarmupInfo {
         for (field, automatons) in other.automatons_grouped_by_field {
             let sub_map = self.automatons_grouped_by_field.entry(field).or_default();
             for (automaton, warmup) in automatons {
-                sub_map
-                    .entry(automaton)
-                    .or_insert(AutomatonWarmup::PostingsOnly)
-                    .merge(warmup);
+                sub_map.entry(automaton).or_default().merge(warmup);
             }
         }
 
@@ -664,7 +673,7 @@ mod tests {
             .map(|regex| {
                 (
                     Automaton::Regex(None, regex.to_string()),
-                    AutomatonWarmup::PostingsOnly,
+                    AutomatonWarmup::postings_only(),
                 )
             })
             .collect()
@@ -822,10 +831,10 @@ mod tests {
         let automaton = Automaton::Regex(None, "api".to_string());
         let mut warmup = WarmupInfo::default();
         for request in [
-            AutomatonWarmup::PostingsOnly,
-            AutomatonWarmup::CacheHits(HashSet::from(["regex".to_string()])),
-            AutomatonWarmup::PostingsOnly,
-            AutomatonWarmup::CacheHits(HashSet::from([
+            AutomatonWarmup::postings_only(),
+            AutomatonWarmup::cache_hits(HashSet::from(["regex".to_string()])),
+            AutomatonWarmup::postings_only(),
+            AutomatonWarmup::cache_hits(HashSet::from([
                 "wildcard".to_string(),
                 "regex".to_string(),
             ])),
@@ -844,10 +853,10 @@ mod tests {
                 field,
                 HashMap::from([(
                     automaton,
-                    AutomatonWarmup::CacheHits(HashSet::from([
-                        "regex".to_string(),
-                        "wildcard".to_string(),
-                    ])),
+                    AutomatonWarmup {
+                        warm_postings: true,
+                        cache_keys: HashSet::from(["regex".to_string(), "wildcard".to_string(),]),
+                    },
                 )]),
             )])
         );
