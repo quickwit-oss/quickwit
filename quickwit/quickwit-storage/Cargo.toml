@@ -39,9 +39,9 @@ stable_deref_trait = { workspace = true }
 tantivy = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true }
 tokio-stream = { workspace = true }
-tokio-util = { workspace = true, features = ["rt"] }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 ulid = { workspace = true }
 
@@ -77,7 +77,7 @@ reqwest = { version = "0.13", default-features = false }
 # OpenDAL's HttpTransporter API (split out of opendal in 0.58).
 opendal-http-transport-reqwest = "0.59"
 rustls = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 tokio-rustls = { workspace = true }
 tracing-subscriber = { workspace = true }
 

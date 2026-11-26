@@ -113,18 +113,8 @@ release-feature-set = [
   "quickwit-metastore/postgres",
 ]
 release-feature-vendored-set = [
-  "jemalloc",
-  "openssl-support",
-  "pprof",
-  "quickwit-indexing/kinesis",
-  "quickwit-indexing/pulsar",
-  "quickwit-indexing/sqs",
-  "quickwit-indexing/vrl",
+  "release-feature-set",
   "quickwit-indexing/vendored-kafka",
-  "quickwit-serve/lambda",
-  "quickwit-storage/azure",
-  "quickwit-storage/gcs",
-  "quickwit-metastore/postgres",
 ]
 release-macos-feature-vendored-set = [
   "jemalloc",
