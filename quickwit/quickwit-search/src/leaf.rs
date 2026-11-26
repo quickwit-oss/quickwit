@@ -31,7 +31,7 @@ use futures::stream::{self, FuturesUnordered};
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::thread_pool::with_priority::Priority;
 use quickwit_common::uri::Uri;
-use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
+use quickwit_directories::{CachingDirectory, HotDirectory, MemoryReserver, StorageDirectory};
 use quickwit_doc_mapper::{Automaton, DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo};
 use quickwit_metrics::HistogramTimer;
 use quickwit_proto::search::lambda_single_split_result::Outcome;
@@ -322,6 +322,7 @@ pub(crate) async fn warmup(
     on_absent: &(dyn Fn(&Term, SegmentId) + Sync),
     predicate_cache: Arc<dyn PredicateCache>,
     split_id: &str,
+    warmup_memory: Option<&SplitWarmupMemory>,
 ) -> crate::Result<WarmupOutcome> {
     debug!(warmup_info=?warmup_info);
 
@@ -374,8 +375,15 @@ pub(crate) async fn warmup(
     .instrument(debug_span!("warm_up_all_postings"));
     let mut warmed_hits = WarmedHits::default();
     let warm_up_automatons_future = run_cancellable(abort_token.as_ref(), async {
-        warmed_hits =
-            warm_up_automatons(searcher, warmup_info, predicate_cache, split_id, priority).await?;
+        warmed_hits = warm_up_automatons(
+            searcher,
+            warmup_info,
+            predicate_cache,
+            split_id,
+            priority,
+            warmup_memory,
+        )
+        .await?;
         Ok::<(), SearchError>(())
     })
     .instrument(debug_span!("warm_up_automatons"));
@@ -564,6 +572,7 @@ async fn warm_up_automatons(
     predicate_cache: Arc<dyn PredicateCache>,
     split_id: &str,
     priority: Priority,
+    warmup_memory: Option<&SplitWarmupMemory>,
 ) -> crate::Result<WarmedHits> {
     let predicate_cache = &predicate_cache;
     let mut warm_up_futures = Vec::new();
@@ -642,35 +651,40 @@ async fn warm_up_automatons(
                             SearchError::from(error)
                                 .with_context("failed to build automaton hitset")
                         })?;
-                    let cache = predicate_cache.clone();
-                    let split_id = split_id.to_string();
-                    let cache_keys = warmup.cache_keys.clone();
-                    let segment_id = segment_reader.segment_id();
-                    crate::search_thread_pool()
+                    let (hits, cpu_time) = crate::search_thread_pool()
                         .run_cpu_intensive_with_priority(priority, move || {
                             let start = Instant::now();
                             let hits = HitSet::from_bitset(bitset);
                             let cpu_time = Duration::from_nanos(cpu_nanos.load(Ordering::Relaxed))
                                 + start.elapsed();
-                            let mut warmed_hits = WarmedHits::default();
-                            for key in cache_keys {
-                                if cache.is_enabled() {
-                                    cache.put(
-                                        split_id.clone(),
-                                        key.clone(),
-                                        segment_id,
-                                        hits.clone(),
-                                        cpu_time,
-                                    );
-                                }
-                                warmed_hits.insert(key, (segment_id, hits.clone()));
-                            }
-                            Ok::<_, SearchError>(warmed_hits)
+                            (hits, cpu_time)
                         })
                         .await
                         .map_err(|_| {
                             SearchError::Internal("automaton cache fill task panicked".to_string())
-                        })?
+                        })?;
+                    if let Some(warmup_memory) = warmup_memory {
+                        let hitset_num_bytes = hits.num_bytes() as u64;
+                        warmup_memory
+                            .reserve_memory(hitset_num_bytes)
+                            .await?
+                            .keep(hitset_num_bytes);
+                    }
+                    let segment_id = segment_reader.segment_id();
+                    let mut warmed_hits = WarmedHits::default();
+                    for key in &warmup.cache_keys {
+                        if predicate_cache.is_enabled() {
+                            predicate_cache.put(
+                                split_id.to_string(),
+                                key.clone(),
+                                segment_id,
+                                hits.clone(),
+                                cpu_time,
+                            );
+                        }
+                        warmed_hits.insert(key.clone(), (segment_id, hits.clone()));
+                    }
+                    Ok::<_, SearchError>(warmed_hits)
                 });
             }
         }
@@ -928,6 +942,7 @@ async fn leaf_search_single_split(
             downloaded_mb = tracing::field::Empty,
             total_mb = tracing::field::Empty
         );
+        let warmup_memory = search_permit.warmup_memory();
         let warmup_outcome = warmup(
             &searcher,
             &warmup_info,
@@ -935,6 +950,7 @@ async fn leaf_search_single_split(
             &record_absence,
             ctx.searcher_context.predicate_cache.clone(),
             &split_id,
+            Some(warmup_memory.as_ref()),
         )
         .instrument(warmup_span.clone())
         .await
@@ -3165,6 +3181,7 @@ mod tests {
                 },
                 SearcherContext::for_test().predicate_cache.clone(),
                 "split",
+                None,
             )
             .await
             .unwrap();
@@ -3268,6 +3285,7 @@ mod tests {
                     &|_, _| {},
                     cache.clone(),
                     "split",
+                    None,
                 )
                 .await
                 .unwrap() else {
@@ -3335,6 +3353,7 @@ mod tests {
             predicate_cache.clone(),
             split_id,
             Priority::default(),
+            None,
         )
         .await
         .unwrap();
@@ -3395,6 +3414,7 @@ mod tests {
             predicate_cache.clone(),
             "split",
             Priority::default(),
+            None,
         )
         .await
         .unwrap();
@@ -3420,6 +3440,7 @@ mod tests {
             predicate_cache,
             "split",
             Priority::default(),
+            None,
         )
         .await
         .unwrap();

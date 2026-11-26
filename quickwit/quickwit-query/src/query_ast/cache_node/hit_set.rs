@@ -108,6 +108,11 @@ impl HitSet {
         Some(Self::from_buffer(buffer))
     }
 
+    /// Returns the size of the serialized hitset buffer in bytes.
+    pub fn num_bytes(&self) -> usize {
+        self.buffer.len()
+    }
+
     /// Returns the serialized hitset, without preserving the iterator position.
     pub fn into_buffer(self) -> OwnedBytes {
         self.buffer

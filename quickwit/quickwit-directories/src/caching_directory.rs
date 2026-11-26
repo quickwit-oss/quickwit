@@ -66,14 +66,13 @@ impl<'a> MemoryReservation<'a> {
         }
     }
 
-    /// Keeps `num_added_bytes` reserved, the bytes the read added to the cache, and releases the
-    /// rest.
-    fn keep(mut self, num_added_bytes: u64) {
+    /// Keeps `num_kept_bytes` reserved and releases the rest.
+    pub fn keep(mut self, num_kept_bytes: u64) {
         debug_assert!(
-            num_added_bytes <= self.num_bytes,
+            num_kept_bytes <= self.num_bytes,
             "cannot keep more bytes than reserved"
         );
-        self.num_bytes = self.num_bytes.saturating_sub(num_added_bytes);
+        self.num_bytes = self.num_bytes.saturating_sub(num_kept_bytes);
     }
 }
 
