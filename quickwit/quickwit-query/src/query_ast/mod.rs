@@ -41,7 +41,7 @@ mod visitor;
 mod wildcard_query;
 
 pub use bool_query::BoolQuery;
-pub use cache_node::{CacheNode, HitSet, PredicateCache, PredicateCacheInjector};
+pub use cache_node::{CacheNode, CacheState, HitSet, PredicateCache, PredicateCacheInjector};
 pub use calc_field_query::CalcFieldQuery;
 pub use field_presence::FieldPresenceQuery;
 pub use full_text_query::{FullTextMode, FullTextParams, FullTextQuery};

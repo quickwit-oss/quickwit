@@ -196,6 +196,12 @@ impl From<TantivyError> for SearchError {
     }
 }
 
+impl From<quickwit_directories::OutOfMemoryError> for SearchError {
+    fn from(error: quickwit_directories::OutOfMemoryError) -> Self {
+        SearchError::OutOfWarmupMemory(error.to_string())
+    }
+}
+
 /// Hidden contract: in the search path, only the `CachingDirectory` returns
 /// `io::ErrorKind::OutOfMemory`, when the split search would go over its warmup memory limit. If
 /// another source ever returned that kind, the split would not be

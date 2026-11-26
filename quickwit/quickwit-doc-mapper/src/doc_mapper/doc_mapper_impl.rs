@@ -640,6 +640,18 @@ impl DocMapper {
         query_ast: QueryAst,
         with_validation: bool,
     ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
+        let (query, warmup, _) = self.query_and_ast(split_schema, query_ast, with_validation)?;
+        Ok((query, warmup))
+    }
+
+    /// Like [`Self::query`], also returns the cache-resolved AST so prepared hitsets can be
+    /// installed after warmup. Resolve predicate-cache nodes asynchronously before calling.
+    pub fn query_and_ast(
+        &self,
+        split_schema: Schema,
+        query_ast: QueryAst,
+        with_validation: bool,
+    ) -> Result<(Box<dyn Query>, WarmupInfo, QueryAst), QueryParserError> {
         build_query(
             query_ast,
             &BuildTantivyAstContext {

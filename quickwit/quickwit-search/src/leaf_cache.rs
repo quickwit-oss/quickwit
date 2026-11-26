@@ -312,6 +312,10 @@ fn decode_predicate_entry(encoded_result: OwnedBytes) -> Option<(SegmentId, HitS
 
 #[async_trait::async_trait]
 impl PredicateCache for PredicateCacheImpl {
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
     async fn get(&self, split_id: String, query_ast_json: String) -> Option<(SegmentId, HitSet)> {
         if !self.enabled {
             return None;

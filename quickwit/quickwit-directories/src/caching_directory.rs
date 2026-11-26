@@ -66,14 +66,13 @@ impl<'a> MemoryReservation<'a> {
         }
     }
 
-    /// Keeps `num_added_bytes` reserved, the bytes the read added to the cache, and releases the
-    /// rest.
-    fn keep(mut self, num_added_bytes: u64) {
+    /// Keeps `num_kept_bytes` reserved and releases the rest.
+    pub fn keep(mut self, num_kept_bytes: u64) {
         debug_assert!(
-            num_added_bytes <= self.num_bytes,
+            num_kept_bytes <= self.num_bytes,
             "cannot keep more bytes than reserved"
         );
-        self.num_bytes = self.num_bytes.saturating_sub(num_added_bytes);
+        self.num_bytes = self.num_bytes.saturating_sub(num_kept_bytes);
     }
 }
 
@@ -488,7 +487,7 @@ mod tests {
     async fn test_automaton_bitset_bypasses_directory_cache_and_memory_budget()
     -> tantivy::Result<()> {
         use tantivy::schema::{STRING, Schema};
-        use tantivy::{Executor, Index, IndexWriter, doc};
+        use tantivy::{Index, IndexWriter, doc};
         use tantivy_fst::Regex;
         use tantivy_fst::automaton::AlwaysMatch;
 
@@ -520,14 +519,20 @@ mod tests {
             .reserve_memory(budget_bytes - reserver.reserved())
             .await
             .unwrap();
-        let executor = Executor::single_thread();
         let subset_bitset = inverted_index
-            .create_bitset_for_automaton(Regex::new("a|z").unwrap(), segment.max_doc(), &executor)
+            .create_bitset_for_automaton(
+                Regex::new("a|z").unwrap(),
+                segment.max_doc(),
+                |task| async move { task() },
+            )
             .await?;
         assert!(subset_bitset.len() == 2 && subset_bitset.contains(0) && subset_bitset.contains(2));
-        let all_docs_bitset = inverted_index
-            .create_bitset_for_automaton(AlwaysMatch, segment.max_doc(), &executor)
-            .await?;
+        let all_docs_bitset =
+            inverted_index
+                .create_bitset_for_automaton(AlwaysMatch, segment.max_doc(), |task| async move {
+                    task()
+                })
+                .await?;
         assert_eq!(all_docs_bitset.len(), 3);
         assert_eq!(cache.get_num_bytes(), initial_cached_bytes);
         assert_eq!(directory.drain_read_operations().count(), 0);
