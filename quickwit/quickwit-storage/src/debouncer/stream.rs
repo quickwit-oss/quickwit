@@ -33,10 +33,13 @@ use crate::{Storage, StorageErrorKind, StorageResult};
 
 const JOIN_WINDOW: Duration = Duration::from_millis(5);
 const CHUNK_NUM_BYTES: usize = 1024 * 1024;
+// Refcounted `Bytes` chunks are shared across readers in a group, so buffering a few chunks per
+// reader absorbs jitter without multiplying memory by the number of readers.
+const READER_CHANNEL_CAPACITY: usize = 4;
 
 /// Collects concurrent reads for the same path and byte range for 5 ms, then shares one storage
-/// stream across those readers. Each reader buffers at most one chunk. A slow reader pauses the
-/// producer, and dropping the last reader cancels it.
+/// stream across those readers. Each reader buffers up to [`READER_CHANNEL_CAPACITY`] chunks. A
+/// slow reader pauses the producer once its buffer fills, and dropping the last reader cancels it.
 #[derive(Default)]
 pub(super) struct StreamDebouncer {
     // The group map and the count of insertions since the last sweep share one lock.
@@ -144,7 +147,7 @@ async fn share_stream<T: Storage>(
     while let Some(open_sender) = joining_readers.recv().await {
         match &stream {
             Ok(_) => {
-                let (sender, receiver) = mpsc::channel(1);
+                let (sender, receiver) = mpsc::channel(READER_CHANNEL_CAPACITY);
                 if open_sender.send(Ok(receiver)).is_ok() {
                     senders.push(sender);
                 }
@@ -168,9 +171,18 @@ async fn share_stream<T: Storage>(
             Some(Err(error)) => (StreamItem::Error(Arc::new(error)), true),
             None => (StreamItem::Eof, true),
         };
+        // Deliver to ready readers first so a full reader does not delay other readers on the
+        // current chunk.
+        let mut full_senders = Vec::new();
         for sender in &senders {
+            match sender.try_send(item.clone()) {
+                Ok(()) | Err(mpsc::error::TrySendError::Closed(_)) => {}
+                Err(mpsc::error::TrySendError::Full(item)) => full_senders.push((sender, item)),
+            }
+        }
+        for (sender, item) in full_senders {
             // A dropped reader leaves the group. Remaining readers still receive every chunk.
-            let _ = sender.send(item.clone()).await;
+            let _ = sender.send(item).await;
         }
         if finished {
             return;
@@ -242,17 +254,17 @@ mod tests {
         tokio::time::advance(2 * JOIN_WINDOW).await;
         tokio::task::yield_now().await;
 
-        let content = vec![7; 4 * CHUNK_NUM_BYTES];
-        let (fast, slow) = tokio::join!(
+        let content = vec![7; (READER_CHANNEL_CAPACITY + 3) * CHUNK_NUM_BYTES];
+        let (slow, fast) = tokio::join!(
             storage.get_slice_stream(Path::new("file"), 0..content.len()),
             storage.get_slice_stream(Path::new("file"), 0..content.len()),
         );
         drop(storage);
-        let (mut fast, slow) = (fast.unwrap(), slow.unwrap());
+        let (slow, mut fast) = (slow.unwrap(), fast.unwrap());
         let mut bytes = vec![0; content.len()];
         let mut write = Box::pin(writer.write_all(&content));
         let mut read = Box::pin(fast.read_exact(&mut bytes));
-        for _ in 0..6 {
+        for _ in 0..READER_CHANNEL_CAPACITY + 6 {
             assert!(poll!(&mut write).is_pending() && poll!(&mut read).is_pending());
             tokio::task::yield_now().await;
         }
