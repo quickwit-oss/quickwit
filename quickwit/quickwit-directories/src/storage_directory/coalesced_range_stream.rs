@@ -20,7 +20,7 @@ use std::path::Path;
 use futures::stream::{BoxStream, StreamExt, TryStreamExt};
 use quickwit_storage::{OwnedBytes, Storage};
 use tantivy_common::VInt;
-use tokio::io::{AsyncReadExt, BufReader};
+use tokio::io::{AsyncRead, AsyncReadExt, BufReader};
 
 // Bridge byte gaps up to this size into the same download to issue fewer storage requests.
 const MAX_GAP_BYTES: usize = 4 * 1024 * 1024;
@@ -93,7 +93,11 @@ pub(super) fn download_ranges<'a>(
         let Some((download_range, encoded_ranges)) = coalesce_ranges(&mut ranges).await else {
             return io::Result::Ok(None);
         };
-        let stream = storage.get_slice_stream(path, download_range).await?;
+        let stream: Box<dyn AsyncRead + Send + Unpin> = if download_range.is_empty() {
+            Box::new(tokio::io::empty())
+        } else {
+            storage.get_slice_stream(path, download_range).await?
+        };
         let download = futures::stream::try_unfold(
             (BufReader::new(stream), encoded_ranges),
             |(mut reader, mut encoded_ranges)| async move {
