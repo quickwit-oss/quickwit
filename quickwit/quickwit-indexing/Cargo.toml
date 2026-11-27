@@ -109,7 +109,7 @@ ci-test = []
 
 [dev-dependencies]
 bytes = { workspace = true }
-criterion = { workspace = true, features = ["async_tokio"] }
+criterion = { workspace = true }
 mockall = { workspace = true }
 proptest = { workspace = true }
 prost = { workspace = true }

@@ -48,12 +48,12 @@ tokio-util = { workspace = true }
 tonic = { workspace = true }
 tonic-health = { workspace = true }
 tonic-reflection = { workspace = true }
-tower = { workspace = true, features = ["limit"] }
+tower = { workspace = true }
 tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 utoipa = { workspace = true }
-warp = { workspace = true, features = ["server"] }
+warp = { workspace = true }
 zstd = { workspace = true }
 
 quickwit-actors = { workspace = true }

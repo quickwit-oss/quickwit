@@ -92,7 +92,7 @@ flume = "0.12"
 feuer = { git = "https://github.com/PSeitz/feuer", rev = "cff661183a34a0522350e1928da862d32b41a87c" }
 fnv = "1"
 futures = "0.3"
-futures-util = { version = "0.3", default-features = false }
+futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
 glob = "0.3"
 # These are yoshidan's google-cloud-rust crates. Their crates.io names now belong to Google's official SDK,
 # with an unrelated API from google-cloud-auth 0.18, google-cloud-gax 0.20 and google-cloud-pubsub 0.31 on,
@@ -147,7 +147,12 @@ openssl = { version = "0.10", default-features = false }
 openssl-probe = "0.2"
 opentelemetry = "0.33"
 opentelemetry-appender-tracing = "0.33"
-opentelemetry_sdk = { version = "0.33", features = ["rt-tokio"] }
+opentelemetry_sdk = { version = "0.33", features = [
+  "experimental_logs_batch_log_processor_with_async_runtime",
+  "experimental_metrics_periodicreader_with_async_runtime",
+  "experimental_trace_batch_span_processor_with_async_runtime",
+  "rt-tokio",
+] }
 # `default-features = false` drops the default `reqwest-blocking-client`:
 # see https://github.com/quickwit-oss/quickwit/pull/6558 for more details.
 opentelemetry-otlp = { version = "0.33", default-features = false, features = [
@@ -245,7 +250,7 @@ thiserror = "2"
 thousands = "0.2"
 tikv-jemalloc-ctl = { version = "0.7", features = ["stats"] }
 tikv-jemallocator = "0.7"
-time = { version = "0.3", features = ["std", "formatting", "macros"] }
+time = { version = "0.3", features = ["std", "formatting", "macros", "parsing"] }
 time-fmt = "0.3.8"
 tokio = { version = "1.54", features = ["full"] }
 tokio-metrics = { version = "0.5", default-features = false }
@@ -254,11 +259,14 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", default-features = false, features = [
   "compat",
   "io-util",
+  "rt",
 ] }
 toml = "1.1"
 tonic = { version = "0.14", features = [
   "_tls-any",
+  "channel",
   "gzip",
+  "server",
   "tls-native-roots",
   "zstd",
 ] }
@@ -270,8 +278,10 @@ tonic-reflection = "0.14"
 tower = { version = "0.5", features = [
   "balance",
   "buffer",
+  "limit",
   "load",
   "retry",
+  "timeout",
   "util",
 ] }
 # legacy version because of warp
@@ -291,7 +301,7 @@ tracing-subscriber = { version = "0.3", features = [
 ] }
 ttl_cache = "0.5"
 typetag = "0.2"
-ulid = "3.0"
+ulid = { version = "3.0", features = ["serde"] }
 ureq = "3"
 username = "0.2"
 # We cannot upgrade to utoipa 5.0+ due to significant breaking changes:
@@ -312,10 +322,24 @@ zstd = { version = "0.14", default-features = false }
 aws-config = "1.13"
 aws-credential-types = { version = "1.3", features = ["hardcoded-credentials"] }
 aws-runtime = "1.10"
-aws-sdk-kinesis = "1.126"
-aws-sdk-lambda = "1"
-aws-sdk-s3 = "1.153"
-aws-sdk-sqs = "1.115"
+aws-sdk-kinesis = { version = "1.126", default-features = false, features = [
+  "default-https-client",
+  "rt-tokio",
+] }
+aws-sdk-lambda = { version = "1", default-features = false, features = [
+  "default-https-client",
+  "rt-tokio",
+] }
+aws-sdk-s3 = { version = "1.153", default-features = false, features = [
+  "default-https-client",
+  "http-1x",
+  "rt-tokio",
+  "sigv4a",
+] }
+aws-sdk-sqs = { version = "1.115", default-features = false, features = [
+  "default-https-client",
+  "rt-tokio",
+] }
 aws-smithy-async = "1.3"
 aws-smithy-http-client = { version = "1.5", features = [
   "default-client",

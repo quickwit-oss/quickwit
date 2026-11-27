@@ -13,7 +13,7 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
-futures-util = { workspace = true, features = ["alloc"] }
+futures-util = { workspace = true }
 hyper-util = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-metrics = { workspace = true }
@@ -21,7 +21,7 @@ rustls = { workspace = true }
 rustls-pemfile = { workspace = true }
 tokio = { workspace = true }
 tokio-rustls = { workspace = true }
-tonic = { workspace = true, features = ["channel"] }
+tonic = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
 

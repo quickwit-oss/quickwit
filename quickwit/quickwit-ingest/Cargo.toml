@@ -39,10 +39,10 @@ utoipa = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
-quickwit-common = { workspace = true, features = ["testsuite"] }
+quickwit-common = { workspace = true }
 quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
-quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
+quickwit-doc-mapper = { workspace = true }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]
@@ -57,6 +57,7 @@ tokio = { workspace = true, features = ["test-util"]}
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
+quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }
 
 [[bench]]
@@ -69,4 +70,4 @@ quickwit-codegen = { workspace = true }
 [features]
 failpoints = ["fail/failpoints"]
 no-failpoints = []
-testsuite = ["mockall"]
+testsuite = ["mockall", "quickwit-proto/testsuite"]

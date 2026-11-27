@@ -19,13 +19,9 @@ metrics-util = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry-appender-tracing = { workspace = true }
 opentelemetry-otlp = { workspace = true }
-opentelemetry_sdk = { workspace = true, features = [
-    "experimental_logs_batch_log_processor_with_async_runtime",
-    "experimental_metrics_periodicreader_with_async_runtime",
-    "experimental_trace_batch_span_processor_with_async_runtime",
-] }
+opentelemetry_sdk = { workspace = true }
 serde_json = { workspace = true }
-time = { workspace = true, features = ["parsing"] }
+time = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }

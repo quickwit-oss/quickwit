@@ -67,7 +67,7 @@ pub(super) struct IngesterShardBuilder {
     shard_state: ShardState,
     replication_position_inclusive: Position,
     truncation_position_inclusive: Position,
-    rate_limiter: RateLimiter,
+    rate_limiter: Option<RateLimiter>,
     rate_meter: RateMeter,
     doc_mapper_opt: Option<Arc<DocMapper>>,
     validate_docs: bool,
@@ -82,9 +82,10 @@ impl IngesterShardBuilder {
         self
     }
 
-    /// Sets the rate limiter. Defaults to `RateLimiter::default()`.
+    /// Sets the rate limiter. Must be called in non-test builds; defaults to
+    /// `RateLimiter::default()` in tests.
     pub fn with_rate_limiter(mut self, rate_limiter: RateLimiter) -> Self {
-        self.rate_limiter = rate_limiter;
+        self.rate_limiter = Some(rate_limiter);
         self
     }
 
@@ -137,6 +138,12 @@ impl IngesterShardBuilder {
             self.replication_position_inclusive.clone(),
         );
         let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
+        #[cfg(test)]
+        let rate_limiter = self.rate_limiter.unwrap_or_default();
+        #[cfg(not(test))]
+        let rate_limiter = self
+            .rate_limiter
+            .expect("rate_limiter must be configured on IngesterShardBuilder");
         IngesterShard {
             index_uid: self.index_uid,
             source_id: self.source_id,
@@ -144,7 +151,7 @@ impl IngesterShardBuilder {
             shard_state: self.shard_state,
             replication_position_inclusive: self.replication_position_inclusive,
             truncation_position_inclusive: self.truncation_position_inclusive,
-            rate_limiter: self.rate_limiter,
+            rate_limiter,
             rate_meter: self.rate_meter,
             is_advertisable: self.is_advertisable,
             doc_mapper_opt: self.doc_mapper_opt,
@@ -170,7 +177,7 @@ impl IngesterShard {
             shard_state: ShardState::Open,
             replication_position_inclusive: Position::Beginning,
             truncation_position_inclusive: Position::Beginning,
-            rate_limiter: RateLimiter::default(),
+            rate_limiter: None,
             rate_meter: RateMeter::default(),
             doc_mapper_opt: None,
             validate_docs: false,
