@@ -3,6 +3,26 @@ title: Query Language Reference
 sidebar_position: 40
 ---
 
+## Elasticsearch-compatible `query_string` queries
+
+The Elasticsearch-compatible `_search` endpoint parses the `query` field of a `query_string` query using the Quickwit syntax described on this page. The Quickwit term set `message:IN [red blue]` matches either term in `message`.
+
+`default_operator` controls how terms combine when they have no explicit operator between them. It defaults to `OR`. This request requires both terms in `message`.
+
+```json
+{
+  "query": {
+    "query_string": {
+      "query": "red blue",
+      "default_field": "message",
+      "default_operator": "AND"
+    }
+  }
+}
+```
+
+Quickwit supports a subset of Elasticsearch's `query_string` options. Requests with unsupported options such as `analyze_wildcard` return HTTP 400.
+
 ## Pseudo-grammar
 
 ```
