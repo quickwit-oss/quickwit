@@ -33,6 +33,8 @@ jobs:
     name: Unit tests
     runs-on: "ubuntu-24.04"
     timeout-minutes: 60
+    env:
+      RUSTFLAGS: -Dwarnings --cfg tokio_unstable -C link-arg=-fuse-ld=mold
     permissions:
       contents: read
       pull-requests: read
@@ -53,32 +55,9 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - name: Cleanup Disk Space
-        run: |
-          df -h
-
-          if [ "$(df -BG / | awk 'NR==2 {gsub("G","",$4); print $4}')" -lt 30 ]; then
-            echo "Less than 30GiB available. Running cleanup..."
-            sudo rm -rf /usr/share/dotnet
-            sudo rm -rf /usr/local/lib/android
-            sudo rm -rf /usr/share/swift
-            sudo rm -rf /usr/local/.ghcup
-            sudo rm -rf /opt/hostedtoolcache/CodeQL
-            df -h
-          else
-            echo "30GiB or more available. Skipping cleanup."
-          fi
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install Ubuntu packages
-        run: |
-          sudo apt-get update
-          sudo apt-get -y install protobuf-compiler
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v.7.1.0
-        with:
-          python-version: '3.11'
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: modified
         with:
@@ -89,6 +68,32 @@ jobs:
               - quickwit/**/*.proto
               - quickwit/rest-api-tests/**
               - .github/workflows/ci.yml
+      - name: Cleanup Disk Space
+        if: steps.modified.outputs.rust_src == 'true'
+        run: |
+          df -h
+
+          if [ "$(df -BG / | awk 'NR==2 {gsub("G","",$4); print $4}')" -lt 30 ]; then
+            echo "Less than 30GiB available. Running cleanup..."
+            sudo rm -rf /usr/share/dotnet &
+            sudo rm -rf /usr/local/lib/android &
+            sudo rm -rf /usr/share/swift &
+            sudo rm -rf /usr/local/.ghcup &
+            sudo rm -rf /opt/hostedtoolcache/CodeQL &
+            wait
+            df -h
+          else
+            echo "30GiB or more available. Skipping cleanup."
+          fi
+      - name: Install Ubuntu packages
+        if: steps.modified.outputs.rust_src == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get -y --no-install-recommends install protobuf-compiler mold
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v.7.1.0
+        if: steps.modified.outputs.rust_src == 'true'
+        with:
+          python-version: '3.11'
       - name: Setup stable Rust Toolchain
         if: steps.modified.outputs.rust_src == 'true'
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
@@ -100,27 +105,24 @@ jobs:
         with:
           workspaces: "./quickwit -> target"
           shared-key: "quickwit-cargo"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install nextest
-        if: always() && steps.modified.outputs.rust_src == 'true'
+        if: steps.modified.outputs.rust_src == 'true'
         uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68
         with:
           tool: cargo-nextest
-      - name: cargo check
-        if: always() && steps.modified.outputs.rust_src == 'true'
-        run: cargo check --features=postgres --tests --bin quickwit
-        working-directory: ./quickwit
       - name: cargo nextest
-        if: always() && steps.modified.outputs.rust_src == 'true'
+        if: steps.modified.outputs.rust_src == 'true'
         run: cargo nextest run --features=postgres --profile ci
         working-directory: ./quickwit
       - name: Install python packages
-        if: always() && steps.modified.outputs.rust_src == 'true'
+        if: steps.modified.outputs.rust_src == 'true'
         run: |
           pip install --user --require-hashes -r ${{ github.workspace }}/.github/workflows/requirements.txt
           pipenv install --deploy --ignore-pipfile
         working-directory: ./quickwit/rest-api-tests
       - name: Run REST API tests
-        if: always() && steps.modified.outputs.rust_src == 'true'
+        if: steps.modified.outputs.rust_src == 'true'
         run: pipenv run python3 ./run_tests.py --binary ../target/debug/quickwit
         working-directory: ./quickwit/rest-api-tests
 
@@ -128,6 +130,8 @@ jobs:
     name: Lints
     runs-on: "ubuntu-24.04"
     timeout-minutes: 60
+    env:
+      RUSTFLAGS: -Dwarnings --cfg tokio_unstable -C link-arg=-fuse-ld=mold
     permissions:
       contents: read
       pull-requests: read
@@ -149,10 +153,10 @@ jobs:
               - quickwit/diesel-guard.toml
               - .github/workflows/ci.yml
       - name: Install Ubuntu packages
-        if: always() && steps.modified.outputs.rust_src == 'true'
+        if: steps.modified.outputs.rust_src == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get -y install protobuf-compiler libcurl4-openssl-dev
+          sudo apt-get -y --no-install-recommends install protobuf-compiler libcurl4-openssl-dev mold
       - name: Setup nightly Rust Toolchain (for rustfmt)
         if: steps.modified.outputs.rust_src == 'true'
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
@@ -170,18 +174,19 @@ jobs:
         with:
           workspaces: "./quickwit -> target"
           shared-key: "quickwit-cargo"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install cargo deny
-        if: always() && steps.modified.outputs.rust_src == 'true'
+        if: steps.modified.outputs.rust_src == 'true'
         uses: taiki-e/cache-cargo-install-action@9ee83daaa7b96a6fab930949ecf1122bba04a389 # v3.0.8
         with:
           tool: cargo-deny@0.19.4
       - name: Install cargo machete
-        if: always() && steps.modified.outputs.rust_src == 'true'
+        if: steps.modified.outputs.rust_src == 'true'
         uses: taiki-e/cache-cargo-install-action@9ee83daaa7b96a6fab930949ecf1122bba04a389 # v3.0.8
         with:
           tool: cargo-machete
       - name: Install diesel-guard
-        if: always() && steps.modified.outputs.migrations == 'true'
+        if: steps.modified.outputs.migrations == 'true'
         uses: taiki-e/cache-cargo-install-action@9ee83daaa7b96a6fab930949ecf1122bba04a389 # v3.0.8
         with:
           tool: diesel-guard@0.10.0
@@ -219,23 +224,39 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        if: github.event_name != 'workflow_dispatch'
+        id: modified
+        with:
+          filters: |
+            licenses:
+              - quickwit/**/Cargo.toml
+              - quickwit/Cargo.lock
+              - quickwit/license-tool.toml
+              - LICENSE-3rdparty.csv
+              - .github/workflows/ci.yml
       - name: Install Rust toolchain
+        if: github.event_name == 'workflow_dispatch' || steps.modified.outputs.licenses == 'true'
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
 
       - name: Cache cargo tools
+        if: github.event_name == 'workflow_dispatch' || steps.modified.outputs.licenses == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin
-          key: ${{ runner.os }}-cargo-tools-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-dd-rust-license-tool-v1.0.7
 
       - name: Install dd-rust-license-tool
-        run: dd-rust-license-tool --help || cargo install --git https://github.com/DataDog/rust-license-tool.git --force
+        if: github.event_name == 'workflow_dispatch' || steps.modified.outputs.licenses == 'true'
+        run: dd-rust-license-tool --help || cargo install --git https://github.com/DataDog/rust-license-tool.git --tag v1.0.7 --locked --force
 
       - name: Check Datadog third-party license file
+        if: github.event_name == 'workflow_dispatch' || steps.modified.outputs.licenses == 'true'
         run: dd-rust-license-tool --config quickwit/license-tool.toml --manifest-path quickwit/Cargo.toml check

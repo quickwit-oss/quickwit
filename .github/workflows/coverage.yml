@@ -19,7 +19,7 @@ env:
   QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
   QW_S3_FORCE_PATH_STYLE_ACCESS: 1
   QW_TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev
-  RUSTFLAGS: -Dwarnings --cfg tokio_unstable
+  RUSTFLAGS: -Dwarnings --cfg tokio_unstable -C link-arg=-fuse-ld=mold
 
 jobs:
   test:
@@ -107,12 +107,10 @@ jobs:
           ref: ${{ inputs.sha }}
           persist-credentials: false
 
-      - name: Install lib libsasl2
+      - name: Install build dependencies
         run: |
-          sudo apt update
-          sudo apt install libsasl2-dev
-          sudo apt install libsasl2-2
-          sudo apt install libcurl4-openssl-dev
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libsasl2-dev libsasl2-2 libcurl4-openssl-dev mold
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v.7.1.0
         with:
@@ -139,17 +137,9 @@ jobs:
         working-directory: ./quickwit/quickwit-cli/tests
 
       # GitHub Actions does not allow services to be started with a custom command,
-      # so we are running Azurite as a container manually.
-      - name: Run Azurite service
-        run: DOCKER_SERVICES=azurite make docker-compose-up
-
-      # GitHub Actions does not allow services to be started with a custom command,
-      # so we are running fake gcs server as a container manually.
-      - name: Run Fake GCS Server service
-        run: DOCKER_SERVICES=fake-gcs-server make docker-compose-up
-
-      - name: Run Pulsar service
-        run: DOCKER_SERVICES=pulsar make docker-compose-up
+      # so we start Azurite, fake-gcs-server, and Pulsar via docker compose in parallel.
+      - name: Run Docker Compose services (Azurite, Fake GCS, Pulsar)
+        run: DOCKER_SERVICES=azurite,fake-gcs-server,pulsar make docker-compose-up
 
       - name: Install Rust
         run: rustup toolchain install

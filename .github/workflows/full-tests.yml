@@ -56,10 +56,18 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+    env:
+      CARGO_INCREMENTAL: 0
+      RUSTFLAGS: -Dwarnings --cfg tokio_unstable -C link-arg=-fuse-ld=mold
     steps:
       - name: Free disk space
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /usr/share/swift /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/share/dotnet &
+          sudo rm -rf /usr/local/lib/android &
+          sudo rm -rf /usr/share/swift &
+          sudo rm -rf /usr/local/.ghcup &
+          sudo rm -rf /opt/hostedtoolcache/CodeQL &
+          wait
           df -h /
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -69,7 +77,7 @@ jobs:
       - name: Install Ubuntu packages
         run: |
           sudo apt-get update
-          sudo apt-get -y install libsasl2-dev libcurl4-openssl-dev
+          sudo apt-get -y --no-install-recommends install libsasl2-dev libcurl4-openssl-dev mold
 
       - name: Install protoc
         uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68
@@ -105,7 +113,7 @@ jobs:
       contents: read
     env:
       CARGO_INCREMENTAL: 0
-      RUSTFLAGS: -Dwarnings --cfg tokio_unstable
+      RUSTFLAGS: -Dwarnings --cfg tokio_unstable -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -114,6 +122,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
+          cache: "yarn"
+          cache-dependency-path: quickwit/quickwit-ui/yarn.lock
       - name: Setup stable Rust Toolchain
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
@@ -135,7 +145,7 @@ jobs:
         working-directory: ./quickwit
       - name: Build Quickwit
         run: |
-          sudo apt-get update && sudo apt-get -y install protobuf-compiler
+          sudo apt-get update && sudo apt-get -y --no-install-recommends install protobuf-compiler mold
           cargo build --features=postgres
         working-directory: ./quickwit
       - name: Run e2e tests
