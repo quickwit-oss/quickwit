@@ -259,6 +259,8 @@ transform:
   timezone: local
 ```
 
+With the OTLP input formats, the script runs once per log record or span, on the flattened document Quickwit builds from it (for instance `.service_name`, `.attributes` and `.resource_attributes` for a log record), not on the OTLP request.
+
 ## Input format
 
 The `input_format` parameter specifies the expected data format of the source. The formats currently supported are:
