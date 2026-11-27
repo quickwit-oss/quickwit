@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod common;
-
-use common::with_recorder;
 use metrics::with_local_recorder;
 use metrics_util::debugging::{DebugValue, DebuggingRecorder};
 use quickwit_metrics::{Counter, SYSTEM, counter, label_names, label_values, labels};
+
+use super::common::with_recorder;
 
 #[test]
 fn base_increments() {
