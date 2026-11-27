@@ -116,16 +116,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/git
-            ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('quickwit/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-test-${{ hashFiles('quickwit/Cargo.lock') }}
-            ${{ runner.os }}-cargo-test
-
       - name: Install python packages
         run: |
           pip install --user --require-hashes -r ${{ github.workspace }}/.github/workflows/requirements.txt
@@ -168,6 +158,8 @@ jobs:
             rustup toolchain install
           fi
           rustup component add rustc cargo llvm-tools-preview
+          active_toolchain=$(rustup show active-toolchain | cut -d ' ' -f 1)
+          rustup default "$active_toolchain"
           rustup show active-toolchain
           rustup component list --installed
           rustc --version
@@ -175,6 +167,12 @@ jobs:
           target_libdir=$(rustc --print target-libdir)
           compgen -G "$target_libdir/libstd-*.rlib" >/dev/null
         working-directory: ./quickwit
+
+      - name: Setup cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: "./quickwit -> target/llvm-cov-target"
+          shared-key: "coverage"
 
       # We limit the number of jobs to 4 to avoid OOM errors when linking the binary.
       - name: Generate code coverage
