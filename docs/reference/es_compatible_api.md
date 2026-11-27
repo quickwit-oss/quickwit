@@ -386,6 +386,8 @@ POST api/v1/_elastic/_field_caps
 
 The [field capabilities API](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-field-caps.html) returns information about the capabilities of fields among multiple indices.
 
+Each leaf request stops after collecting the field limit (10,000 by default, configured with `QW_FIELD_LIST_SIZE_LIMIT`).
+
 #### Supported Query string parameters
 
 | Variable              | Type       | Description                                                                    | Default value |

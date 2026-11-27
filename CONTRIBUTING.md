@@ -57,7 +57,7 @@ Run `make test-all` to run all tests.
 1. Run `yarn --cwd quickwit-ui install` and `yarn --cwd quickwit-ui test` in the `quickwit` directory
 
 ## Running UI e2e tests
-1. Ensure to run a searcher `cargo r run --service searcher --config ../config/quickwit.yaml`
+1. Start a server `cargo r run --config ../config/quickwit.yaml`
 2. Run `yarn --cwd quickwit-ui e2e-test`
 
 ## Running services such as Amazon Kinesis or S3, Kafka, or PostgreSQL locally.
@@ -107,6 +107,17 @@ We keep track of the licenses used by the open source crates used by this projec
 time CI is run. To update the listing, install the tool with `cargo install --git
 https://github.com/DataDog/rust-license-tool` and then run `dd-rust-license-tool write`. If there are
 any errors, you may need to update the listing of exceptions in `license-tool.toml`.
+
+## Tracking metrics
+
+The list of metrics declared with `quickwit-metrics` is committed in
+`quickwit/quickwit-metrics-inventory/metrics.yaml`. When you add, remove, or change a metric,
+regenerate it with `make metrics-inventory` and commit the result. CI fails when the file is out
+of date. For added metrics or changed descriptions, regenerating is enough. If you removed or renamed
+a metric, or changed its static labels or type, identify all of its users, assess the impact, and
+communicate the change before merging. Only static labels are tracked: CI does not detect changes
+to labels added at runtime, so a passing check does not mean that all label changes are safe. See [the crate README](quickwit/quickwit-metrics-inventory/README.md) for
+details.
 
 # Documentation
 

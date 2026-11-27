@@ -472,7 +472,7 @@ mod tests {
     /// ordering relies on lexicographic ordering of the ids, and ULID strings happen to be
     /// time-sortable — which makes for readable, deterministic tests.
     fn new_test_split_id() -> SplitId {
-        SplitId::from(Ulid::new().to_string())
+        SplitId::from(Ulid::generate().to_string())
     }
 
     fn sorted_split_ids(num_splits: usize) -> Vec<SplitId> {

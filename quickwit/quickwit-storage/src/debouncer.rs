@@ -30,6 +30,9 @@ use tokio::io::AsyncRead;
 use crate::storage::SendableAsync;
 use crate::{BulkDeleteError, ListObjectsStream, Storage, StorageResult};
 
+mod stream;
+use stream::StreamDebouncer;
+
 /// The AsyncDebouncer debounces inflight Futures, so that concurrent async request to the same data
 /// source can be deduplicated.
 ///
@@ -144,6 +147,7 @@ pub(crate) struct DebouncedStorage<T> {
     // associated
     underlying: Arc<T>,
     slice_debouncer: Arc<AsyncDebouncer<DebouncerKey, StorageResult<OwnedBytes>>>,
+    stream_debouncer: StreamDebouncer,
 }
 
 impl<T> fmt::Debug for DebouncedStorage<T> {
@@ -157,6 +161,7 @@ impl<T: Storage> DebouncedStorage<T> {
         Self {
             underlying: Arc::new(underlying),
             slice_debouncer: Arc::new(AsyncDebouncer::default()),
+            stream_debouncer: StreamDebouncer::default(),
         }
     }
 }
@@ -189,13 +194,24 @@ impl<T: Storage> Storage for DebouncedStorage<T> {
             .await
     }
 
+    async fn get_slice_into(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        buffer: &mut [u8],
+    ) -> StorageResult<()> {
+        // Forward caller-owned buffers directly to preserve backend accounting and streaming.
+        self.underlying.get_slice_into(path, range, buffer).await
+    }
+
     async fn get_slice_stream(
         &self,
         path: &Path,
         range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        // Getting a stream bypasses the debouncer
-        self.underlying.get_slice_stream(path, range).await
+        self.stream_debouncer
+            .get_slice_stream(self.underlying.clone(), path, range)
+            .await
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
@@ -245,6 +261,28 @@ mod tests {
     use tokio::task;
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_get_slice_into_forwards_to_backend() {
+        let mut backend = crate::MockStorage::new();
+        backend.expect_get_slice_stream().never();
+        backend
+            .expect_get_slice_into()
+            .times(1)
+            .returning(|path, range, buffer| {
+                assert_eq!(path, Path::new("object"));
+                assert_eq!(range, 2..5);
+                buffer.copy_from_slice(b"abc");
+                Ok(())
+            });
+        let storage = DebouncedStorage::new(backend);
+        let mut buffer = [0; 3];
+        storage
+            .get_slice_into(Path::new("object"), 2..5, &mut buffer)
+            .await
+            .unwrap();
+        assert_eq!(&buffer, b"abc");
+    }
 
     #[test]
     fn test_sync_and_send() {

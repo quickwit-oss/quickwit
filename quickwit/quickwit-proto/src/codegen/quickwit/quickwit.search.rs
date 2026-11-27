@@ -126,6 +126,8 @@ pub struct ListFieldsMetadata {
     #[prost(message, repeated, tag = "1")]
     pub entries: ::prost::alloc::vec::Vec<ListFieldsEntry>,
 }
+/// Counts, capabilities, and index IDs describe the splits examined by the leaves.
+/// Each leaf stops after collecting the effective limit of distinct (name, type) pairs.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListFieldsEntry {
@@ -154,7 +156,7 @@ pub struct ListFieldsEntry {
     pub non_aggregatable_index_ids: ::prost::alloc::vec::Vec<
         ::prost::alloc::string::String,
     >,
-    /// Number of splits whose fields metadata contains this field.
+    /// Number of examined splits whose fields metadata contains this field.
     #[prost(uint64, tag = "8")]
     pub num_splits: u64,
 }
@@ -222,6 +224,11 @@ pub struct SearchRequest {
     #[prost(int32, tag = "21")]
     #[serde(default)]
     pub priority: i32,
+    /// Caller-provided name of the application or feature that originated the query.
+    /// Used for root search and resource usage logging. Empty when unspecified.
+    #[prost(string, tag = "23")]
+    #[serde(default)]
+    pub query_source: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -510,6 +517,10 @@ pub struct SplitIdAndFooterOffsets {
     /// The number of docs in the split
     #[prost(uint64, tag = "6")]
     pub num_docs: u64,
+    /// Whether the split is mature and no longer eligible for merging.
+    #[prost(bool, tag = "7")]
+    #[serde(default)]
+    pub is_mature: bool,
 }
 /// Hits returned by a FetchDocRequest.
 ///

@@ -214,7 +214,7 @@ File-backed metastore doesn't have any node level configuration. You can configu
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| `min_connections` | Minimum number of connections to maintain in the pool at all times. | `0` |
+| `min_connections` | Minimum number of connections to maintain in the pool at all times. Must be less than or equal to `max_connections`. | `0` |
 | `max_connections` | Maximum number of connections to maintain in the pool. | `10` |
 | `acquire_connection_timeout` | Maximum amount of time to spend waiting for an available connection before aborting a query. | `10s` |
 | `idle_connection_timeout` | Maximum idle duration before closing individual connections. | `10min` |
@@ -266,7 +266,8 @@ indexer:
 | --- | --- | --- |
 | `max_queue_memory_usage` | Maximum size in bytes of the in-memory Ingest queue. | `2GiB` |
 | `max_queue_disk_usage` | Maximum disk-space in bytes taken by the Ingest queue. The minimum size is at least `256M` and be at least `max_queue_memory_usage`. | `4GiB` |
-| `content_length_limit` | Maximum payload size uncompressed. Increasing this is discouraged, use a [file source](../ingest-data/sqs-files.md) instead. | `10MiB` |
+| `max_body_size` | Maximum size of a request body *before* decompression. Larger requests are rejected with HTTP 413. Prefer a [file source](../ingest-data/sqs-files.md) over raising it. Formerly `content_length_limit` (still accepted). | `10MiB` |
+| `max_decompressed_body_size` | Maximum size of a request body *after* decompression. Larger requests are rejected with HTTP 413. Must be between `max_body_size` and `4GiB`. | `256MiB` |
 | `grpc_compression_algorithm` | Compression algorithm (`gzip` or `zstd`) to use for gRPC traffic between nodes for the ingest service | `None` |
 | `decommission_timeout` | Maximum amount of time to wait for the ingester to finish decommissioning gracefully on shutdown before giving up. Can be overridden with the `QW_INGEST_DECOMMISSION_TIMEOUT` environment variable. | `300s` |
 
@@ -276,7 +277,8 @@ Example:
 ingest_api:
   max_queue_memory_usage: 2GiB
   max_queue_disk_usage: 4GiB
-  content_length_limit: 10MiB
+  max_body_size: 10MiB
+  max_decompressed_body_size: 256MiB
   grpc_compression_algorithm: zstd
   decommission_timeout: 300s
 ```
@@ -310,11 +312,15 @@ This section contains the configuration options for a Searcher.
 | --- | --- | --- |
 | `aggregation_memory_limit` | Controls the maximum amount of memory that can be used for aggregations before aborting. This limit is per searcher node. A node may run concurrent queries, which share the limit. The first query that will hit the limit will be aborted and frees its memory. It is used to prevent excessive memory usage during the aggregation phase, which can lead to performance degradation or crashes. | `500M`|
 | `aggregation_bucket_limit` | Determines the maximum number of buckets returned to the client. | `65000` |
-| `fast_field_cache_capacity` | Fast field in memory cache capacity on a Searcher. If your filter by dates, run aggregations, range queries, or even for tracing, it might worth increasing this parameter. The [metrics](../reference/metrics.md) starting by `quickwit_cache_fastfields_cache` can help you make an informed choice when setting this value. | `1G` |
-| `split_footer_cache_capacity` | Split footer in memory cache (it is essentially the hotcache) capacity on a Searcher.| `500M` |
-| `partial_request_cache_capacity` | Partial request in memory cache capacity on a Searcher. Cache intermediate state for a request, possibly making subsequent requests faster. It can be disabled by setting the size to `0`. | `64M` |
+| `partial_request_cache_capacity` | Cache for per-split partial responses to speed up subsequent requests. Accepts a memory capacity or the memory/disk settings below. Disable with `0`. Also accepts `partial_request_cache`. | `64M` |
+| `predicate_cache` | Cache for predicate hit sets and known-absent terms. Accepts a memory capacity or the memory/disk settings below. Disable with `0`. Also accepts `predicate_cache_capacity`. | `256M` |
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
+| `warmup_memory_budget` | Maximum amount of memory that split searches can use for their warmup data (the parts of the splits downloaded before searching them) on a Searcher. Concurrent split searches share it. | `100G` |
+| `warmup_single_split_initial_allocation` | Memory reserved for a split search when it starts, for a split of 10M documents (smaller splits reserve proportionally less). A split search waits until this memory is available. Its reservation then grows as data is downloaded, within `warmup_memory_budget` and `warmup_single_split_max_allocation`. Must be lower or equal to `warmup_memory_budget`, and to `warmup_single_split_max_allocation` if set. | `300M` |
+| `warmup_single_split_max_allocation` | Maximum amount of warmup memory a single split search can reserve. A split search that would need more fails, even if the Searcher has warmup memory left: this makes the query that needs too much memory fail first, instead of other queries. Must be lower or equal to `warmup_memory_budget`. | `max(warmup_single_split_initial_allocation, min(4GB, warmup_memory_budget / 4))` |
 | `split_cache` | Searcher split cache configuration options defined in the section below. Cache disabled if unspecified. | |
+| `storage_cache` | Caches split footers, hotcache, fast fields, and other body ranges in memory, with an optional disk tier. Configuration options are defined below. | Memory-only, `1500M` |
+| `storage_cache_directory` | Shared directory for storage, partial-request, and predicate cache files. Created if missing. Required when any cache has a positive disk capacity. | |
 | `request_timeout_secs` | The time before a search request is cancelled. This should match the timeout of the stack calling into quickwit if there is one set.  | `30` |
 | `use_metastore_read_replica` | If true, routes read-only metastore requests from searchers to nodes running the `metastore_read_replica` service. Searchers require at least one `metastore_read_replica` node at startup and do not fall back to the primary metastore. | `false` |
 
@@ -328,20 +334,58 @@ This section contains the configuration options for the on-disk searcher split c
 | `max_num_splits` | Maximum number of splits allowed in the split cache.   | `10000` |
 | `num_concurrent_downloads` | Maximum number of concurrent download of splits. | `1` |
 
+### Searcher cache configuration
+
+:::warning Cache configuration compatibility
+
+The `policy` and `virtual_caches` options in fast-field, split-footer, partial-request, and predicate cache settings, including their `_capacity` aliases, are accepted for compatibility and ignored. Eviction is managed by the cache implementation, and virtual-cache simulations are no longer performed. See the [cache migration guide](../get-started/upgrade.md#searcher-cache-configuration) for a before-and-after example.
+
+:::
+
+The following fields configure `storage_cache` and the optional disk tiers of the partial-request and predicate caches. Each cache has its own memory and disk capacities.
+
+| Property | Description |
+| --- | --- |
+| `memory_capacity` | Memory capacity. Required for `storage_cache`; result caches use the defaults above. Must be positive when `disk_capacity` is positive. Set both capacities to `0` to disable the cache. |
+| `disk_capacity` | Disk budget, including metadata and alignment. Required for `storage_cache`; optional for result caches. Set to `0` for memory-only caching. Positive values must be at least `2MiB` and require `searcher.storage_cache_directory`. |
+
+Capacities accept integer byte counts or values such as `64MiB`. Result-cache mappings also accept `capacity` instead of `memory_capacity`.
+
+For disk requirements, see [searcher sizing](../deployment/cluster-sizing.md#searchers). For startup behavior, see [caching](../overview/concepts/querying.md#caching).
+
+The list-fields metadata cache uses memory only, with the same capacity as `partial_request_cache_capacity`. Setting that capacity to zero disables both caches.
 
 Example:
 
 ```yaml
 searcher:
   use_metastore_read_replica: false
-  fast_field_cache_capacity: 1G
-  split_footer_cache_capacity: 500M
-  partial_request_cache_capacity: 64M
   split_cache:
     max_num_bytes: 1G
     max_num_splits: 10000
     num_concurrent_downloads: 1
+  storage_cache_directory: /quickwit/qwdata/feuer-v1
+  storage_cache:
+    disk_capacity: 1500GiB
+    memory_capacity: 15GiB
+  partial_request_cache_capacity:
+    memory_capacity: 64MiB
+    disk_capacity: 20GiB
+  predicate_cache:
+    memory_capacity: 256MiB
+    disk_capacity: 100GiB
 ```
+
+#### Deprecated cache budgets
+
+These settings remain accepted for compatibility. Prefer `storage_cache` for new configurations.
+
+| Property | Description | Default value |
+| --- | --- | --- |
+| `fast_field_cache` | Legacy memory budget, added to the footer budget when `storage_cache` is omitted or `null`. Also accepts `fast_field_cache_capacity`. | `1G` |
+| `split_footer_cache` | Legacy memory budget, added to the fast-field budget when `storage_cache` is omitted or `null`. Also accepts `split_footer_cache_capacity`. | `500M` |
+
+Each accepts a scalar capacity or a mapping with `memory_capacity` (alias `capacity`). The combined budget is shared by all storage-cache entries. An explicit `storage_cache` overrides both budgets. Legacy settings still undergo validation and reject `disk_capacity`. Their `policy` and `virtual_caches` options are ignored. To disable the storage cache through legacy settings, set both budgets to `0`.
 
 ## Jaeger configuration
 

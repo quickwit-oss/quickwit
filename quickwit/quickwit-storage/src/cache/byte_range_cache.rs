@@ -212,7 +212,10 @@ impl FileByteRangeCache {
     }
 
     /// Stores the given slice in the cache.
-    pub fn put_slice(&self, byte_range: Range<usize>, bytes: OwnedBytes) {
+    ///
+    /// Returns the number of bytes added to the cache. It is lower than `byte_range.len()` when
+    /// the slice overlaps bytes that were already cached, and 0 when they all were.
+    pub fn put_slice(&self, byte_range: Range<usize>, bytes: OwnedBytes) -> u64 {
         let mut state = self
             .state
             .lock()
@@ -222,6 +225,7 @@ impl FileByteRangeCache {
         let num_added_bytes = state.num_bytes - previous_num_bytes;
         self.total_num_stored_bytes
             .fetch_add(num_added_bytes, Ordering::Relaxed);
+        num_added_bytes
     }
 }
 
@@ -318,9 +322,8 @@ mod tests {
         prop_oneof![Just("path1"), Just("path2"),]
     }
 
-    #[allow(deprecated)]
     fn range_strategy() -> impl Strategy<Value = Range<usize>> {
-        (0usize..11usize).prop_perturb(|start, mut rng| start..rng.gen_range(start..12usize))
+        (0usize..11usize).prop_perturb(|start, mut rng| start..rng.random_range(start..12usize))
     }
 
     fn op_strategy() -> impl Strategy<Value = Operation> {
@@ -426,6 +429,24 @@ mod tests {
         assert_eq!(second_file_cache.get_slice(0..3).unwrap()[..], [1, 2, 3]);
         assert!(other_file_cache.get_slice(0..3).is_none());
         assert_eq!(cache.get_num_bytes(), 3);
+    }
+
+    #[test]
+    fn test_byte_range_cache_put_slice_returns_num_added_bytes() {
+        let cache = ByteRangeCache::with_infinite_capacity();
+        let file_cache = cache.get_file_cache(Path::new("key"));
+        let bytes =
+            |range: Range<usize>| OwnedBytes::new(range.map(|i| i as u8).collect::<Vec<u8>>());
+
+        assert_eq!(file_cache.put_slice(0..5, bytes(0..5)), 5);
+        // Overlaps 3..5: only 5..8 is new.
+        assert_eq!(file_cache.put_slice(3..8, bytes(3..8)), 3);
+        // Already cached, e.g. by a concurrent read of the same range.
+        assert_eq!(file_cache.put_slice(1..4, bytes(1..4)), 0);
+        assert_eq!(file_cache.put_slice(10..12, bytes(10..12)), 2);
+        // Overlaps 0..8 and 10..12: only 8..10 and 12..14 are new.
+        assert_eq!(file_cache.put_slice(6..14, bytes(6..14)), 4);
+        assert_eq!(cache.get_num_bytes(), 14);
     }
 
     #[test]

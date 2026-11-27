@@ -256,9 +256,25 @@ pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES: LazyHistogram = laz
     buckets: pseudo_exponential_bytes_buckets(),
 );
 
+pub(crate) static LEAF_SEARCH_WARMUP_BUDGET_NUM_BYTES: LazyGauge = lazy_gauge!(
+    name: "leaf_search_warmup_budget_num_bytes",
+    description: "Node-wide warmup memory budget in bytes, configured by \
+                  `searcher.warmup_memory_budget`.",
+    subsystem: "search",
+);
+
 pub(crate) static LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES: LazyGauge = lazy_gauge!(
     name: "leaf_search_warmup_ongoing_num_bytes",
-    description: "Total bytes currently held in warmup caches across all in-flight split searches.",
+    description: "Warmup memory currently reserved by split searches, including the initial \
+                  allocation of granted permits. It never goes over \
+                  `searcher.warmup_memory_budget`.",
+    subsystem: "search",
+);
+
+pub(crate) static LEAF_SEARCH_SPLIT_WARMUP_OUT_OF_MEMORY_TOTAL: LazyCounter = lazy_counter!(
+    name: "leaf_search_split_warmup_out_of_memory_total",
+    description: "Number of split searches that failed because their warmup would have gone over \
+                  `searcher.warmup_single_split_max_allocation`.",
     subsystem: "search",
 );
 

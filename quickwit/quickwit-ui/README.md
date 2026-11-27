@@ -1,15 +1,12 @@
 # quickwit-ui
 
-
-
 ## Prerequisites
 
 `node` and `yarn` need to be installed on your system.
-The project then relies on misc nodejs tools that can be installed locally by 
+The project then relies on misc nodejs tools that can be installed locally by
 running `yarn`.
 
 ## Available Scripts
-
 
 In the project directory, you can run:
 

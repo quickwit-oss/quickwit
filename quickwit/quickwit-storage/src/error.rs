@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -83,8 +83,7 @@ impl From<StorageError> for io::Error {
             StorageErrorKind::NotFound => io::ErrorKind::NotFound,
             _ => io::ErrorKind::Other,
         };
-        // TODO: This is swallowing the context of the source error.
-        io::Error::new(io_error_kind, storage_err.source.to_string())
+        io::Error::new(io_error_kind, storage_err)
     }
 }
 
@@ -130,6 +129,11 @@ impl StorageError {
 
 impl From<io::Error> for StorageError {
     fn from(err: io::Error) -> StorageError {
+        // Stream adapters may carry a storage error through AsyncRead.
+        let err = match err.downcast::<StorageError>() {
+            Ok(storage_err) => return storage_err,
+            Err(err) => err,
+        };
         match err.kind() {
             io::ErrorKind::NotFound => StorageErrorKind::NotFound.with_error(err),
             _ => StorageErrorKind::Io.with_error(err),
@@ -176,7 +180,7 @@ pub struct BulkDeleteError {
     /// List of files that were successfully deleted, including non-existing files.
     pub successes: Vec<PathBuf>,
     /// List of files that failed to be deleted along with the corresponding failure descriptions.
-    pub failures: HashMap<PathBuf, DeleteFailure>,
+    pub failures: BTreeMap<PathBuf, DeleteFailure>,
     /// List of remaining files to delete before the operation was aborted.
     pub unattempted: Vec<PathBuf>,
 }

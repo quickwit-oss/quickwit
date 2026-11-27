@@ -49,7 +49,7 @@ impl PartitionId {
 
 impl fmt::Display for PartitionId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", &self.0)
+        write!(f, "{}", self.0)
     }
 }
 
@@ -386,7 +386,7 @@ impl IndexCheckpointDelta {
 
 impl fmt::Debug for IndexCheckpointDelta {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}:{:?}", &self.source_id, self.source_delta)?;
+        write!(f, "{}:{:?}", self.source_id, self.source_delta)?;
         Ok(())
     }
 }

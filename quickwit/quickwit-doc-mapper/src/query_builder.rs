@@ -15,12 +15,11 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::ops::Bound;
-use std::sync::Arc;
 
 use quickwit_query::query_ast::{
-    BuildTantivyAstContext, CalcFieldQuery, FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery,
-    QueryAst, QueryAstTransformer, QueryAstVisitor, RangeQuery, RegexQuery, TermSetQuery,
-    WildcardQuery,
+    BuildTantivyAstContext, CacheNode, CacheState, CalcFieldQuery, FieldPresenceQuery,
+    FullTextQuery, PhrasePrefixQuery, QueryAst, QueryAstVisitor, RangeQuery, RegexQuery,
+    TermSetQuery, WildcardQuery,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_query::{InvalidQuery, find_field_or_hit_dynamic};
@@ -30,7 +29,7 @@ use tantivy::schema::{Field, Schema};
 use tracing::error;
 
 use crate::doc_mapper::FastFieldWarmupInfo;
-use crate::{Automaton, QueryParserError, TermRange, WarmupInfo};
+use crate::{Automaton, AutomatonWarmup, QueryParserError, TermRange, WarmupInfo};
 
 /// Collects fast fields needed to evaluate the query, including optional and negated clauses.
 /// Unlike `WarmupInfo::required_terms`, these are not logically required matches.
@@ -140,21 +139,11 @@ impl<'a> QueryAstVisitor<'a> for GetRequiredFastFieldsVisitor<'_> {
     }
 }
 
-/// Build a `Query` with field resolution & forbidding range clauses.
+/// Build a query and retain its cache-resolved AST for installing warmup results.
 pub(crate) fn build_query(
     query_ast: QueryAst,
     context: &BuildTantivyAstContext,
-    cache_context: Option<(Arc<dyn quickwit_query::query_ast::PredicateCache>, String)>,
-) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
-    let query_ast = if let Some((cache, split_id)) = cache_context {
-        let Ok(query_ast) = quickwit_query::query_ast::PredicateCacheInjector { cache, split_id }
-            .transform(query_ast);
-        // this transformer isn't supposed to ever remove a node
-        query_ast.unwrap_or(QueryAst::MatchAll)
-    } else {
-        query_ast
-    };
-
+) -> Result<(Box<dyn Query>, WarmupInfo, QueryAst), QueryParserError> {
     // Visit after cache injection: cache hits do not evaluate the underlying predicate,
     // while uninitialized cache nodes and cache misses still need their input columns.
     let mut fast_fields_visitor = GetRequiredFastFieldsVisitor {
@@ -171,6 +160,7 @@ pub(crate) fn build_query(
             &query_ast,
             context.schema,
             context.tokenizer_manager,
+            false,
         )?;
 
     let mut terms_grouped_by_field: HashMap<Field, HashMap<_, bool>> = Default::default();
@@ -195,7 +185,7 @@ pub(crate) fn build_query(
         ..WarmupInfo::default()
     };
 
-    Ok((query, warmup_info))
+    Ok((query, warmup_info, query_ast))
 }
 
 /// Converts a `prefix` term into the equivalent term range.
@@ -229,18 +219,24 @@ fn prefix_term_to_range(prefix: Term) -> (Bound<Term>, Bound<Term>) {
 
 type PositionNeeded = bool;
 
-struct ExtractPrefixTermRanges<'a> {
+struct ExtractPrefixTermRangesAndAutomatons<'a> {
     schema: &'a Schema,
     tokenizer_manager: &'a TokenizerManager,
+    cache_predicates: bool,
     term_ranges_to_warm_up: HashMap<Field, HashMap<TermRange, PositionNeeded>>,
-    automatons_to_warm_up: HashMap<Field, HashSet<Automaton>>,
+    automatons_to_warm_up: AutomatonWarmupInfo,
 }
 
-impl<'a> ExtractPrefixTermRanges<'a> {
-    fn with_schema(schema: &'a Schema, tokenizer_manager: &'a TokenizerManager) -> Self {
-        ExtractPrefixTermRanges {
+impl<'a> ExtractPrefixTermRangesAndAutomatons<'a> {
+    fn with_schema(
+        schema: &'a Schema,
+        tokenizer_manager: &'a TokenizerManager,
+        cache_predicates: bool,
+    ) -> Self {
+        ExtractPrefixTermRangesAndAutomatons {
             schema,
             tokenizer_manager,
+            cache_predicates,
             term_ranges_to_warm_up: HashMap::new(),
             automatons_to_warm_up: HashMap::new(),
         }
@@ -267,16 +263,45 @@ impl<'a> ExtractPrefixTermRanges<'a> {
             .or_default() |= position_needed;
     }
 
-    fn add_automaton(&mut self, field: Field, automaton: Automaton) {
+    fn predicate_warmup(&self, query_ast: &QueryAst) -> Result<AutomatonWarmup, InvalidQuery> {
+        if !self.cache_predicates {
+            return Ok(AutomatonWarmup::postings_only());
+        }
+
+        let cache_key = serde_json::to_string(query_ast)?;
+        Ok(AutomatonWarmup::cache_hits(HashSet::from([cache_key])))
+    }
+
+    fn add_automaton_warmup(
+        &mut self,
+        field: Field,
+        automaton: Automaton,
+        warmup: AutomatonWarmup,
+    ) {
         self.automatons_to_warm_up
             .entry(field)
             .or_default()
-            .insert(automaton);
+            .entry(automaton)
+            .or_default()
+            .merge(warmup);
     }
 }
 
-impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
+impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRangesAndAutomatons<'b> {
     type Err = InvalidQuery;
+
+    fn visit_cache_node(&mut self, node: &'a CacheNode) -> Result<(), Self::Err> {
+        if matches!(node.state, CacheState::CacheHit(_)) {
+            return Ok(());
+        }
+        // Only resolved misses can retain prepared hitsets. Scored queries leave nodes
+        // uninitialized and need postings for their ordinary query execution.
+        let previous = self.cache_predicates;
+        self.cache_predicates = matches!(node.state, CacheState::CacheMiss(_));
+        let result = self.visit(&node.inner);
+        self.cache_predicates = previous;
+        result
+    }
 
     fn visit_full_text(&mut self, full_text_query: &'a FullTextQuery) -> Result<(), Self::Err> {
         if let Some(prefix_term) =
@@ -321,7 +346,8 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
                 Err(e) => return Err(e),
             };
 
-        self.add_automaton(field, Automaton::Regex(path, regex));
+        let warmup = self.predicate_warmup(&QueryAst::Wildcard(wildcard_query.clone()))?;
+        self.add_automaton_warmup(field, Automaton::Regex(path, regex), warmup);
         Ok(())
     }
 
@@ -332,9 +358,11 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
             Err(InvalidQuery::FieldDoesNotExist { .. }) => return Ok(()),
             Err(e) => return Err(e),
         };
-        self.add_automaton(
+        let warmup = self.predicate_warmup(&QueryAst::Regex(regex_query.clone()))?;
+        self.add_automaton_warmup(
             resolved.field,
             Automaton::Regex(resolved.json_path, resolved.regex),
+            warmup,
         );
         Ok(())
     }
@@ -344,23 +372,29 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
             return Ok(());
         };
         let resolved = regex_query.to_resolved(self.schema, Some(self.tokenizer_manager))?;
-        self.add_automaton(
+        self.add_automaton_warmup(
             resolved.field,
             Automaton::Regex(resolved.json_path, resolved.regex),
+            AutomatonWarmup::postings_only(),
         );
         Ok(())
     }
 }
 
 type TermRangeWarmupInfo = HashMap<Field, HashMap<TermRange, PositionNeeded>>;
-type AutomatonWarmupInfo = HashMap<Field, HashSet<Automaton>>;
+type AutomatonWarmupInfo = HashMap<Field, HashMap<Automaton, AutomatonWarmup>>;
 
 fn extract_prefix_term_ranges_and_automaton(
     query_ast: &QueryAst,
     schema: &Schema,
     tokenizer_manager: &TokenizerManager,
+    cache_predicates: bool,
 ) -> anyhow::Result<(TermRangeWarmupInfo, AutomatonWarmupInfo)> {
-    let mut visitor = ExtractPrefixTermRanges::with_schema(schema, tokenizer_manager);
+    let mut visitor = ExtractPrefixTermRangesAndAutomatons::with_schema(
+        schema,
+        tokenizer_manager,
+        cache_predicates,
+    );
     visitor.visit(query_ast)?;
     Ok((
         visitor.term_ranges_to_warm_up,
@@ -376,7 +410,8 @@ mod test {
     use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
     use quickwit_query::query_ast::{
         BoolQuery, BuildTantivyAstContext, CacheNode, CalcFieldQuery, FullTextMode, FullTextParams,
-        PhrasePrefixQuery, QueryAst, QueryAstVisitor, UserInputQuery, query_ast_from_user_text,
+        PhrasePrefixQuery, QueryAst, QueryAstVisitor, RegexQuery, UserInputQuery, WildcardQuery,
+        query_ast_from_user_text,
     };
     use quickwit_query::{
         BooleanOperand, MatchAllOrNone, create_default_quickwit_tokenizer_manager,
@@ -384,13 +419,16 @@ mod test {
     use tantivy::Term;
     use tantivy::jitexpr::ast::deserialize;
     use tantivy::schema::{
-        DateOptions, DateTimePrecision, FAST, Field, INDEXED, STORED, STRING, Schema, TEXT,
+        DateOptions, DateTimePrecision, FAST, INDEXED, STORED, STRING, Schema, TEXT,
     };
 
-    use super::{ExtractPrefixTermRanges, build_query};
+    use super::{
+        AutomatonWarmupInfo, ExtractPrefixTermRangesAndAutomatons, build_query,
+        extract_prefix_term_ranges_and_automaton,
+    };
     use crate::{
-        Automaton, DYNAMIC_FIELD_NAME, FastFieldWarmupInfo, SOURCE_FIELD_NAME, TermRange,
-        WarmupInfo,
+        Automaton, AutomatonWarmup, DYNAMIC_FIELD_NAME, FastFieldWarmupInfo, SOURCE_FIELD_NAME,
+        TermRange, WarmupInfo,
     };
 
     fn calc_field(expression: &str) -> QueryAst {
@@ -415,7 +453,7 @@ mod test {
         // Input names are resolved per segment by Tantivy, not filtered by the builder's schema.
         let schema = Schema::builder().build();
         let context = BuildTantivyAstContext::for_test(&schema);
-        build_query(query, &context, None).unwrap().1
+        build_query(query, &context).unwrap().1
     }
 
     #[test]
@@ -499,22 +537,98 @@ mod test {
                 None,
             ),
         ] {
-            let (_, warmup) = build_query(calc_field(expression), &context, None).unwrap();
+            let (_, warmup, _) = build_query(calc_field(expression), &context).unwrap();
             assert_eq!(
                 warmup.fast_fields,
                 expected_fast_fields(&[fast_field]),
                 "{expression}"
             );
-            let expected_automatons: HashMap<Field, HashSet<Automaton>> = expected_prefilter
+            let expected_automatons: AutomatonWarmupInfo = expected_prefilter
                 .map(|regex| {
                     let automaton = Automaton::Regex(None, regex.to_string());
-                    (service, HashSet::from([automaton]))
+                    (
+                        service,
+                        HashMap::from([(automaton, AutomatonWarmup::postings_only())]),
+                    )
                 })
                 .into_iter()
                 .collect();
             assert_eq!(
                 warmup.automatons_grouped_by_field, expected_automatons,
                 "{expression}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_automaton_warmup_deduplicates_predicates_and_preserves_cache_keys() {
+        let mut schema_builder = Schema::builder();
+        let service = schema_builder.add_text_field("service", STRING | FAST);
+        let schema = schema_builder.build();
+        let context = BuildTantivyAstContext::for_test(&schema);
+        let regex: QueryAst = RegexQuery {
+            field: "service".to_string(),
+            regex: "api".to_string(),
+        }
+        .into();
+        let wildcard: QueryAst = WildcardQuery {
+            field: "service".to_string(),
+            value: "api".to_string(),
+            lenient: false,
+            case_insensitive: false,
+        }
+        .into();
+        let prefilter = calc_field(r#"(EQ (REGEXP_EXTRACT service "^([a-z]+)$" 1u64) "api")"#);
+        let cache_keys = HashSet::from([
+            serde_json::to_string(&regex).unwrap(),
+            serde_json::to_string(&wildcard).unwrap(),
+        ]);
+        // A warmup-only prefilter sharing the automaton must not erase or add cache keys.
+        for filter in [
+            vec![
+                prefilter.clone(),
+                regex.clone(),
+                wildcard.clone(),
+                regex.clone(),
+            ],
+            vec![regex, wildcard, prefilter],
+        ] {
+            let query: QueryAst = BoolQuery {
+                filter,
+                ..Default::default()
+            }
+            .into();
+            let (_, automatons) = extract_prefix_term_ranges_and_automaton(
+                &query,
+                context.schema,
+                context.tokenizer_manager,
+                true,
+            )
+            .unwrap();
+            assert_eq!(
+                automatons,
+                HashMap::from([(
+                    service,
+                    HashMap::from([(
+                        Automaton::Regex(None, "api".to_string()),
+                        AutomatonWarmup {
+                            warm_postings: true,
+                            cache_keys: cache_keys.clone(),
+                        }
+                    )]),
+                )])
+            );
+            // Without query caching, the plan must only warm postings.
+            let (_, warmup, _) = build_query(query, &context).unwrap();
+            assert_eq!(
+                warmup.automatons_grouped_by_field,
+                HashMap::from([(
+                    service,
+                    HashMap::from([(
+                        Automaton::Regex(None, "api".to_string()),
+                        AutomatonWarmup::postings_only(),
+                    )]),
+                )])
             );
         }
     }
@@ -529,7 +643,7 @@ mod test {
         // The predicate reads the subfield's fast column, and the postings of the terms accepted
         // by the prefilter under the subfield's path in the dynamic field.
         let expression = r#"(EQ (REGEXP_EXTRACT custom.programName "^/([a-z]+)/(v[0-9]+)/([a-z]+)$" 3u64) "sports")"#;
-        let (_, warmup) = build_query(calc_field(expression), &context, None).unwrap();
+        let (_, warmup, _) = build_query(calc_field(expression), &context).unwrap();
         assert_eq!(
             warmup.fast_fields,
             expected_fast_fields(&["custom.programName"])
@@ -543,7 +657,10 @@ mod test {
         );
         assert_eq!(
             warmup.automatons_grouped_by_field,
-            HashMap::from([(dynamic, HashSet::from([automaton]))])
+            HashMap::from([(
+                dynamic,
+                HashMap::from([(automaton, AutomatonWarmup::postings_only())])
+            )])
         );
     }
 
@@ -622,7 +739,7 @@ mod test {
             ..Default::default()
         }
         .into();
-        let (_, warmup) = build_query(query, &context, None).unwrap();
+        let (_, warmup, _) = build_query(query, &context).unwrap();
         let mut expected = expected_fast_fields(&[
             "value",
             "set_value",
@@ -757,9 +874,9 @@ mod test {
             .parse_user_query(&[])
             .map_err(|err| err.to_string())?;
         let schema = make_schema(dynamic_mode);
-        let query_result = build_query(query_ast, &BuildTantivyAstContext::for_test(&schema), None);
+        let query_result = build_query(query_ast, &BuildTantivyAstContext::for_test(&schema));
         query_result
-            .map(|query| format!("{query:?}"))
+            .map(|(query, warmup, _)| format!("{:?}", (query, warmup)))
             .map_err(|err| err.to_string())
     }
 
@@ -1134,7 +1251,7 @@ mod test {
         let schema = make_schema(true);
         let context = BuildTantivyAstContext::for_test(&schema);
 
-        let (_, warmup_info) = build_query(query_with_set, &context, None).unwrap();
+        let (_, warmup_info, _) = build_query(query_with_set, &context).unwrap();
         assert!(warmup_info.term_dict_fields.is_empty());
         let desc = schema.get_field("desc").unwrap();
         assert_eq!(
@@ -1145,7 +1262,7 @@ mod test {
             )])
         );
 
-        let (_, warmup_info) = build_query(query_without_set, &context, None).unwrap();
+        let (_, warmup_info, _) = build_query(query_without_set, &context).unwrap();
         assert!(warmup_info.term_dict_fields.is_empty());
     }
 
@@ -1173,11 +1290,13 @@ mod test {
             params: params.clone(),
             lenient: false,
         };
-        let mut extractor1 = ExtractPrefixTermRanges::with_schema(&schema, &tokenizer_manager);
+        let mut extractor1 =
+            ExtractPrefixTermRangesAndAutomatons::with_schema(&schema, &tokenizer_manager, false);
         extractor1.visit_phrase_prefix(&short).unwrap();
         extractor1.visit_phrase_prefix(&long).unwrap();
 
-        let mut extractor2 = ExtractPrefixTermRanges::with_schema(&schema, &tokenizer_manager);
+        let mut extractor2 =
+            ExtractPrefixTermRangesAndAutomatons::with_schema(&schema, &tokenizer_manager, false);
         extractor2.visit_phrase_prefix(&long).unwrap();
         extractor2.visit_phrase_prefix(&short).unwrap();
 

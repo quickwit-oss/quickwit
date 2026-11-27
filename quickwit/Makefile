@@ -76,6 +76,16 @@ build: build-ui
 		;; \
 	esac
 
+# Regenerates the committed metrics inventory. Writes to a temporary file first
+# so that a failed or interrupted build does not truncate the committed
+# inventory; the temporary file is always removed.
+.PHONY: metrics-inventory
+metrics-inventory:
+	@tmp=$$(mktemp) && trap 'rm -f "$$tmp"' EXIT && \
+		bash quickwit-metrics-inventory/scripts/run.sh > "$$tmp" && \
+		cp "$$tmp" quickwit-metrics-inventory/metrics.yaml && \
+		echo "Updated quickwit-metrics-inventory/metrics.yaml"
+
 workspace-deps-tree:
 	cargo tree --all-features --workspace -f "{p}" --prefix depth | cut -f 1 -d ' ' | python3 scripts/dep-tree.py
 

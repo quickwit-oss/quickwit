@@ -199,6 +199,7 @@ pub fn mark_splits_for_deletion_handler(
     warp::path!("indexes" / String / "splits" / "mark-for-deletion")
         .and(warp::put())
         .and(json_body())
+        .boxed()
         .and(with_arg(metastore))
         .then(mark_splits_for_deletion)
         .and(extract_format_from_qs())

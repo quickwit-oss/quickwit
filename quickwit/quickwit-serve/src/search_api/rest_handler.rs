@@ -295,38 +295,39 @@ async fn search_endpoint(
     Ok(search_response_rest)
 }
 
-fn search_get_filter()
--> impl Filter<Extract = (Vec<String>, SearchRequestQueryString), Error = Rejection> + Clone {
+fn search_get_filter() -> warp::filters::BoxedFilter<(Vec<String>, SearchRequestQueryString)> {
     warp::path!(String / "search")
         .and_then(extract_index_id_patterns)
         .and(warp::get())
         .and(warp::query())
+        .boxed()
 }
 
-fn search_post_filter()
--> impl Filter<Extract = (Vec<String>, SearchRequestQueryString), Error = Rejection> + Clone {
+fn search_post_filter() -> warp::filters::BoxedFilter<(Vec<String>, SearchRequestQueryString)> {
     warp::path!(String / "search")
         .and_then(extract_index_id_patterns)
         .and(warp::post())
         .and(warp::body::content_length_limit(1024 * 1024))
         .and(warp::body::json())
+        .boxed()
 }
 
-fn search_plan_get_filter()
--> impl Filter<Extract = (Vec<String>, SearchRequestQueryString), Error = Rejection> + Clone {
+fn search_plan_get_filter() -> warp::filters::BoxedFilter<(Vec<String>, SearchRequestQueryString)> {
     warp::path!(String / "search-plan")
         .and_then(extract_index_id_patterns)
         .and(warp::get())
         .and(warp::query())
+        .boxed()
 }
 
-fn search_plan_post_filter()
--> impl Filter<Extract = (Vec<String>, SearchRequestQueryString), Error = Rejection> + Clone {
+fn search_plan_post_filter() -> warp::filters::BoxedFilter<(Vec<String>, SearchRequestQueryString)>
+{
     warp::path!(String / "search-plan")
         .and_then(extract_index_id_patterns)
         .and(warp::post())
         .and(warp::body::content_length_limit(1024 * 1024))
         .and(warp::body::json())
+        .boxed()
 }
 
 async fn search(

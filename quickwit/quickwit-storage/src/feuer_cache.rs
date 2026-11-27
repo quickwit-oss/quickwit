@@ -1,0 +1,526 @@
+// Copyright 2021-Present Datadog, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use std::hash::Hash;
+use std::io;
+use std::path::Path;
+use std::sync::Arc;
+#[cfg(target_os = "linux")]
+use std::sync::Mutex;
+
+use bytes::Bytes;
+use mixtrics::metrics::BoxedRegistry;
+use quickwit_config::StorageCacheConfig;
+use quickwit_metrics::{LazyGauge, gauge, lazy_gauge};
+
+use crate::OwnedBytes;
+use crate::stable_deref_bytes::into_owned_bytes;
+use crate::storage_cache::metrics::QuickwitMetricsRegistry;
+
+static DISK_CACHE_STARTUP_FALLBACK: LazyGauge = lazy_gauge!(
+    name: "disk_cache_startup_fallback",
+    description: "Whether a cache is using memory only after disk initialization failed (1) or not (0).",
+    subsystem: "storage",
+);
+
+/// Retain history for eight times the estimated resident object count so it can outlive eviction.
+/// Estimate object sizes by object count, rather than weighting frequently read objects more
+/// heavily.
+fn history_entry_limit(
+    memory_capacity: u64,
+    disk_capacity: u64,
+    estimated_average_object_size: u64,
+) -> usize {
+    let capacity = memory_capacity + disk_capacity;
+    let entries = (capacity * 8).div_ceil(estimated_average_object_size);
+    entries as usize
+}
+
+/// Shared I/O concurrency for independent Feuer caches on the same disk.
+/// Queues are created lazily: memory-only instances do not require io_uring.
+#[derive(Clone, Default)]
+pub struct FeuerIoQueues {
+    #[cfg(target_os = "linux")]
+    queues: Arc<Mutex<Option<feuer::IoQueues>>>,
+}
+
+impl FeuerIoQueues {
+    /// Disk initialization failures fall back to memory only with the same capacity.
+    /// Configuration errors still propagate to the caller.
+    pub(crate) fn open(
+        &self,
+        config: &StorageCacheConfig,
+        file_name: &'static str,
+        cache_name: &'static str,
+        scorer: Arc<dyn feuer::RetentionScorer>,
+        payload_version: u64,
+        estimated_average_object_size: u64,
+    ) -> anyhow::Result<feuer::Cache> {
+        let memory_capacity = config.memory_capacity.as_u64();
+        let disk_capacity = config.disk_capacity.as_u64();
+        // Validate before opening I/O queues or applying the disk-error fallback.
+        anyhow::ensure!(
+            disk_capacity == 0 || (2 * 1024 * 1024..=i64::MAX as u64).contains(&disk_capacity),
+            "disk cache capacity must be at least 2 MiB and at most i64::MAX"
+        );
+        let open = |disk_capacity: u64| -> anyhow::Result<feuer::Cache> {
+            let directory = if disk_capacity == 0 {
+                Path::new("")
+            } else {
+                config.directory()?
+            };
+            let registry: BoxedRegistry = Box::new(QuickwitMetricsRegistry { cache_name });
+            let builder = feuer::Cache::builder()
+                .directory(directory)
+                .disk_capacity(disk_capacity)
+                .memory_capacity(memory_capacity)
+                .with_memory_admission_filter(move |_, size, _| size <= memory_capacity)
+                .with_disk_admission_filter(move |_, size, _| size <= disk_capacity)
+                .file_name(file_name)
+                .payload_version(payload_version)
+                .with_metrics(&registry)
+                .with_memory_retention_scorer(scorer.clone())
+                .with_disk_retention_scorer(scorer.clone())
+                .history_entry_limit(history_entry_limit(
+                    memory_capacity,
+                    disk_capacity,
+                    estimated_average_object_size,
+                ));
+            #[cfg(target_os = "linux")]
+            let builder = if disk_capacity == 0 {
+                builder
+            } else {
+                let mut queues = self.queues.lock().unwrap();
+                if queues.is_none() {
+                    *queues = Some(feuer::IoQueues::with_config(feuer::IoQueuesConfig {
+                        fallthrough_waiters: 256,
+                    })?);
+                }
+                builder.with_io_queues(queues.as_ref().unwrap().clone())
+            };
+            Ok(builder.open()?)
+        };
+        let (cache, fallback) = match open(disk_capacity) {
+            Ok(cache) => (cache, false),
+            Err(error)
+                if disk_capacity > 0
+                    && (matches!(
+                        error.downcast_ref::<feuer::CacheOpenError>(),
+                        Some(feuer::CacheOpenError::Disk(_))
+                    ) || error.is::<io::Error>()) =>
+            {
+                let cache = open(0)?;
+                tracing::warn!(
+                    cache = cache_name,
+                    directory = ?config.directory,
+                    error = ?error,
+                    "disk cache initialization failed; using memory-only caching until restart"
+                );
+                (cache, true)
+            }
+            Err(error) => return Err(error),
+        };
+        gauge!(parent: DISK_CACHE_STARTUP_FALLBACK, "cache" => cache_name).set(if fallback {
+            1.0
+        } else {
+            0.0
+        });
+        Ok(cache)
+    }
+}
+
+/// A Feuer cache for immutable encoded results.
+/// Values for a given key must never change. Each instance is a separate key namespace.
+/// Keys must hash all identity fields. Only their 128-bit fingerprints are retained.
+pub struct FeuerCache {
+    cache: Option<feuer::Cache>,
+}
+
+impl FeuerCache {
+    /// Open a memory-only instance without a Tokio runtime. Zero capacity disables caching.
+    /// `estimated_average_object_size` is in bytes and must be positive.
+    pub fn memory(
+        capacity: u64,
+        cache_name: &'static str,
+        estimated_average_object_size: u64,
+    ) -> anyhow::Result<Self> {
+        if capacity == 0 {
+            return Ok(Self { cache: None });
+        }
+        let config = StorageCacheConfig {
+            directory: None,
+            disk_capacity: bytesize::ByteSize::b(0),
+            memory_capacity: bytesize::ByteSize::b(capacity),
+        };
+        Self::open(
+            &config,
+            &FeuerIoQueues::default(),
+            cache_name,
+            cache_name,
+            None,
+            1,
+            estimated_average_object_size,
+        )
+    }
+
+    /// Open a cache synchronously with the supplied disk I/O queues.
+    /// Disk initialization blocks and requires an entered Tokio runtime.
+    /// `file_name` must be distinct for caches in the same directory.
+    /// `cache_name` identifies the cache in metrics; use a fixed name, not a path or request key.
+    /// `estimated_average_object_size` is in bytes and must be positive. History is sized for
+    /// eight times the estimated resident object count across both tiers.
+    /// `scorer` defaults to frequency-based retention in both memory and disk.
+    /// Increment `payload_version` when changing the encoded result format.
+    pub fn open(
+        config: &StorageCacheConfig,
+        queues: &FeuerIoQueues,
+        file_name: &'static str,
+        cache_name: &'static str,
+        scorer: Option<Arc<dyn feuer::RetentionScorer>>,
+        payload_version: u64,
+        estimated_average_object_size: u64,
+    ) -> anyhow::Result<Self> {
+        if config.memory_capacity.as_u64() == 0 && config.disk_capacity.as_u64() == 0 {
+            return Ok(Self { cache: None });
+        }
+        Ok(Self {
+            cache: Some(queues.open(
+                config,
+                file_name,
+                cache_name,
+                scorer.unwrap_or_else(|| Arc::new(feuer::FetchCostScorer::default())),
+                payload_version,
+                estimated_average_object_size,
+            )?),
+        })
+    }
+
+    /// Hash a key with this cache's seed for retention-scorer metadata.
+    /// Panics if caching is disabled.
+    pub fn hash_key(&self, key: &(impl Hash + ?Sized)) -> feuer::ObjectKeyHash {
+        self.cache
+            .as_ref()
+            .expect("cannot hash keys for a disabled cache")
+            .hash_key(key)
+    }
+
+    /// Retrieve an entire object from memory or disk, returning `None` on a miss.
+    pub async fn get(&self, key: &(impl Hash + ?Sized)) -> Option<OwnedBytes> {
+        self.cache.as_ref()?.get(key).await.map(into_owned_bytes)
+    }
+
+    /// Cache an immutable object without disk reads or waiting for disk admission.
+    /// Values for a key must be equivalent. An existing memory entry is retained.
+    /// Disk writes use Feuer's best-effort background queue.
+    pub fn put(&self, key: &(impl Hash + ?Sized), bytes: OwnedBytes) {
+        if let Some(cache) = &self.cache {
+            cache.insert(key, Bytes::from_owner(bytes));
+        }
+    }
+}
+
+#[cfg(test)]
+mod startup_tests {
+    use bytesize::ByteSize;
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_oversized_values_do_not_evict_cached_entries() {
+        let cache = FeuerCache::memory(8, "test_size_limit", 8).unwrap();
+        cache.put("fits", OwnedBytes::new(&b"12345678"[..]));
+        cache.put("oversized", OwnedBytes::new(&b"123456789"[..]));
+        assert!(cache.get("oversized").await.is_none());
+        assert_eq!(cache.get("fits").await.unwrap().as_slice(), b"12345678");
+    }
+
+    #[test]
+    fn test_custom_scorer_is_used_for_eviction() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        #[derive(Default)]
+        struct Scorer(AtomicUsize);
+
+        impl feuer::RetentionScorer for Scorer {
+            fn score(
+                &self,
+                _: &feuer::ObjectKeyHash,
+                _: u64,
+                _: &feuer::ObjectAccessHistories,
+            ) -> f64 {
+                self.0.fetch_add(1, Ordering::Relaxed);
+                1.0
+            }
+        }
+
+        let scorer = Arc::new(Scorer::default());
+        let config = StorageCacheConfig {
+            directory: None,
+            memory_capacity: ByteSize::b(5),
+            disk_capacity: ByteSize::b(0),
+        };
+        let cache = FeuerCache::open(
+            &config,
+            &FeuerIoQueues::default(),
+            "predicate_cache",
+            "predicate",
+            Some(scorer.clone()),
+            2,
+            16 * 1024,
+        )
+        .unwrap();
+        // More entries than memory shards force eviction to consult the scorer.
+        for key in 0..65 {
+            cache.put(&key, OwnedBytes::new(&b"value"[..]));
+        }
+        assert!(scorer.0.load(Ordering::Relaxed) > 0);
+    }
+
+    #[tokio::test]
+    async fn test_disk_failure_falls_back_to_memory() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let _guard = ::metrics::set_default_local_recorder(&recorder);
+        let directory = tempfile::tempdir().unwrap();
+        let blocked = directory.path().join("file");
+        std::fs::write(&blocked, b"keep this file").unwrap();
+        let config = StorageCacheConfig {
+            directory: Some(blocked.clone()),
+            disk_capacity: ByteSize::mib(8),
+            memory_capacity: ByteSize::mib(1),
+        };
+        let queues = FeuerIoQueues::default();
+        let scorer = Arc::new(feuer::FetchCostScorer::default());
+        for cache_name in ["storage", "partial_request", "predicate"] {
+            let cache = queues
+                .open(&config, cache_name, cache_name, scorer.clone(), 1, 1024)
+                .unwrap();
+            assert_eq!(cache.config().disk_capacity(), 0);
+            assert_eq!(
+                cache.config().memory_capacity(),
+                config.memory_capacity.as_u64()
+            );
+            cache.insert("key", Bytes::from_static(b"value"));
+            assert_eq!(cache.get("key").await.unwrap().as_ref(), b"value");
+            let fallback = snapshotter
+                .snapshot()
+                .into_vec()
+                .into_iter()
+                .find(|(key, _, _, _)| {
+                    key.key().name() == "quickwit_storage_disk_cache_startup_fallback"
+                        && key
+                            .key()
+                            .labels()
+                            .any(|label| label.key() == "cache" && label.value() == cache_name)
+                })
+                .expect("fallback metric must identify the affected cache");
+            assert_eq!(fallback.3, DebugValue::Gauge(1.0.into()));
+        }
+        assert_eq!(std::fs::read(blocked).unwrap(), b"keep this file");
+        assert_eq!(config.disk_capacity, ByteSize::mib(8));
+    }
+
+    #[tokio::test]
+    async fn test_invalid_configuration_still_fails() {
+        let queues = FeuerIoQueues::default();
+        let open = |config: &StorageCacheConfig| {
+            queues.open(
+                config,
+                "cache",
+                "storage",
+                Arc::new(feuer::FetchCostScorer::default()),
+                1,
+                1024 * 1024,
+            )
+        };
+        let mut config = StorageCacheConfig {
+            directory: None,
+            disk_capacity: ByteSize::mib(8),
+            memory_capacity: ByteSize::mib(1),
+        };
+        let error = open(&config).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("storage_cache_directory must be set")
+        );
+
+        let directory = tempfile::tempdir().unwrap();
+        config.directory = Some(directory.path().to_path_buf());
+        for disk_capacity in [1, 2 * 1024 * 1024 - 1, u64::MAX] {
+            config.disk_capacity = ByteSize::b(disk_capacity);
+            let error = open(&config).unwrap_err();
+            assert!(error.to_string().contains("disk cache capacity must be"));
+        }
+        config.disk_capacity = ByteSize::mib(8);
+        config.memory_capacity = ByteSize::b(0);
+        let error = open(&config).unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<feuer::CacheOpenError>(),
+            Some(feuer::CacheOpenError::Config(_))
+        ));
+    }
+
+    #[test]
+    fn test_memory_only_cache_reports_no_fallback_without_runtime() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let _guard = ::metrics::set_default_local_recorder(&recorder);
+        FeuerCache::memory(1024, "storage", 1024 * 1024).unwrap();
+        let fallback = snapshotter
+            .snapshot()
+            .into_vec()
+            .into_iter()
+            .find(|(key, _, _, _)| {
+                key.key().name() == "quickwit_storage_disk_cache_startup_fallback"
+                    && key.key().labels().any(|label| label.key() == "cache")
+            })
+            .unwrap();
+        assert_eq!(fallback.3, DebugValue::Gauge(0.0.into()));
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use std::collections::HashMap;
+    use std::convert::Infallible;
+    use std::path::PathBuf;
+
+    use bytesize::ByteSize;
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+
+    use super::*;
+    use crate::open_storage_cache;
+
+    #[tokio::test]
+    async fn test_memory_only_instance_does_not_initialize_io_queues() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = config(directory.path().join("unused"), 8);
+        config.disk_capacity = ByteSize::b(0);
+        let queues = FeuerIoQueues::default();
+        let cache = FeuerCache::open(
+            &config,
+            &queues,
+            "partial_response_cache",
+            "partial_request",
+            None,
+            1,
+            2 * 1024,
+        )
+        .unwrap();
+        cache.put("key", OwnedBytes::new(&b"value"[..]));
+        assert_eq!(cache.get("key").await.unwrap().as_slice(), b"value");
+        assert!(queues.queues.lock().unwrap().is_none());
+        assert!(!config.directory().unwrap().try_exists().unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_instances_share_queues_but_keep_contents_and_capacities_separate() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let _guard = ::metrics::set_default_local_recorder(&recorder);
+        let directory = tempfile::tempdir().unwrap();
+        let queues = FeuerIoQueues::default();
+        let storage_config = config(directory.path().to_path_buf(), 8);
+        let partial_config = config(directory.path().to_path_buf(), 16);
+        let predicate_config = config(directory.path().to_path_buf(), 32);
+        let storage = open_storage_cache(&storage_config, &queues.clone()).unwrap();
+        assert!(queues.queues.lock().unwrap().is_some());
+        let partial = FeuerCache::open(
+            &partial_config,
+            &queues,
+            "partial_response_cache",
+            "partial_request",
+            None,
+            1,
+            2 * 1024,
+        )
+        .unwrap();
+        let predicate = FeuerCache::open(
+            &predicate_config,
+            &queues,
+            "predicate_cache",
+            "predicate",
+            None,
+            1,
+            16 * 1024,
+        )
+        .unwrap();
+        let capacities: HashMap<_, _> = snapshotter
+            .snapshot()
+            .into_vec()
+            .into_iter()
+            .filter(|(key, _, _, _)| key.key().name() == "feuer_memory_capacity_bytes")
+            .filter_map(|(key, _, _, value)| {
+                let Some(cache_label) = key.key().labels().find(|label| label.key() == "cache")
+                else {
+                    // Typed metric parents are registered without observations.
+                    assert_eq!(value, DebugValue::Gauge(0.0.into()));
+                    return None;
+                };
+                Some((cache_label.value().to_owned(), value))
+            })
+            .collect();
+        assert_eq!(capacities.len(), 3);
+        for (cache_name, config) in [
+            ("storage", &storage_config),
+            ("partial_request", &partial_config),
+            ("predicate", &predicate_config),
+        ] {
+            assert_eq!(
+                capacities[cache_name],
+                DebugValue::Gauge((config.memory_capacity.as_u64() as f64).into())
+            );
+        }
+        for (cache, config, file_name) in [
+            (&partial, &partial_config, "partial_response_cache"),
+            (&predicate, &predicate_config, "predicate_cache"),
+        ] {
+            let cache_config = cache.cache.as_ref().unwrap().config();
+            assert_eq!(cache_config.disk_capacity(), config.disk_capacity.as_u64());
+            assert_eq!(
+                cache_config.memory_capacity(),
+                config.memory_capacity.as_u64()
+            );
+            assert_eq!(cache_config.file_name(), file_name);
+            assert!(cache.get("missing").await.is_none());
+        }
+        storage
+            .get_or_fetch("same-key", || async {
+                Ok::<_, Infallible>(Bytes::from_static(b"storage"))
+            })
+            .await
+            .unwrap();
+        partial.put("same-key", OwnedBytes::new(&b"partial"[..]));
+        predicate.put("same-key", OwnedBytes::new(&b"predicate"[..]));
+        assert_eq!(storage.get("same-key").await.unwrap().as_ref(), b"storage");
+        assert_eq!(
+            partial.get("same-key").await.unwrap().as_slice(),
+            b"partial"
+        );
+        assert_eq!(
+            predicate.get("same-key").await.unwrap().as_slice(),
+            b"predicate"
+        );
+    }
+
+    fn config(path: PathBuf, disk_mib: u64) -> StorageCacheConfig {
+        StorageCacheConfig {
+            directory: Some(path),
+            disk_capacity: ByteSize::mib(disk_mib),
+            memory_capacity: ByteSize::mib(disk_mib / 8),
+        }
+    }
+}

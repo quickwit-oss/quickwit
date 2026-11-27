@@ -2,7 +2,7 @@
 name: Tutorial request
 about: Suggest a Quickwit tutorial
 title: "[Tutorial topic]"
-labels: tutorial
+type: Task
 assignees: ""
 ---
 

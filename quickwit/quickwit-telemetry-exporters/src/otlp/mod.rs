@@ -17,13 +17,19 @@ pub(crate) mod logs;
 pub(crate) mod metrics;
 pub(crate) mod traces;
 
-pub(crate) use config::{OtlpExporterConfig, OtlpProtocol, quickwit_resource};
-use opentelemetry_otlp::retry::RetryPolicy;
+use std::time::Duration;
 
-//Common retry policy for OTLP exporters
-const RETRY_POLICY: RetryPolicy = RetryPolicy {
-    max_retries: 5,
-    initial_delay_ms: 500,
-    max_delay_ms: 30_000,
-    jitter_ms: 100,
-};
+pub(crate) use config::{OtlpExporterConfig, OtlpProtocol, quickwit_resource};
+use opentelemetry_otlp::RetryPolicy;
+
+/// Common retry policy for OTLP exporters.
+///
+/// We set it explicitly instead of relying on `RetryPolicy::default()` so that our retry budget
+/// does not change when the library's recommended defaults do.
+fn retry_policy() -> RetryPolicy {
+    RetryPolicy::disabled()
+        .with_max_retries(5)
+        .with_initial_delay(Duration::from_millis(500))
+        .with_max_delay(Duration::from_millis(30_000))
+        .with_max_jitter(Duration::from_millis(100))
+}

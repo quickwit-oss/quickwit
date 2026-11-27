@@ -75,6 +75,17 @@ impl Storage for PrefixStorage {
         self.storage.get_slice(&self.prefix.join(path), range).await
     }
 
+    async fn get_slice_into(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        buffer: &mut [u8],
+    ) -> crate::StorageResult<()> {
+        self.storage
+            .get_slice_into(&self.prefix.join(path), range, buffer)
+            .await
+    }
+
     async fn get_all(&self, path: &Path) -> crate::StorageResult<OwnedBytes> {
         self.storage.get_all(&self.prefix.join(path)).await
     }
@@ -234,7 +245,7 @@ fn strip_prefix_from_error(error: BulkDeleteError, prefix: &Path) -> BulkDeleteE
 #[cfg(test)]
 mod tests {
 
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
     use std::time::SystemTime;
 
     use futures::{TryStreamExt, stream};
@@ -336,7 +347,7 @@ mod tests {
                 error: None,
                 successes: vec![PathBuf::from("ram:///indexes/foo")],
                 unattempted: vec![PathBuf::from("ram:///indexes/bar")],
-                failures: HashMap::from_iter([(
+                failures: BTreeMap::from_iter([(
                     PathBuf::from("ram:///indexes/baz"),
                     DeleteFailure::default(),
                 )]),
@@ -361,7 +372,7 @@ mod tests {
                 error: None,
                 successes: vec![PathBuf::from("ram:///indexes/foo")],
                 unattempted: vec![PathBuf::from("ram:///indexes/bar")],
-                failures: HashMap::from_iter([(
+                failures: BTreeMap::from_iter([(
                     PathBuf::from("ram:///indexes/baz"),
                     DeleteFailure::default(),
                 )]),
@@ -380,7 +391,7 @@ mod tests {
                 error: None,
                 successes: vec![PathBuf::from("ram:///indexes/foo")],
                 unattempted: vec![PathBuf::from("ram:///indexes/bar")],
-                failures: HashMap::from_iter([(
+                failures: BTreeMap::from_iter([(
                     PathBuf::from("ram:///indexes/baz"),
                     DeleteFailure::default(),
                 )]),

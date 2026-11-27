@@ -30,6 +30,7 @@ use quickwit_config::SplitCacheLimits;
 use quickwit_proto::search::ReportSplit;
 use quickwit_proto::types::SplitId;
 use tantivy::directory::OwnedBytes;
+use tokio::io::AsyncRead;
 use tracing::{error, info, instrument, warn};
 
 use crate::file_descriptor_cache::{FileDescriptorCache, SplitFile};
@@ -198,29 +199,17 @@ struct SplitCacheBackingStorage {
 }
 
 impl SplitCacheBackingStorage {
-    async fn get_impl(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
-        let split_id = split_id_from_path(path)?;
-        let split_file: SplitFile = self
-            .split_cache
-            .get_split_file(split_id, &self.storage_root_uri)
-            .await?;
-        split_file.get_range(byte_range).await.ok()
+    async fn get_split_file(&self, path: &Path) -> Option<SplitFile> {
+        self.split_cache
+            .get_split_file(split_id_from_path(path)?, &self.storage_root_uri)
+            .await
     }
 
-    async fn get_all_impl(&self, path: &Path) -> Option<OwnedBytes> {
-        let split_id = split_id_from_path(path)?;
-        let split_file = self
-            .split_cache
-            .get_split_file(split_id, &self.storage_root_uri)
-            .await?;
-        split_file.get_all().await.ok()
-    }
-
-    fn record_hit_metrics(&self, result_opt: Option<&OwnedBytes>) {
+    fn record_hit_metrics(&self, hit_num_bytes: Option<usize>) {
         let split_metrics = &crate::metrics::SEARCHER_SPLIT_CACHE.cache_metrics;
-        if let Some(result) = result_opt {
+        if let Some(num_bytes) = hit_num_bytes {
             split_metrics.hits_num_items.inc();
-            split_metrics.hits_num_bytes.inc_by(result.len() as u64);
+            split_metrics.hits_num_bytes.inc_by(num_bytes as u64);
         } else {
             split_metrics.misses_num_items.inc();
         }
@@ -230,17 +219,79 @@ impl SplitCacheBackingStorage {
 #[async_trait]
 impl StorageCache for SplitCacheBackingStorage {
     async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
-        let result = self.get_impl(path, byte_range).await;
-        self.record_hit_metrics(result.as_ref());
+        let result = match self.get_split_file(path).await {
+            Some(file) => file.get_range(byte_range).await.ok(),
+            None => None,
+        };
+        self.record_hit_metrics(result.as_ref().map(|bytes| bytes.len()));
         result
     }
 
+    async fn get_slice_stream(
+        &self,
+        path: &Path,
+        byte_range: Range<usize>,
+    ) -> Option<Box<dyn AsyncRead + Send + Unpin>> {
+        let file = self.get_split_file(path).await;
+        self.record_hit_metrics(file.as_ref().map(|_| byte_range.len()));
+        Some(Box::new(file?.get_range_stream(byte_range)))
+    }
+
     async fn get_all(&self, path: &Path) -> Option<OwnedBytes> {
-        let result = self.get_all_impl(path).await;
-        self.record_hit_metrics(result.as_ref());
+        let result = match self.get_split_file(path).await {
+            Some(file) => file.get_all().await.ok(),
+            None => None,
+        };
+        self.record_hit_metrics(result.as_ref().map(|bytes| bytes.len()));
         result
     }
 
     async fn put(&self, _path: PathBuf, _byte_range: Range<usize>, _bytes: OwnedBytes) {}
     async fn put_all(&self, _path: PathBuf, _bytes: OwnedBytes) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroU32;
+    use std::os::unix::fs::FileExt;
+
+    use bytesize::ByteSize;
+    use tokio::io::AsyncReadExt;
+
+    use super::*;
+    use crate::{RamStorage, StorageResolver};
+
+    #[tokio::test]
+    async fn split_cache_stream_reads_on_demand_across_eviction() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let path = Path::new("cached.split");
+        let file = std::fs::File::create(tempdir.path().join(path)).unwrap();
+        let range_end = 2 * 1024 * 1024;
+        file.set_len(range_end as u64 + 1).unwrap();
+        file.write_all_at(b"a", 7).unwrap();
+        let cache = SearchSplitCache::with_root_path(
+            tempdir.path().to_owned(),
+            StorageResolver::unconfigured(),
+            SplitCacheLimits {
+                max_num_bytes: ByteSize::mb(64),
+                max_num_splits: NonZeroU32::new(8).unwrap(),
+                num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
+                max_file_descriptors: NonZeroU32::new(8).unwrap(),
+            },
+        )
+        .unwrap();
+        let storage =
+            SearchSplitCache::wrap_storage(cache.clone(), Arc::new(RamStorage::default()));
+        let mut reader = storage.get_slice_stream(path, 7..range_end).await.unwrap();
+        assert_eq!(reader.read_u8().await.unwrap(), b'a');
+        cache.evict(&[SplitId::from("cached")]);
+        // Change the unread tail through the open descriptor to detect eager buffering.
+        file.write_all_at(b"bc", range_end as u64 - 1).unwrap();
+        let mut remaining_bytes = Vec::new();
+        reader.read_to_end(&mut remaining_bytes).await.unwrap();
+        assert_eq!(
+            (remaining_bytes.len(), remaining_bytes.last()),
+            (range_end - 8, Some(&b'b'))
+        );
+    }
 }

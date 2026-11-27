@@ -14,7 +14,6 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
-use std::sync::Arc;
 
 use anyhow::{Context, bail};
 use fnv::FnvHashSet;
@@ -634,13 +633,25 @@ impl DocMapper {
     ///
     /// Considering schema evolution, splits within an index can have different schema
     /// over time. So `split_schema` is the schema of the split the query is targeting.
+    /// Resolve predicate-cache nodes asynchronously before calling this method to enable caching.
     pub fn query(
         &self,
         split_schema: Schema,
         query_ast: QueryAst,
         with_validation: bool,
-        cache_context: Option<(Arc<dyn quickwit_query::query_ast::PredicateCache>, String)>,
     ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
+        let (query, warmup, _) = self.query_and_ast(split_schema, query_ast, with_validation)?;
+        Ok((query, warmup))
+    }
+
+    /// Like [`Self::query`], also returns the cache-resolved AST so prepared hitsets can be
+    /// installed after warmup. Resolve predicate-cache nodes asynchronously before calling.
+    pub fn query_and_ast(
+        &self,
+        split_schema: Schema,
+        query_ast: QueryAst,
+        with_validation: bool,
+    ) -> Result<(Box<dyn Query>, WarmupInfo, QueryAst), QueryParserError> {
         build_query(
             query_ast,
             &BuildTantivyAstContext {
@@ -649,7 +660,6 @@ impl DocMapper {
                 search_fields: &self.default_search_field_names[..],
                 with_validation,
             },
-            cache_context,
         )
     }
 
@@ -897,6 +907,215 @@ mod tests {
             DocParsingError::ValueError("body".to_owned(), "expected string, got `1`".to_owned())
         );
         Ok(())
+    }
+
+    #[test]
+    fn test_parse_document_with_null_object() {
+        use serde::Deserialize;
+
+        let doc_mapper_json = json!({
+            "field_mappings": [
+                {
+                    "name": "payload",
+                    "type": "object",
+                    "field_mappings": [
+                        {
+                            "name": "head",
+                            "type": "object",
+                            "field_mappings": [
+                                {"name": "label", "type": "text"},
+                                {
+                                    "name": "repo",
+                                    "type": "object",
+                                    "field_mappings": [
+                                        {"name": "name", "type": "text"}
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        });
+        let doc_mapper = DocMapperBuilder::deserialize(doc_mapper_json)
+            .unwrap()
+            .try_build()
+            .unwrap();
+
+        // A `null` object is simply ignored, like a `null` leaf value.
+        let JsonValue::Object(json_obj) = json!({
+            "payload": {
+                "head": {
+                    "label": "main",
+                    "repo": JsonValue::Null
+                }
+            }
+        }) else {
+            panic!("expected a JSON object");
+        };
+        let (_, document) = doc_mapper.doc_from_json_obj(json_obj, 0).unwrap();
+        let schema = doc_mapper.schema();
+        let label_field = schema.get_field("payload.head.label").unwrap();
+        assert_eq!(
+            document
+                .get_first(label_field)
+                .and_then(|value| value.as_str()),
+            Some("main")
+        );
+
+        // The whole document can also be `null` all the way up.
+        let JsonValue::Object(json_obj) = json!({"payload": JsonValue::Null}) else {
+            panic!("expected a JSON object");
+        };
+        doc_mapper.doc_from_json_obj(json_obj, 0).unwrap();
+
+        // Non-null, non-object values are still rejected.
+        let JsonValue::Object(json_obj) = json!({"payload": {"head": {"repo": "quickwit"}}}) else {
+            panic!("expected a JSON object");
+        };
+        let error = doc_mapper.doc_from_json_obj(json_obj, 0).unwrap_err();
+        assert!(matches!(error, DocParsingError::ValueError(field_path, _)
+            if field_path == "payload.head.repo"));
+    }
+
+    #[test]
+    fn test_parse_document_with_empty_array_object() {
+        use serde::Deserialize;
+
+        let doc_mapper_json = json!({
+            "field_mappings": [
+                {
+                    "name": "payload",
+                    "type": "object",
+                    "field_mappings": [
+                        {"name": "label", "type": "text"},
+                        {
+                            "name": "repo",
+                            "type": "object",
+                            "field_mappings": [
+                                {"name": "name", "type": "text"}
+                            ]
+                        }
+                    ]
+                }
+            ]
+        });
+        let doc_mapper = DocMapperBuilder::deserialize(doc_mapper_json)
+            .unwrap()
+            .try_build()
+            .unwrap();
+        let schema = doc_mapper.schema();
+        let label_field = schema.get_field("payload.label").unwrap();
+
+        // An empty array, or an array containing only `null` elements, is ignored like `null`.
+        for empty_repo in [json!([]), json!([null]), json!([null, null])] {
+            let JsonValue::Object(json_obj) = json!({
+                "payload": {
+                    "label": "main",
+                    "repo": empty_repo
+                }
+            }) else {
+                panic!("expected a JSON object");
+            };
+            let (_, document) = doc_mapper.doc_from_json_obj(json_obj, 0).unwrap();
+            assert_eq!(
+                document
+                    .get_first(label_field)
+                    .and_then(|value| value.as_str()),
+                Some("main")
+            );
+        }
+
+        // The same applies at the top level of the document.
+        for empty_payload in [json!([]), json!([null, null])] {
+            let JsonValue::Object(json_obj) = json!({"payload": empty_payload}) else {
+                panic!("expected a JSON object");
+            };
+            doc_mapper.doc_from_json_obj(json_obj, 0).unwrap();
+        }
+
+        // Arrays containing at least one non-null element are still rejected.
+        for non_empty_repo in [
+            json!([{"name": "quickwit"}]),
+            json!([null, {"name": "quickwit"}]),
+            json!([[]]),
+        ] {
+            let JsonValue::Object(json_obj) = json!({"payload": {"repo": non_empty_repo}}) else {
+                panic!("expected a JSON object");
+            };
+            let error = doc_mapper.doc_from_json_obj(json_obj, 0).unwrap_err();
+            assert!(matches!(error, DocParsingError::ValueError(field_path, _)
+                if field_path == "payload.repo"));
+        }
+    }
+
+    #[test]
+    fn test_validate_document_with_null_object() {
+        use serde::Deserialize;
+
+        let doc_mapper_json = json!({
+            "mode": "strict",
+            "field_mappings": [
+                {
+                    "name": "payload",
+                    "type": "object",
+                    "field_mappings": [
+                        {
+                            "name": "repo",
+                            "type": "object",
+                            "field_mappings": [
+                                {"name": "name", "type": "text"}
+                            ]
+                        }
+                    ]
+                }
+            ]
+        });
+        let doc_mapper = DocMapperBuilder::deserialize(doc_mapper_json)
+            .unwrap()
+            .try_build()
+            .unwrap();
+
+        let json_val: serde_json_borrow::Value =
+            serde_json::from_str(r#"{"payload": {"repo": null}}"#).unwrap();
+        doc_mapper
+            .validate_json_obj(json_val.as_object().unwrap())
+            .unwrap();
+
+        let json_val: serde_json_borrow::Value =
+            serde_json::from_str(r#"{"payload": {"repo": "quickwit"}}"#).unwrap();
+        let error = doc_mapper
+            .validate_json_obj(json_val.as_object().unwrap())
+            .unwrap_err();
+        assert!(matches!(error, DocParsingError::ValueError(field_path, _)
+            if field_path == "payload.repo"));
+
+        // An empty array, or an array containing only `null` elements, is ignored like `null`.
+        for json_doc in [
+            r#"{"payload": {"repo": []}}"#,
+            r#"{"payload": {"repo": [null, null]}}"#,
+            r#"{"payload": []}"#,
+            r#"{"payload": [null]}"#,
+        ] {
+            let json_val: serde_json_borrow::Value = serde_json::from_str(json_doc).unwrap();
+            doc_mapper
+                .validate_json_obj(json_val.as_object().unwrap())
+                .unwrap();
+        }
+
+        // Arrays containing at least one non-null element are still rejected.
+        for json_doc in [
+            r#"{"payload": {"repo": [{"name": "quickwit"}]}}"#,
+            r#"{"payload": {"repo": [null, {"name": "quickwit"}]}}"#,
+            r#"{"payload": {"repo": [[]]}}"#,
+        ] {
+            let json_val: serde_json_borrow::Value = serde_json::from_str(json_doc).unwrap();
+            let error = doc_mapper
+                .validate_json_obj(json_val.as_object().unwrap())
+                .unwrap_err();
+            assert!(matches!(error, DocParsingError::ValueError(field_path, _)
+                if field_path == "payload.repo"));
+        }
     }
 
     #[test]
@@ -2109,7 +2328,7 @@ mod tests {
             .parse_user_query(doc_mapper.default_search_fields())
             .map_err(|err| err.to_string())?;
         let (query, _) = doc_mapper
-            .query(doc_mapper.schema(), query_ast, true, None)
+            .query(doc_mapper.schema(), query_ast, true)
             .map_err(|err| err.to_string())?;
         Ok(format!("{query:?}"))
     }

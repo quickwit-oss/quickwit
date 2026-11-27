@@ -184,7 +184,6 @@ pub fn convert_to_es_field_capabilities_response(
 /// Returns `Ok(None)` if the index_filter is null.
 /// Returns `Ok(Some(QueryAst))` if the index_filter is valid.
 /// Returns `Err` if the index_filter is invalid or cannot be converted (including empty object).
-#[allow(clippy::result_large_err)]
 pub fn parse_index_filter_to_query_ast(
     index_filter: serde_json::Value,
 ) -> Result<Option<QueryAst>, ElasticsearchError> {
@@ -213,7 +212,6 @@ pub fn parse_index_filter_to_query_ast(
     Ok(Some(query_ast))
 }
 
-#[allow(clippy::result_large_err)]
 pub fn build_list_field_request_for_es_api(
     index_id_patterns: Vec<String>,
     search_params: FieldCapabilityQueryParams,

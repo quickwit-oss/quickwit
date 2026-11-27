@@ -34,7 +34,7 @@ impl<K: Hash + Eq + Clone + Send + Sync + 'static> CacheState<K> {
     fn from_config(cache_config: &CacheConfig, cache_counters: &'static CacheMetrics) -> Self {
         let cache = AnyCache::from_policy_and_capacity(
             cache_config.policy(),
-            cache_config.capacity(),
+            cache_config.memory_capacity(),
             cache_counters.cache_metrics.clone(),
         );
         let virtual_caches = cache_config
@@ -44,7 +44,8 @@ impl<K: Hash + Eq + Clone + Send + Sync + 'static> CacheState<K> {
             .map(|mut virtual_cache_config| {
                 AnyCache::from_policy_and_capacity(
                     virtual_cache_config.policy_for_virtual_cache(cache_config.policy()),
-                    virtual_cache_config.capacity_for_virtual_cache(cache_config.capacity()),
+                    virtual_cache_config
+                        .memory_capacity_for_virtual_cache(cache_config.memory_capacity()),
                     cache_counters.virtual_cache(&virtual_cache_config),
                 )
             })

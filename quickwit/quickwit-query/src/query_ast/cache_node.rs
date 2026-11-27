@@ -14,8 +14,9 @@
 
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Duration;
 
-use bitpacking::{BitPacker, BitPacker1x};
+use cpu_time::ThreadTime;
 use serde::{Deserialize, Serialize};
 
 use super::{BuildTantivyAst, BuildTantivyAstContext, TantivyQueryAst};
@@ -42,7 +43,7 @@ pub enum CacheState {
     // This is the state a CacheNode should be before
     #[default]
     Uninitialized,
-    CacheHit(CacheEntry),
+    CacheHit(Box<CacheEntry>),
     CacheMiss(CacheFiller),
 }
 
@@ -77,19 +78,9 @@ impl CacheNode {
         }
     }
 
-    pub fn fill_cache_state(&mut self, cache: &Arc<dyn PredicateCache>, split_id: &str) {
-        let Ok(query) = serde_json::to_string(&self.inner) else {
-            return;
-        };
-        if let Some((segment_id, hits)) = cache.get(split_id.to_string(), query.clone()) {
-            self.state = CacheState::CacheHit(CacheEntry { segment_id, hits });
-        } else {
-            self.state = CacheState::CacheMiss(CacheFiller {
-                cache: cache.clone(),
-                split_id: split_id.to_string(),
-                query,
-            });
-        }
+    /// Retains prepared matches in the query, independently of shared-cache admission.
+    pub fn set_hits(&mut self, segment_id: SegmentId, hits: HitSet) {
+        self.state = CacheState::CacheHit(Box::new(CacheEntry { segment_id, hits }));
     }
 }
 
@@ -101,7 +92,7 @@ impl BuildTantivyAst for CacheNode {
         match &self.state {
             CacheState::Uninitialized => self.inner.build_tantivy_ast_call(context),
             CacheState::CacheHit(cache_entry) => Ok(CacheHitQuery {
-                cache_entry: cache_entry.clone(),
+                cache_entry: cache_entry.as_ref().clone(),
             }
             .into()),
             CacheState::CacheMiss(cache_filler) => {
@@ -124,10 +115,13 @@ impl BuildTantivyAst for CacheNode {
     }
 }
 
-use tantivy::directory::OwnedBytes;
 use tantivy::index::SegmentId;
 use tantivy::query::{EnableScoring, Explanation, Query, Scorer, Weight};
 use tantivy::{DocId, DocSet, Score, SegmentReader, TantivyError, Term};
+
+mod hit_set;
+pub use hit_set::HitSet;
+use hit_set::HitSetBuilder;
 
 #[derive(Clone, Debug)]
 pub struct CacheHitQuery {
@@ -202,179 +196,6 @@ impl CacheEntry {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct HitSet {
-    buffer: OwnedBytes,
-    buffer_pos: usize,
-    previous_last_val: Option<u32>,
-    current_block: [u32; BitPacker1x::BLOCK_LEN],
-    block_pos: usize,
-    boost: Score,
-}
-
-const INCOMPLETE_BLOCK_MARKER: u8 = 0x80;
-
-impl HitSet {
-    /// An empty hit set, matching no document.
-    pub fn empty() -> Self {
-        Self::from_buffer(OwnedBytes::new(vec![0, 0, 0, 0]))
-    }
-
-    /// Returns true if this hit set matches no document.
-    pub fn is_empty(&self) -> bool {
-        self.size_hint() == 0
-    }
-
-    /// Build a HitSet from its serialized form.
-    ///
-    /// The provided buffer must come from `HitSet::into_buffer`
-    pub fn from_buffer(buffer: OwnedBytes) -> Self {
-        let mut this = Self {
-            buffer,
-            // skip count
-            buffer_pos: 4,
-            previous_last_val: None,
-            current_block: [0; BitPacker1x::BLOCK_LEN],
-            // we set this to block_len minus 1 so we can call advance() once to initialize
-            // everything
-            block_pos: BitPacker1x::BLOCK_LEN - 1,
-            boost: 1.0,
-        };
-        this.advance();
-        this
-    }
-
-    /// Return a buffer representing the underlying data.
-    ///
-    /// This does not preserve where in the DocSet you are.
-    pub fn into_buffer(self) -> OwnedBytes {
-        self.buffer
-    }
-
-    fn load_new_block(&mut self) {
-        let Some(num_bits) = self.buffer.get(self.buffer_pos) else {
-            // we ended iteration: simply fill the current_block full of TERMINATED
-            self.current_block = [tantivy::TERMINATED; 32];
-            return;
-        };
-        self.buffer_pos += 1;
-        if *num_bits == INCOMPLETE_BLOCK_MARKER {
-            // final block, decode as many ids as possible
-            let mut i = 0;
-            for chunk in self.buffer[self.buffer_pos..].as_chunks().0 {
-                self.current_block[i] = u32::from_ne_bytes(*chunk);
-                i += 1;
-            }
-            // pad with TERMINATED
-            while i < BitPacker1x::BLOCK_LEN {
-                self.current_block[i] = tantivy::TERMINATED;
-                i += 1;
-            }
-            self.buffer_pos = self.buffer.len();
-        } else {
-            self.buffer_pos += BitPacker1x.decompress_strictly_sorted(
-                self.previous_last_val,
-                &self.buffer[self.buffer_pos..],
-                &mut self.current_block,
-                *num_bits,
-            );
-            self.previous_last_val = self.current_block.last().copied();
-        }
-    }
-}
-
-impl DocSet for HitSet {
-    fn advance(&mut self) -> DocId {
-        self.block_pos += 1;
-        if let Some(doc_id) = self.current_block.get(self.block_pos) {
-            return *doc_id;
-        }
-        self.load_new_block();
-        self.block_pos = 0;
-        self.current_block[0]
-    }
-
-    // fn seek(&mut self, target: DocId) -> DocId {
-    // }
-
-    #[inline(always)]
-    fn doc(&self) -> DocId {
-        self.current_block[self.block_pos]
-    }
-
-    fn size_hint(&self) -> u32 {
-        u32::from_ne_bytes(self.buffer[0..4].try_into().unwrap())
-    }
-}
-
-impl Scorer for HitSet {
-    fn score(&mut self) -> f32 {
-        self.boost
-    }
-}
-
-pub struct HitSetBuilder {
-    count: u32,
-    current_block: [u32; BitPacker1x::BLOCK_LEN],
-    previous_last_val: Option<u32>,
-    buffer: Vec<u8>,
-}
-
-impl HitSetBuilder {
-    pub fn new() -> Self {
-        HitSetBuilder {
-            count: 0,
-            current_block: [0; BitPacker1x::BLOCK_LEN],
-            previous_last_val: None,
-            buffer: vec![0; 4],
-        }
-    }
-
-    fn in_block_pos(&self) -> usize {
-        (self.count % BitPacker1x::BLOCK_LEN as u32) as usize
-    }
-
-    fn end_of_block(&self) -> bool {
-        self.in_block_pos() == (BitPacker1x::BLOCK_LEN - 1)
-    }
-
-    fn flush_block(&mut self) {
-        let num_bits =
-            BitPacker1x.num_bits_strictly_sorted(self.previous_last_val, &self.current_block);
-        self.buffer.push(num_bits);
-        let current_buffer_pos = self.buffer.len();
-        let new_end = current_buffer_pos + (BitPacker1x::BLOCK_LEN * num_bits as usize) / 8;
-        self.buffer.resize(new_end, 0);
-        BitPacker1x.compress_strictly_sorted(
-            self.previous_last_val,
-            &self.current_block,
-            &mut self.buffer[current_buffer_pos..],
-            num_bits,
-        );
-        self.previous_last_val = self.current_block.last().copied();
-    }
-
-    pub fn insert(&mut self, value: u32) {
-        self.current_block[self.in_block_pos()] = value;
-        if self.end_of_block() {
-            self.flush_block();
-        }
-        self.count += 1;
-    }
-
-    pub fn build(mut self) -> HitSet {
-        if self.in_block_pos() != 0 {
-            self.buffer.push(INCOMPLETE_BLOCK_MARKER);
-            for elem in &self.current_block[..self.in_block_pos()] {
-                self.buffer.extend_from_slice(&elem.to_ne_bytes());
-            }
-        }
-        // write back the count of items
-        self.buffer[0..4].copy_from_slice(&self.count.to_ne_bytes());
-        HitSet::from_buffer(OwnedBytes::new(self.buffer))
-    }
-}
-
 #[derive(Clone)]
 pub struct CacheFiller {
     cache: Arc<dyn PredicateCache>,
@@ -391,9 +212,14 @@ impl std::fmt::Debug for CacheFiller {
 }
 
 impl CacheFiller {
-    fn fill_segment(&self, segment_id: SegmentId, value: HitSet) {
-        self.cache
-            .put(self.split_id.clone(), self.query.clone(), segment_id, value);
+    fn fill_segment(&self, segment_id: SegmentId, value: HitSet, cpu_time: Duration) {
+        self.cache.put(
+            self.split_id.clone(),
+            self.query.clone(),
+            segment_id,
+            value,
+            cpu_time,
+        );
     }
 }
 
@@ -446,6 +272,8 @@ pub struct CacheFillerWeight {
 
 impl Weight for CacheFillerWeight {
     fn scorer(&self, reader: &SegmentReader, boost: Score) -> tantivy::Result<Box<dyn Scorer>> {
+        // Nested cache fills are intentionally included in this predicate's CPU time.
+        let start = ThreadTime::now();
         let mut hit_set_builder = HitSetBuilder::new();
         let mut scorer = self.inner_weight.scorer(reader, 1.0)?;
         let mut doc_id = scorer.doc();
@@ -454,8 +282,10 @@ impl Weight for CacheFillerWeight {
             doc_id = scorer.advance();
         }
         let mut hit_set = hit_set_builder.build();
+        // Preserve a positive cost even below the timer's resolution.
+        let cpu_time = start.elapsed().max(Duration::from_nanos(1));
         self.cache_filler
-            .fill_segment(reader.segment_id(), hit_set.clone());
+            .fill_segment(reader.segment_id(), hit_set.clone(), cpu_time);
         hit_set.boost = boost;
         Ok(Box::new(hit_set))
     }
@@ -465,40 +295,111 @@ impl Weight for CacheFillerWeight {
     }
 }
 
-/// A transformer that goes through a QueryAst, and change the state of all CacheNodes
-/// to Hit/Miss based on the provided cache.
-///
-/// This must be called for any CacheNode inside a QueryAst to do anything (though not calling
-/// it isn't an error, it just means no cache will be used).
+/// Wraps regex/wildcard predicates and resolves cache nodes asynchronously before synchronous
+/// query construction and warmup planning. When the cache is disabled, only regex/wildcard
+/// predicates are resolved so warmup can still build hitsets while other cache nodes remain
+/// uninitialized.
 pub struct PredicateCacheInjector {
     pub cache: Arc<dyn PredicateCache>,
     pub split_id: String,
 }
 
-impl crate::query_ast::QueryAstTransformer for PredicateCacheInjector {
-    type Err = std::convert::Infallible;
-
-    fn transform_cache_node(
-        &mut self,
-        mut cache_node: CacheNode,
-    ) -> Result<Option<QueryAst>, Self::Err> {
-        cache_node.fill_cache_state(&self.cache, &self.split_id);
-        self.transform(*cache_node.inner).map(|maybe_ast| {
-            maybe_ast.map(|inner| {
-                QueryAst::Cache(CacheNode {
-                    inner: Box::new(inner),
-                    state: cache_node.state,
-                })
-            })
-        })
+impl PredicateCacheInjector {
+    pub async fn resolve(&self, query_ast: &mut QueryAst) {
+        let cache_enabled = self.cache.is_enabled();
+        let mut pending = vec![query_ast];
+        let mut lookups = Vec::new();
+        while let Some(query_ast) = pending.pop() {
+            if matches!(query_ast, QueryAst::Regex(_) | QueryAst::Wildcard(_)) {
+                let inner = std::mem::replace(query_ast, QueryAst::MatchNone);
+                *query_ast = CacheNode::new(inner).into();
+            }
+            match query_ast {
+                QueryAst::Bool(bool_query) => pending.extend(
+                    bool_query
+                        .must
+                        .iter_mut()
+                        .chain(bool_query.should.iter_mut())
+                        .chain(bool_query.must_not.iter_mut())
+                        .chain(bool_query.filter.iter_mut())
+                        .rev(),
+                ),
+                QueryAst::Boost { underlying, .. } => pending.push(underlying),
+                QueryAst::Cache(cache_node) => {
+                    let is_automaton = matches!(
+                        *cache_node.inner,
+                        QueryAst::Regex(_) | QueryAst::Wildcard(_)
+                    );
+                    if (cache_enabled || is_automaton)
+                        && let Ok(query) = serde_json::to_string(&cache_node.inner)
+                    {
+                        // Borrow only the state so nested cache nodes can be resolved concurrently.
+                        let state = &mut cache_node.state;
+                        if cache_enabled {
+                            lookups.push(async move {
+                                *state = if let Some((segment_id, hits)) =
+                                    self.cache.get(self.split_id.clone(), query.clone()).await
+                                {
+                                    CacheState::CacheHit(Box::new(CacheEntry { segment_id, hits }))
+                                } else {
+                                    CacheState::CacheMiss(CacheFiller {
+                                        cache: self.cache.clone(),
+                                        split_id: self.split_id.clone(),
+                                        query,
+                                    })
+                                };
+                            });
+                        } else {
+                            *state = CacheState::CacheMiss(CacheFiller {
+                                cache: self.cache.clone(),
+                                split_id: self.split_id.clone(),
+                                query,
+                            });
+                        }
+                    }
+                    // Direct automaton predicates already have a cache wrapper.
+                    if !is_automaton {
+                        pending.push(&mut cache_node.inner);
+                    }
+                }
+                QueryAst::Term(_)
+                | QueryAst::TermSet(_)
+                | QueryAst::FullText(_)
+                | QueryAst::PhrasePrefix(_)
+                | QueryAst::Range(_)
+                | QueryAst::MatchAll
+                | QueryAst::MatchNone
+                | QueryAst::UserInput(_)
+                | QueryAst::FieldPresence(_)
+                | QueryAst::Wildcard(_)
+                | QueryAst::Regex(_)
+                | QueryAst::CalcField(_) => {}
+            }
+        }
+        futures::future::join_all(lookups).await;
     }
 }
 
 // we use a trait to dodge circular dependancies with quickwit-storage
+#[async_trait::async_trait]
 pub trait PredicateCache: Send + Sync + 'static {
-    fn get(&self, split_id: String, query_ast_json: String) -> Option<(SegmentId, HitSet)>;
+    fn is_enabled(&self) -> bool {
+        true
+    }
 
-    fn put(&self, split_id: String, query_ast_json: String, segment: SegmentId, results: HitSet);
+    async fn get(&self, split_id: String, query_ast_json: String) -> Option<(SegmentId, HitSet)>;
+
+    /// Called during synchronous query execution on a CPU thread.
+    /// `cpu_time` measures predicate evaluation and hit set construction, including nested fills.
+    /// Callers without a measurement can supply an estimated CPU-equivalent cost.
+    fn put(
+        &self,
+        split_id: String,
+        query_ast_json: String,
+        segment: SegmentId,
+        results: HitSet,
+        cpu_time: Duration,
+    );
 }
 
 #[cfg(test)]
@@ -512,15 +413,22 @@ mod tests {
 
     use super::*;
     use crate::query_ast::{
-        BuildTantivyAstContext, QueryAstTransformer, QueryAstVisitor, TermQuery,
+        BoolQuery, BuildTantivyAstContext, QueryAstTransformer, QueryAstVisitor, TermQuery,
     };
 
-    impl PredicateCache for Mutex<HashMap<(String, String), (SegmentId, HitSet)>> {
-        fn get(&self, split_id: String, query_ast_json: String) -> Option<(SegmentId, HitSet)> {
+    #[async_trait::async_trait]
+    impl PredicateCache for Mutex<HashMap<(String, String), (SegmentId, HitSet, Duration)>> {
+        async fn get(
+            &self,
+            split_id: String,
+            query_ast_json: String,
+        ) -> Option<(SegmentId, HitSet)> {
+            // Exercise preparation with a lookup that yields before returning.
+            tokio::task::yield_now().await;
             self.lock()
                 .unwrap()
                 .get(&(split_id, query_ast_json))
-                .cloned()
+                .map(|(segment, hits, _)| (*segment, hits.clone()))
         }
 
         fn put(
@@ -529,55 +437,12 @@ mod tests {
             query_ast_json: String,
             segment: SegmentId,
             results: HitSet,
+            cpu_time: Duration,
         ) {
             self.lock()
                 .unwrap()
-                .insert((split_id, query_ast_json), (segment, results));
+                .insert((split_id, query_ast_json), (segment, results, cpu_time));
         }
-    }
-
-    #[track_caller]
-    fn test_hit_set_roundtrip_helper<I: Iterator<Item = u32> + Clone>(iter: I) {
-        let mut hitset_builder = HitSetBuilder::new();
-        for i in iter.clone() {
-            hitset_builder.insert(i);
-        }
-        let mut hitset = hitset_builder.build();
-
-        for val in iter {
-            assert_eq!(hitset.doc(), val);
-            hitset.advance();
-        }
-        for _ in 0..96 {
-            assert_eq!(hitset.doc(), tantivy::TERMINATED);
-            hitset.advance();
-        }
-    }
-
-    #[test]
-    fn test_hit_set_roundtrip() {
-        // this generate a pseurorandom strictrly increasing sequence
-        let generator = std::iter::successors(Some(0u32), |x| Some(x + x.trailing_ones() + 1));
-
-        // empty
-        test_hit_set_roundtrip_helper(generator.clone().take(0));
-        // one item
-        test_hit_set_roundtrip_helper(generator.clone().take(1));
-        test_hit_set_roundtrip_helper(generator.clone().skip(10).take(1));
-        // partial block
-        test_hit_set_roundtrip_helper(generator.clone().take(24));
-        test_hit_set_roundtrip_helper(generator.clone().skip(10).take(24));
-
-        // one block
-        test_hit_set_roundtrip_helper(generator.clone().take(32));
-        test_hit_set_roundtrip_helper(generator.clone().skip(10).take(32));
-        // two blocks
-        test_hit_set_roundtrip_helper(generator.clone().take(64));
-        test_hit_set_roundtrip_helper(generator.clone().skip(10).take(64));
-
-        // many blocks, partial last block
-        test_hit_set_roundtrip_helper(generator.clone().take(1024 + 6));
-        test_hit_set_roundtrip_helper(generator.clone().skip(10).take(1024 + 6));
     }
 
     #[test]
@@ -618,7 +483,7 @@ mod tests {
             };
             let ast = CacheNode {
                 inner: Box::new(term_query.clone()),
-                state: CacheState::CacheHit(cache_entry),
+                state: CacheState::CacheHit(Box::new(cache_entry)),
             };
             let cache_hit_query: Box<dyn TantivyQuery> = ast
                 .build_tantivy_ast_impl(&BuildTantivyAstContext::for_test(&schema))
@@ -696,7 +561,7 @@ mod tests {
             };
             let ast = CacheNode {
                 inner: Box::new(term_query.clone()),
-                state: CacheState::CacheHit(cache_entry),
+                state: CacheState::CacheHit(Box::new(cache_entry)),
             }
             .into();
 
@@ -728,8 +593,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_cache_filler_preserves_required_terms() {
+    #[tokio::test]
+    async fn test_cache_filler_preserves_required_terms() {
         let mut schema_builder = Schema::builder();
         let body_field = schema_builder.add_text_field("body", TEXT);
         let schema = schema_builder.build();
@@ -744,13 +609,13 @@ mod tests {
         let ast: QueryAst = cache_node.into();
         let cache = Arc::new(Mutex::new(HashMap::new()));
 
-        let cache_miss_ast = PredicateCacheInjector {
+        let mut cache_miss_ast = ast.clone();
+        PredicateCacheInjector {
             cache: cache.clone(),
             split_id: "split".to_string(),
         }
-        .transform(ast.clone())
-        .unwrap()
-        .unwrap();
+        .resolve(&mut cache_miss_ast)
+        .await;
         let (_query, required_terms) = cache_miss_ast
             .build_tantivy_query_and_required_terms(&context)
             .unwrap();
@@ -764,22 +629,23 @@ mod tests {
             query_json,
             SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap(),
             HitSet::empty(),
+            Duration::ZERO,
         );
-        let cache_hit_ast = PredicateCacheInjector {
+        let mut cache_hit_ast = ast;
+        PredicateCacheInjector {
             cache,
             split_id: "split".to_string(),
         }
-        .transform(ast)
-        .unwrap()
-        .unwrap();
+        .resolve(&mut cache_hit_ast)
+        .await;
         let (_query, required_terms) = cache_hit_ast
             .build_tantivy_query_and_required_terms(&context)
             .unwrap();
         assert!(required_terms.is_empty());
     }
 
-    #[test]
-    fn test_cache_preigniter_fills_cache() {
+    #[tokio::test]
+    async fn test_cache_injector_resolves_hits_and_misses() {
         let term_query: QueryAst = TermQuery {
             field: "body".to_string(),
             value: "val".to_string(),
@@ -797,14 +663,17 @@ mod tests {
             query_json,
             SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap(),
             HitSet::empty(),
+            Duration::ZERO,
         );
 
         {
-            let mut pre_igniter = PredicateCacheInjector {
+            let mut filled = ast.clone();
+            PredicateCacheInjector {
                 cache: cache.clone(),
                 split_id: "split_1".to_string(),
-            };
-            let filled = pre_igniter.transform(ast.clone()).unwrap().unwrap();
+            }
+            .resolve(&mut filled)
+            .await;
             assert!(matches!(
                 filled,
                 QueryAst::Cache(CacheNode {
@@ -815,11 +684,13 @@ mod tests {
         }
 
         {
-            let mut pre_igniter = PredicateCacheInjector {
+            let mut filled = ast.clone();
+            PredicateCacheInjector {
                 cache: cache.clone(),
                 split_id: "split_2".to_string(),
-            };
-            let filled = pre_igniter.transform(ast.clone()).unwrap().unwrap();
+            }
+            .resolve(&mut filled)
+            .await;
             assert!(matches!(
                 filled,
                 QueryAst::Cache(CacheNode {
@@ -828,6 +699,169 @@ mod tests {
                 })
             ));
         }
+    }
+
+    #[async_trait::async_trait]
+    impl PredicateCache for tokio::sync::Barrier {
+        async fn get(&self, _: String, _: String) -> Option<(SegmentId, HitSet)> {
+            self.wait().await;
+            None
+        }
+
+        fn put(&self, _: String, _: String, _: SegmentId, _: HitSet, _: Duration) {
+            unreachable!("preparation only reads the cache");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cache_injector_resolves_concurrently() {
+        let cached_all = QueryAst::from(CacheNode::new(QueryAst::MatchAll));
+        let mut ast = QueryAst::from(BoolQuery {
+            must: vec![CacheNode::new(cached_all.clone()).into(), cached_all],
+            ..Default::default()
+        });
+        let injector = PredicateCacheInjector {
+            cache: Arc::new(tokio::sync::Barrier::new(3)),
+            split_id: "split".to_string(),
+        };
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            injector.resolve(&mut ast),
+        )
+        .await
+        .expect("sibling and nested lookups must run concurrently");
+    }
+
+    #[tokio::test]
+    async fn test_cache_injector_wraps_automatons_once() {
+        let cache = Arc::new(Mutex::new(HashMap::new()));
+        let injector = PredicateCacheInjector {
+            cache,
+            split_id: "split".to_string(),
+        };
+        for predicate in [
+            serde_json::json!({"type": "regex", "field": "body", "regex": "a.*"}),
+            serde_json::json!({"type": "wildcard", "field": "body", "value": "a*",
+                "lenient": false, "case_insensitive": false}),
+        ] {
+            let predicate: QueryAst = serde_json::from_value(predicate).unwrap();
+            for mut ast in [predicate.clone(), CacheNode::new(predicate.clone()).into()] {
+                // Repeated resolution also preserves a single wrapper and its cache key.
+                for _ in 0..2 {
+                    injector.resolve(&mut ast).await;
+                    let QueryAst::Cache(node) = &ast else {
+                        panic!("automaton predicate must be wrapped");
+                    };
+                    assert_eq!(*node.inner, predicate);
+                    let CacheState::CacheMiss(filler) = &node.state else {
+                        panic!("empty cache must resolve to a miss");
+                    };
+                    assert_eq!(filler.query, serde_json::to_string(&predicate).unwrap());
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cache_injector_resolves_nested_nodes() {
+        let cached_all = QueryAst::from(CacheNode::new(QueryAst::MatchAll));
+        let mut ast = QueryAst::from(BoolQuery {
+            must: vec![CacheNode::new(cached_all.clone()).into()],
+            should: vec![cached_all.clone().boost(Some(2.0f32.try_into().unwrap()))],
+            must_not: vec![cached_all.clone()],
+            filter: vec![cached_all],
+            ..Default::default()
+        });
+        let query_json = serde_json::to_string(&ast).unwrap();
+        let cache = Arc::new(Mutex::new(HashMap::new()));
+        cache.put(
+            "split".to_string(),
+            serde_json::to_string(&QueryAst::MatchAll).unwrap(),
+            SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap(),
+            HitSet::empty(),
+            Duration::ZERO,
+        );
+        PredicateCacheInjector {
+            cache,
+            split_id: "split".to_string(),
+        }
+        .resolve(&mut ast)
+        .await;
+        assert_eq!(serde_json::to_string(&ast).unwrap(), query_json);
+
+        #[derive(Default)]
+        struct CacheStates {
+            hits: usize,
+            misses: usize,
+        }
+        impl<'a> QueryAstVisitor<'a> for CacheStates {
+            type Err = std::convert::Infallible;
+
+            fn visit_cache_node(&mut self, node: &'a CacheNode) -> Result<(), Self::Err> {
+                match node.state {
+                    CacheState::CacheHit(_) => self.hits += 1,
+                    CacheState::CacheMiss(_) => self.misses += 1,
+                    CacheState::Uninitialized => panic!("cache node was not resolved"),
+                }
+                self.visit(&node.inner)
+            }
+        }
+        let mut states = CacheStates::default();
+        states.visit(&ast).unwrap();
+        assert_eq!(states.hits, 4);
+        assert_eq!(states.misses, 1);
+    }
+
+    #[tokio::test]
+    async fn test_cache_injector_disabled_cache_only_resolves_automatons() {
+        struct DisabledCache;
+        #[async_trait::async_trait]
+        impl PredicateCache for DisabledCache {
+            fn is_enabled(&self) -> bool {
+                false
+            }
+
+            async fn get(&self, _: String, _: String) -> Option<(SegmentId, HitSet)> {
+                panic!("disabled cache must not be queried");
+            }
+
+            fn put(&self, _: String, _: String, _: SegmentId, _: HitSet, _: Duration) {
+                panic!("disabled cache must not be written");
+            }
+        }
+
+        let regex: QueryAst = serde_json::from_value(
+            serde_json::json!({"type": "regex", "field": "body", "regex": "a.*"}),
+        )
+        .unwrap();
+        let mut ast: QueryAst = CacheNode::new(
+            BoolQuery {
+                must: vec![QueryAst::MatchAll, regex.clone()],
+                ..Default::default()
+            }
+            .into(),
+        )
+        .into();
+
+        PredicateCacheInjector {
+            cache: Arc::new(DisabledCache),
+            split_id: "split".to_string(),
+        }
+        .resolve(&mut ast)
+        .await;
+
+        let QueryAst::Cache(outer) = &ast else {
+            panic!("outer cache node must remain");
+        };
+        assert!(matches!(outer.state, CacheState::Uninitialized));
+        let QueryAst::Bool(bool_query) = outer.inner.as_ref() else {
+            panic!("inner bool query must remain");
+        };
+        let QueryAst::Cache(regex_node) = &bool_query.must[1] else {
+            panic!("nested regex must be wrapped");
+        };
+        assert_eq!(*regex_node.inner, regex);
+        assert!(matches!(regex_node.state, CacheState::CacheMiss(_)));
     }
 
     #[test]
@@ -871,7 +905,7 @@ mod tests {
         };
         let ast = CacheNode {
             inner: Box::new(term_query.clone()),
-            state: CacheState::CacheHit(cache_entry),
+            state: CacheState::CacheHit(Box::new(cache_entry)),
         };
         let cache_hit_query: Box<dyn TantivyQuery> = ast
             .build_tantivy_ast_impl(&BuildTantivyAstContext::for_test(&schema))
@@ -881,8 +915,8 @@ mod tests {
         assert_eq!(cache_hit_query.count(&searcher).unwrap(), 500);
     }
 
-    #[test]
-    fn test_cache_miss_returns_correct_docs_and_fill_cache() {
+    #[tokio::test]
+    async fn test_cache_miss_returns_correct_docs_and_fill_cache() {
         let mut schema_builder = Schema::builder();
         let host_field = schema_builder.add_text_field("host", TEXT);
         let schema = schema_builder.build();
@@ -925,6 +959,7 @@ mod tests {
         assert_eq!(cache_hit_query.count(&searcher).unwrap(), 11);
         let mut cache_entry = cache
             .get("split_id".to_string(), "{some_query}".to_string())
+            .await
             .unwrap();
         assert_eq!(cache_entry.0, segment_id);
         let expected = (10 * 11 / 2)..(11 * 12 / 2);
@@ -932,5 +967,47 @@ mod tests {
             assert_eq!(cache_entry.1.doc(), doc_id);
             cache_entry.1.advance();
         }
+
+        // Each fill reports its own CPU cost, including scorer construction.
+        struct CpuWeight(Duration);
+        impl Weight for CpuWeight {
+            fn scorer(&self, _: &SegmentReader, _: Score) -> tantivy::Result<Box<dyn Scorer>> {
+                let start = ThreadTime::now();
+                while start.elapsed() < self.0 {
+                    std::hint::spin_loop();
+                }
+                let mut builder = HitSetBuilder::new();
+                builder.insert(0);
+                Ok(Box::new(builder.build()))
+            }
+
+            fn explain(&self, _: &SegmentReader, _: DocId) -> tantivy::Result<Explanation> {
+                unreachable!()
+            }
+        }
+        let reader = &searcher.segment_readers()[0];
+        for (query, cpu_time) in [
+            ("first", Duration::from_millis(20)),
+            ("second", Duration::from_millis(2)),
+        ] {
+            let weight = CacheFillerWeight {
+                inner_weight: Box::new(CpuWeight(cpu_time)),
+                cache_filler: CacheFiller {
+                    cache: cache.clone(),
+                    split_id: "split".to_string(),
+                    query: query.to_string(),
+                },
+            };
+            let start = ThreadTime::now();
+            assert_eq!(weight.scorer(reader, 1.0).unwrap().doc(), 0);
+            let elapsed = start.elapsed();
+            let entries = cache.lock().unwrap();
+            let (segment, hits, measured) = &entries[&("split".to_string(), query.to_string())];
+            assert_eq!(*segment, reader.segment_id());
+            assert_eq!(hits.size_hint(), 1);
+            assert!(*measured >= cpu_time);
+            assert!(*measured <= elapsed);
+        }
+        assert_eq!(cache.lock().unwrap().len(), 3);
     }
 }

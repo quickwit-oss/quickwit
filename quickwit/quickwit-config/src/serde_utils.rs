@@ -24,11 +24,21 @@ use serde::{Deserialize, Serialize};
 /// like "2 GB" via bytesize's default deserializer.
 pub mod bytesize_serde {
     use bytesize::ByteSize;
-    use serde::{Deserialize, Deserializer, Serializer};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     pub fn serialize<S>(byte_size: &ByteSize, serializer: S) -> Result<S::Ok, S::Error>
     where S: Serializer {
         serializer.serialize_u64(byte_size.as_u64())
+    }
+
+    pub fn serialize_optional<S>(
+        byte_size: &Option<ByteSize>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        byte_size.map(|size| size.as_u64()).serialize(serializer)
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<ByteSize, D::Error>

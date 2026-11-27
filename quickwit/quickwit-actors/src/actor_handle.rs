@@ -266,16 +266,16 @@ impl<A: Actor> ActorHandle<A> {
         let observable_state_or_timeout =
             scheduler_client.timeout(crate::OBSERVE_TIMEOUT, rx).await;
         match observable_state_or_timeout {
-            Ok(Ok(state)) => {
+            Some(Ok(state)) => {
                 let obs_type = ObservationType::Alive;
                 Observation { obs_type, state }
             }
-            Ok(Err(_)) => {
+            Some(Err(_)) => {
                 let state = self.last_observation().clone();
                 let obs_type = ObservationType::PostMortem;
                 Observation { obs_type, state }
             }
-            Err(_) => {
+            None => {
                 let state = self.last_observation().clone();
                 let obs_type = if self.actor_context.state().is_exit() {
                     ObservationType::PostMortem

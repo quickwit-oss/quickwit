@@ -113,6 +113,14 @@ pub(super) static RESET_SHARDS_OPERATIONS_TOTAL: LazyCounter = lazy_counter!(
         subsystem: "ingest",
 );
 
+pub(super) static RESET_SHARDS_UNSAFE_DELETES_TOTAL: LazyCounter = lazy_counter!(
+        name: "reset_shards_unsafe_deletes_total",
+        description: "Total number of shards the control plane advised deleting while they held \
+                      unpublished data or were open and not empty. These shards are closed \
+                      instead of deleted.",
+        subsystem: "ingest",
+);
+
 static SHARDS: LazyGauge = lazy_gauge!(
         name: "shards",
         description: "Number of shards hosted by the ingester.",

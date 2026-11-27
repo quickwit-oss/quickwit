@@ -28,7 +28,6 @@ use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metrics::{gauge, histogram, labels};
-use quickwit_proto::control_plane::AdviseResetShardsResponse;
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardIds, ShardState};
 use quickwit_proto::types::{DocMappingUid, IndexUid, Position, QueueId, SourceId, split_queue_id};
@@ -104,7 +103,10 @@ impl InnerIngesterState {
         self.shards
             .values_mut()
             .filter(|shard| {
-                shard.is_open() && shard.index_uid == *index_uid && shard.source_id == *source_id
+                shard.is_open()
+                    && shard.is_advertisable
+                    && shard.index_uid == *index_uid
+                    && shard.source_id == *source_id
             })
             .map(|shard| (shard.rate_limiter.available_permits(), shard))
             .max_by_key(|(available_permits, _)| *available_permits)
@@ -631,28 +633,6 @@ impl FullyLockedIngesterState<'_> {
         shard.truncation_position_inclusive = truncate_up_to_position_inclusive;
         self.report_wal_usage();
     }
-
-    /// Deletes and truncates the shards as directed by the `advise_reset_shards_response` returned
-    /// by the control plane.
-    pub async fn reset_shards(&mut self, advise_reset_shards_response: &AdviseResetShardsResponse) {
-        info!("resetting shards");
-        for shard_ids in &advise_reset_shards_response.shards_to_delete {
-            for queue_id in shard_ids.queue_ids() {
-                self.delete_shard(&queue_id, "control-plane-reset-shards-rpc")
-                    .await;
-            }
-        }
-        for shard_id_positions in &advise_reset_shards_response.shards_to_truncate {
-            for (queue_id, publish_position) in shard_id_positions.queue_id_positions() {
-                self.truncate_shard(
-                    &queue_id,
-                    publish_position,
-                    "control-plane-reset-shards-rpc",
-                )
-                .await;
-            }
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -869,6 +849,7 @@ mod tests {
     ) {
         let mut shard = IngesterShard::builder(index_uid, source_id, shard_id)
             .with_state(shard_state)
+            .advertisable()
             .build();
         shard.rate_limiter.acquire_bytes(used_capacity);
 

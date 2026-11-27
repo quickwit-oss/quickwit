@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::io::{ErrorKind, SeekFrom};
 use std::ops::Range;
@@ -236,6 +236,19 @@ impl Storage for LocalFileStorage {
         })?
     }
 
+    async fn get_slice_into(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        buffer: &mut [u8],
+    ) -> StorageResult<()> {
+        if buffer.is_empty() {
+            return Ok(());
+        }
+        let _in_flight_guards = object_storage_get_slice_in_flight_guards(buffer.len());
+        crate::default_get_slice_into(self, path, range, buffer).await
+    }
+
     #[tracing::instrument(
         name = "storage.local_file.get_slice_stream",
         skip(self),
@@ -269,7 +282,7 @@ impl Storage for LocalFileStorage {
     #[tracing::instrument(name = "storage.local_file.bulk_delete", level = "debug", skip(self, paths), fields(num_paths = paths.len()))]
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
         let mut successes = Vec::with_capacity(paths.len());
-        let mut failures = HashMap::new();
+        let mut failures = BTreeMap::new();
         let mut parent_paths = BTreeSet::new();
 
         let remove_file_res_futures: Vec<_> = paths

@@ -44,6 +44,7 @@ pub fn create_source_handler(
         .and(warp::body::content_length_limit(1024 * 1024))
         .and(warp::filters::body::bytes())
         .and(with_arg(index_service))
+        .boxed()
         .then(create_source)
         .map(log_failure("failed to create source"))
         .and(extract_format_from_qs())
@@ -51,7 +52,6 @@ pub fn create_source_handler(
         .boxed()
 }
 
-#[allow(clippy::result_large_err)]
 fn check_source_type(source_params: &SourceParams) -> Result<(), IndexServiceError> {
     // Note: This check is performed here instead of the source config serde
     // because many tests use the file source, and can't store that config in
@@ -124,6 +124,7 @@ pub fn update_source_handler(
         .and(warp::body::content_length_limit(1024 * 1024))
         .and(warp::filters::body::bytes())
         .and(with_arg(index_service))
+        .boxed()
         .then(update_source)
         .map(log_failure("failed to update source"))
         .and(extract_format_from_qs())
@@ -286,6 +287,7 @@ pub fn toggle_source_handler(
         .and(warp::put())
         .and(json_body())
         .and(with_arg(metastore))
+        .boxed()
         .then(toggle_source)
         .and(extract_format_from_qs())
         .map(into_rest_api_response)

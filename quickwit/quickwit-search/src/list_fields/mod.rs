@@ -16,6 +16,7 @@ mod cache;
 mod leaf;
 mod patterns;
 mod root;
+mod split_counts;
 
 use std::cmp::Ordering;
 
@@ -28,14 +29,9 @@ use tracing::instrument;
 pub use crate::list_fields::leaf::leaf_list_fields;
 pub use crate::list_fields::root::root_list_fields;
 
-/// QW_FIELD_LIST_SIZE_LIMIT defines the default limit on the number of fields
-/// that can be returned. A request-specific limit takes precedence. When the
-/// limit is exceeded, the fields present in the most splits are retained.
-///
-/// Having many fields can happen when a user is creating fields dynamically in
-/// a JSON type with random field names. Retaining the most common fields bounds
-/// response memory while pruning the long tail of rare fields. The default is
-/// 10,000 because responses with 100,000 fields may exceed gRPC message size limits.
+/// Each leaf stops after collecting this many distinct (name, type) pairs. The root
+/// uses the same limit when selecting entries by their observed split counts.
+/// The default is 10,000 because larger responses may exceed gRPC message size limits.
 fn field_list_size_limit(limit: Option<u32>) -> usize {
     limit.map(|limit| limit as usize).unwrap_or_else(|| {
         quickwit_common::get_from_env_cached!(usize, "QW_FIELD_LIST_SIZE_LIMIT", 10_000, false)

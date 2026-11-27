@@ -358,6 +358,7 @@ impl NodeConfigBuilder {
             .resolve_optional(env_vars)?
             .unwrap_or_else(|| default_index_root_uri(&data_dir_uri));
 
+        self.metastore_configs.validate()?;
         self.storage_configs.validate()?;
         self.storage_configs.apply_flavors();
         self.ingest_api_config.validate()?;
@@ -904,14 +905,16 @@ mod tests {
             SearcherConfig {
                 aggregation_memory_limit: ByteSize::gb(1),
                 aggregation_bucket_limit: 500_000,
-                fast_field_cache: CacheConfig::default_with_capacity(ByteSize::gb(10)),
-                split_footer_cache: CacheConfig::default_with_capacity(ByteSize::gb(1)),
-                partial_request_cache: CacheConfig::default_with_capacity(ByteSize::mb(64)),
-                predicate_cache: CacheConfig::default_with_capacity(ByteSize::mb(256)),
+                legacy_fast_field_cache: Some(ByteSize::gb(10).into()),
+                legacy_split_footer_cache: Some(ByteSize::gb(1).into()),
+                partial_request_cache: CacheConfig::default_with_memory_capacity(ByteSize::mb(64)),
+                predicate_cache: CacheConfig::default_with_memory_capacity(ByteSize::mb(256)),
                 max_num_concurrent_split_searches: 150,
                 max_splits_per_search: None,
                 _max_num_concurrent_split_streams: Some(serde::de::IgnoredAny),
                 split_cache: None,
+                storage_cache: None,
+                storage_cache_directory: None,
                 request_timeout_secs: NonZeroU64::new(30).unwrap(),
                 leaf_request_timeout_secs: NonZeroU64::new(30).unwrap(),
                 storage_timeout_policy: Some(crate::StorageTimeoutPolicy {
@@ -922,6 +925,7 @@ mod tests {
                 use_metastore_read_replica: true,
                 warmup_memory_budget: ByteSize::gb(100),
                 warmup_single_split_initial_allocation: ByteSize::mb(300),
+                warmup_single_split_max_allocation: None,
                 lambda: Some(LambdaConfig {
                     function_name: "quickwit-lambda-leaf-search".to_string(),
                     max_splits_per_invocation: NonZeroUsize::new(10).unwrap(),
@@ -1329,6 +1333,55 @@ mod tests {
         load_node_config_with_env(ConfigFormat::Toml, file_content.as_bytes(), &env_vars, None)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_node_config_rejects_min_connections_greater_than_max_connections() {
+        let config_yaml = r#"
+            version: 0.8
+            metastore:
+              postgres:
+                min_connections: 11
+                max_connections: 10
+        "#;
+        let error = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            &Default::default(),
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("`min_connections` must be less than or equal to `max_connections`"),
+            "unexpected error: {error:#}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_node_config_rejects_invalid_acquire_connection_timeout() {
+        let config_yaml = r#"
+            version: 0.8
+            metastore:
+              postgres:
+                acquire_connection_timeout: invalid
+        "#;
+        let error = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            &Default::default(),
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("failed to parse `acquire_connection_timeout` value `invalid`"),
+            "unexpected error: {error:#}"
+        );
     }
 
     #[tokio::test]
