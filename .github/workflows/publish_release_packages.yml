@@ -9,6 +9,37 @@ permissions:
   contents: read
 
 jobs:
+  build-ui:
+    name: Build UI
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: quickwit/quickwit-ui/node_modules
+          key: ${{ runner.os }}-ui-node-modules-${{ hashFiles('quickwit/quickwit-ui/yarn.lock') }}
+      - name: Install JS dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: yarn --cwd quickwit-ui install --frozen-lockfile
+        working-directory: ./quickwit
+      - name: Build UI
+        run: NODE_ENV=production yarn --cwd quickwit-ui build
+        working-directory: ./quickwit
+      - name: Upload UI build artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: quickwit-ui-build
+          path: quickwit/quickwit-ui/build
+          include-hidden-files: true
+          retention-days: 1
+
   build-lambda:
     name: Build Lambda ARM64
     runs-on: ubuntu-24.04
@@ -27,7 +58,9 @@ jobs:
         run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
 
       - name: Install cross
-        run: cargo install cross
+        uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68
+        with:
+          tool: cross
 
       - name: Retrieve and export commit date, hash, and tags
         run: |
@@ -64,7 +97,7 @@ jobs:
   build-macos-binaries:
     name: Build ${{ matrix.target }}
     runs-on: macos-26
-    needs: [build-lambda]
+    needs: [build-lambda, build-ui]
     permissions:
       contents: write
       actions: write
@@ -76,6 +109,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Extract asset version
         run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+      - name: Download UI build artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: quickwit-ui-build
+          path: quickwit/quickwit-ui/build
       - name: Download Lambda artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -95,7 +133,7 @@ jobs:
         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
     name: Build ${{ matrix.target }}
     runs-on: ubuntu-24.04
-    needs: [build-lambda]
+    needs: [build-lambda, build-ui]
     permissions:
       contents: write
       actions: write
@@ -103,6 +141,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Extract asset version
         run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+      - name: Download UI build artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: quickwit-ui-build
+          path: quickwit/quickwit-ui/build
       - name: Download Lambda artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
