@@ -550,7 +550,7 @@ impl Actor for DocProcessor {
 
     #[inline]
     fn yield_after_each_message(&self) -> bool {
-        false
+        true
     }
 
     async fn finalize(
