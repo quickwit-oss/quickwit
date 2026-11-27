@@ -358,6 +358,40 @@ pub struct SplitResourceStats {
     /// search.
     #[prost(uint64, tag = "9")]
     pub cpu_search_microsecs: u64,
+    /// `download_num_bytes` broken down by the type of index data downloaded.
+    #[prost(message, optional, tag = "10")]
+    pub download_bytes_by_component: ::core::option::Option<DownloadBytesByComponent>,
+}
+/// Bytes downloaded from object storage, broken down by split data type.
+///
+/// Each counted read is attributed as a whole to the bundled file (or footer)
+/// containing it, at the same place `download_num_bytes` is counted: the fields
+/// sum to `SplitResourceStats.download_num_bytes`. Reads served by a cache are
+/// not downloads and are not counted.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DownloadBytesByComponent {
+    /// Term dictionaries (`.term`).
+    #[prost(uint64, tag = "1")]
+    pub term_dict_num_bytes: u64,
+    /// Posting lists (`.idx`).
+    #[prost(uint64, tag = "2")]
+    pub postings_num_bytes: u64,
+    /// Term positions (`.pos`).
+    #[prost(uint64, tag = "3")]
+    pub positions_num_bytes: u64,
+    /// Fast fields (`.fast`).
+    #[prost(uint64, tag = "4")]
+    pub fast_fields_num_bytes: u64,
+    /// Field norms (`.fieldnorm`).
+    #[prost(uint64, tag = "5")]
+    pub fieldnorms_num_bytes: u64,
+    /// Split footer: bundle metadata, hotcache and trailer.
+    #[prost(uint64, tag = "6")]
+    pub footer_num_bytes: u64,
+    /// Everything else, expected to be zero on the leaf search path
+    #[prost(uint64, tag = "7")]
+    pub other_num_bytes: u64,
 }
 /// Resource statistics for a single leaf-search call (over one or more splits).
 /// If the configuration allows it, leaf nodes can offload part of their computation to
