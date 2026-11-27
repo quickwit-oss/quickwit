@@ -36,6 +36,7 @@ use tonic_health::pb::FILE_DESCRIPTOR_SET as HEALTH_FILE_DESCRIPTOR_SET;
 use tonic_health::pb::health_server::{Health, HealthServer};
 use tonic_reflection::pb::v1::FILE_DESCRIPTOR_SET as REFLECTION_FILE_DESCRIPTOR_SET;
 use tonic_reflection::server::v1::{ServerReflection, ServerReflectionServer};
+use tower_http::trace::TraceLayer;
 use tracing::*;
 
 use crate::developer_api::DeveloperApiServer;
@@ -57,7 +58,7 @@ pub(crate) async fn start_grpc_server(
     // with a `TlsAcceptor` whose certificate can be hot-reloaded. This is deliberately not using
     // tonic's builtin `Server::tls_config`, which bakes the certificate in at startup and offers
     // no way to reload it without restarting the process.
-    let mut server = Server::builder();
+    let mut server = Server::builder().layer(TraceLayer::new_for_grpc());
 
     if let Some(max_connection_age) = &grpc_config.max_connection_age {
         server = server.max_connection_age(**max_connection_age);
