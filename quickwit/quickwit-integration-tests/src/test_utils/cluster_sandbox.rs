@@ -310,6 +310,7 @@ impl ClusterSandbox {
             let tcp_listener_resolver = self.tcp_listener_resolver.clone();
             async move {
                 let result = serve_quickwit(
+                    quickwit_serve::BuildInfo::for_tests(),
                     config,
                     runtimes_config,
                     metastore_resolver,

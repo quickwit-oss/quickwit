@@ -113,9 +113,13 @@ impl RunCliCommand {
         })
     }
 
-    pub async fn execute(&self, env_filter_reload_fn: EnvFilterReloadFn) -> anyhow::Result<()> {
+    pub async fn execute(
+        &self,
+        build_info: &'static BuildInfo,
+        env_filter_reload_fn: EnvFilterReloadFn,
+    ) -> anyhow::Result<()> {
         debug!(args = ?self, "run-service");
-        let version_text = BuildInfo::get_version_text();
+        let version_text = build_info.get_version_text();
         info!("quickwit version: {version_text}");
         if let Some(services) = &self.services {
             info!(services = %services.iter().join(", "), "setting services from override");
@@ -133,6 +137,7 @@ impl RunCliCommand {
         // Reload TLS certificates on SIGHUP for the lifetime of the process.
         tokio::spawn(listen_sighup());
         serve_quickwit(
+            build_info,
             node_config,
             runtimes_config,
             metastore_resolver,

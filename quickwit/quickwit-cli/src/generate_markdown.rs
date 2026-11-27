@@ -12,14 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod build_info;
+
 use clap::Command;
 use quickwit_cli::cli::build_cli;
-use quickwit_serve::BuildInfo;
 use toml::Value;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let version_text = BuildInfo::get_version_text();
+    let version_text = build_info::BUILD_INFO.get_version_text();
     let app = build_cli()
         .version(version_text)
         .disable_help_subcommand(true);

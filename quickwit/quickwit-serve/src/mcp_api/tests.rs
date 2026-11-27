@@ -35,6 +35,7 @@ pub(super) fn request() -> RequestBuilder {
 
 fn routes(origins: &[&str]) -> impl Filter<Extract = (Response,), Error = warp::Rejection> + Clone {
     mcp_api_handlers(
+        crate::BuildInfo::for_tests(),
         Arc::new(MockSearchService::new()),
         MetastoreServiceClient::mocked(),
         origins.iter().map(|origin| origin.to_string()).collect(),
@@ -60,6 +61,10 @@ async fn test_mcp_initialize_and_discovery() {
         assert!(!response.headers().contains_key("mcp-session-id"));
         let body: Value = serde_json::from_slice(response.body()).unwrap();
         assert_eq!(body["id"], "init");
+        assert_eq!(
+            body["result"]["serverInfo"]["version"],
+            crate::BuildInfo::for_tests().cargo_pkg_version
+        );
         assert_eq!(
             body["result"]["protocolVersion"],
             protocol::PROTOCOL_VERSION

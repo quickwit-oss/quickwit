@@ -176,6 +176,7 @@ static GRPC_INDEXING_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
 static GRPC_COMPACTION_PLANNER_SERVICE_TIMEOUT: Duration = Duration::from_secs(1);
 
 struct QuickwitServices {
+    pub build_info: &'static BuildInfo,
     pub node_config: Arc<NodeConfig>,
     pub cluster: Cluster,
     /// Locally served metastore gRPC service, either the primary metastore or a read-only replica.
@@ -568,7 +569,13 @@ async fn shutdown_signal_handler(
     actor_exit_statuses
 }
 
+/// Starts the node with build metadata owned by the calling executable.
+///
+/// The metadata must outlive the server and its spawned tasks. Executables should
+/// embed it in a static; in-process tests can use `BuildInfo::for_tests()` with the
+/// `testsuite` feature enabled.
 pub async fn serve_quickwit(
+    build_info: &'static BuildInfo,
     node_config: NodeConfig,
     runtimes_config: RuntimesConfig,
     metastore_resolver: MetastoreResolver,
@@ -916,6 +923,7 @@ pub async fn serve_quickwit(
     let ingester_decommission_timeout = node_config.ingest_api_config.decommission_timeout();
     let compactor_decommission_timeout = node_config.compactor_config.decommission_timeout();
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
+        build_info,
         node_config: Arc::new(node_config),
         cluster: cluster.clone(),
         metastore_server_opt: local_metastore_server.client().cloned(),
