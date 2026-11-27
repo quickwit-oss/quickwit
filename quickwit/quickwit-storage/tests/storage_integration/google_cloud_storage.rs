@@ -16,7 +16,6 @@
 // to Fake GCS Server (the emulated google cloud storage environment)
 
 #[cfg(all(feature = "integration-testsuite", feature = "gcs"))]
-#[cfg_attr(not(feature = "ci-test"), ignore)]
 mod gcp_storage_test_suite {
     use std::str::FromStr;
 
@@ -58,6 +57,7 @@ mod gcp_storage_test_suite {
     }
 
     #[tokio::test]
+    #[cfg_attr(not(feature = "ci-test"), ignore)]
     async fn google_cloud_storage_test_suite() -> anyhow::Result<()> {
         setup_logging_for_tests();
 

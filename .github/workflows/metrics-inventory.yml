@@ -15,7 +15,7 @@ permissions:
 env:
   CARGO_INCREMENTAL: 0
   CARGO_PROFILE_DEV_DEBUG: 0
-  RUSTFLAGS: --cfg tokio_unstable
+  RUSTFLAGS: --cfg tokio_unstable -C link-arg=-fuse-ld=mold
   INVENTORY: quickwit/quickwit-metrics-inventory/metrics.yaml
 
 concurrency:
@@ -53,7 +53,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || steps.modified.outputs.metrics == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get -y install protobuf-compiler libcurl4-openssl-dev
+          sudo apt-get -y --no-install-recommends install protobuf-compiler libcurl4-openssl-dev mold
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         if: github.event_name == 'workflow_dispatch' || steps.modified.outputs.metrics == 'true'
         with:
@@ -63,6 +63,7 @@ jobs:
         with:
           workspaces: quickwit -> target
           shared-key: metrics-inventory
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Generate inventory
         if: github.event_name == 'workflow_dispatch' || steps.modified.outputs.metrics == 'true'
         run: bash quickwit-metrics-inventory/scripts/run.sh > "$RUNNER_TEMP/metrics-inventory.yaml"
