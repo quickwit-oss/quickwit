@@ -35,6 +35,8 @@ Open-source search engine for observability (logs, traces, and soon metrics!).
 - [Distributed tracing](https://quickwit.io/docs/distributed-tracing/overview)
 - Metrics support is on the roadmap
 
+> **Note:** Since Quickwit 0.6, the dynamic mapping default tokenizer changed from `default` to `raw`. Update examples/tutorials (e.g. [ingest API](https://quickwit.io/docs/ingest-data/ingest-api)) accordingly.
+
 ### 🚀 Quickstart
 
 - [Search and analytics on Stack Overflow dataset](https://quickwit.io/docs/get-started/quickstart)
