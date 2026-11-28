@@ -14,23 +14,34 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { act } from "react";
+import { createMemoryRouter, RouterProvider } from "react-router";
+import SideBar from "../components/SideBar";
+import { LocalStorageProvider } from "../providers/LocalStorageProvider";
 import { Client } from "../services/client";
+import { EMPTY_SEARCH_REQUEST } from "../utils/models";
 import SearchView from "./SearchView";
 
 jest.mock("../services/client");
-const mockedUsedNavigate = jest.fn();
-let mockSearchParams;
-jest.mock("react-router", () => ({
-  ...jest.requireActual("react-router"),
-  useLocation: () => ({
-    pathname: "/search",
-    search: mockSearchParams,
-  }),
-  useNavigate: () => mockedUsedNavigate,
-}));
+const searchUrl = "/search?index_id=my-new-fresh-index-id";
+
+function renderSearch(initialEntry = searchUrl) {
+  const router = createMemoryRouter(
+    [
+      { path: "/search", element: <SearchView /> },
+      { path: "/indexes", element: <SideBar /> },
+    ],
+    { initialEntries: [initialEntry] },
+  );
+  const view = render(
+    <LocalStorageProvider>
+      <RouterProvider router={router} />
+    </LocalStorageProvider>,
+  );
+  return { ...view, router };
+}
 
 beforeEach(() => {
-  mockSearchParams = "?index_id=my-new-fresh-index-id";
+  localStorage.clear();
   const index = {
     metadata: {
       index_config: {
@@ -74,7 +85,7 @@ beforeEach(() => {
 
 test("renders SearchView", async () => {
   await act(async () => {
-    render(<SearchView />);
+    renderSearch();
   });
 
   await waitFor(() =>
@@ -83,7 +94,7 @@ test("renders SearchView", async () => {
 });
 
 test("changes the hit limit and keeps it when switching search modes", async () => {
-  render(<SearchView />);
+  const { router } = renderSearch();
   await screen.findByText(/This is an info log/);
 
   const maxHits = screen.getByRole("combobox", { name: "Max hits" });
@@ -99,9 +110,12 @@ test("changes the hit limit and keeps it when switching search modes", async () 
     expect.objectContaining({ maxHits: 50 }),
     null,
   );
-  expect(mockedUsedNavigate).toHaveBeenLastCalledWith(
-    expect.stringContaining("max_hits=50"),
-  );
+  expect(
+    new URLSearchParams(router.state.location.search).get("ui_max_hits"),
+  ).toBe("50");
+  expect(
+    screen.getByRole("button", { name: /[?&]max_hits=50/ }),
+  ).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("tab", { name: "Aggregation" }));
   await screen.findByText("no result to display");
@@ -119,21 +133,72 @@ test("changes the hit limit and keeps it when switching search modes", async () 
 });
 
 test.each([
-  ["100", 100],
-  ["10", 20],
-  ["0", 20],
-  ["1000", 20],
-  ["50oops", 20],
-])("restores max_hits=%s from a search URL as %i", async (value, expected) => {
-  mockSearchParams += `&max_hits=${value}`;
-  render(<SearchView />);
-  await screen.findByText(/This is an info log/);
+  ["ui_max_hits=100", 100],
+  ["max_hits=100", 20],
+  ["max_hits=10", 20],
+  ["ui_max_hits=0", 20],
+  ["ui_max_hits=1000", 20],
+  ["ui_max_hits=50oops", 20],
+])(
+  "uses %s from a search URL as a hit limit of %i",
+  async (param, expected) => {
+    renderSearch(`${searchUrl}&${param}`);
+    await screen.findByText(/This is an info log/);
 
-  expect(Client.prototype.search).toHaveBeenLastCalledWith(
-    expect.objectContaining({ maxHits: expected }),
-    null,
+    expect(Client.prototype.search).toHaveBeenLastCalledWith(
+      expect.objectContaining({ maxHits: expected }),
+      null,
+    );
+    expect(screen.getByRole("combobox", { name: "Max hits" })).toHaveValue(
+      String(expected),
+    );
+  },
+);
+
+test("reruns searches with the hit limits from Back and Forward", async () => {
+  Client.prototype.search.mockImplementation(async ({ maxHits }) => ({
+    num_hits: 1,
+    hits: [{ body: `Result for limit ${maxHits}` }],
+    elapsed_time_micros: 10,
+    errors: [],
+  }));
+
+  const { router } = renderSearch();
+  await screen.findByText(/Result for limit 20/);
+  fireEvent.change(screen.getByRole("combobox", { name: "Max hits" }), {
+    target: { value: "50" },
+  });
+  await screen.findByText(/Result for limit 50/);
+
+  await act(() => router.navigate(-1));
+  expect(await screen.findByText(/Result for limit 20/)).toBeInTheDocument();
+  expect(screen.getByRole("combobox", { name: "Max hits" })).toHaveValue("20");
+
+  await act(() => router.navigate(1));
+  expect(await screen.findByText(/Result for limit 50/)).toBeInTheDocument();
+  expect(screen.getByRole("combobox", { name: "Max hits" })).toHaveValue("50");
+});
+
+test("opens a legacy last search at 20 hits and saves new selections", async () => {
+  localStorage.setItem(
+    "lastSearchRequest",
+    JSON.stringify({
+      ...EMPTY_SEARCH_REQUEST,
+      indexId: "my-new-fresh-index-id",
+      maxHits: 100,
+    }),
   );
-  expect(screen.getByRole("combobox", { name: "Max hits" })).toHaveValue(
-    String(expected),
-  );
+  const { unmount } = renderSearch("/indexes");
+  fireEvent.click(screen.getByRole("link", { name: "Query editor" }));
+  await screen.findByText(/This is an info log/);
+  const maxHits = screen.getByRole("combobox", { name: "Max hits" });
+  expect(maxHits).toHaveValue("20");
+  fireEvent.change(maxHits, { target: { value: "100" } });
+  await screen.findByText(/This is an info log/);
+  unmount();
+
+  renderSearch("/indexes");
+  fireEvent.click(screen.getByRole("link", { name: "Query editor" }));
+  await screen.findByText(/This is an info log/);
+  expect(screen.getByRole("combobox", { name: "Max hits" })).toHaveValue("100");
 });

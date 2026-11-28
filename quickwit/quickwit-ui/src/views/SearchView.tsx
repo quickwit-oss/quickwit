@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useLocation, useNavigate, useNavigationType } from "react-router";
 import ApiUrlFooter from "../components/ApiUrlFooter";
 import { IndexSideBar } from "../components/IndexSideBar";
 import {
@@ -63,6 +63,8 @@ function updateSearchRequestWithIndex(
 function SearchView() {
   const location = useLocation();
   const navigate = useNavigate();
+  const navigationType = useNavigationType();
+  const previousLocationKey = useRef(location.key);
   const [index, setIndex] = useState<null | Index>(null);
   const prevIndexIdRef = useRef<string | null>(null);
   const [searchResponse, setSearchResponse] = useState<null | SearchResponse>(
@@ -75,31 +77,44 @@ function SearchView() {
       ? parseSearchUrl(location.search)
       : EMPTY_SEARCH_REQUEST,
   );
+  const pendingUrlSearch = useRef(searchRequest.indexId ? searchRequest : null);
+  const searchSequence = useRef(0);
+  const requestedIndexId = searchRequest.indexId;
   const updateLastSearchRequest = useLocalStorage().updateLastSearchRequest;
   const quickwitClient = useMemo(() => new Client(), []);
 
-  const runSearch = (updatedSearchRequest: SearchRequest) => {
-    if (!updatedSearchRequest || !updatedSearchRequest.indexId) {
+  const runSearch = (request: SearchRequest, updateUrl = true) => {
+    if (!request.indexId) {
       return;
     }
 
+    const updatedSearchRequest = { ...request };
+    const sequence = ++searchSequence.current;
     console.log("Run search...", updatedSearchRequest);
     updateSearchRequestWithIndex(index, updatedSearchRequest);
     setSearchRequest(updatedSearchRequest);
     setQueryRunning(true);
     setSearchError(null);
-    navigate(
-      "/search?" + toUrlSearchRequestParams(updatedSearchRequest).toString(),
-    );
+    if (updateUrl) {
+      navigate(
+        "/search?" + toUrlSearchRequestParams(updatedSearchRequest).toString(),
+      );
+    }
     const timestamp_field =
       index?.metadata.index_config.doc_mapping.timestamp_field || null;
     quickwitClient.search(updatedSearchRequest, timestamp_field).then(
       (response) => {
+        if (sequence !== searchSequence.current) {
+          return;
+        }
         updateLastSearchRequest(updatedSearchRequest);
         setSearchResponse(response);
         setQueryRunning(false);
       },
       (error) => {
+        if (sequence !== searchSequence.current) {
+          return;
+        }
         setQueryRunning(false);
         setSearchError(error);
         console.error("Error when running search request", error);
@@ -119,46 +134,98 @@ function SearchView() {
   const onSearchRequestUpdate = (searchRequest: SearchRequest) => {
     setSearchRequest(searchRequest);
   };
+
   useEffect(() => {
-    if (prevIndexIdRef.current !== index?.metadata.index_config.index_id) {
+    if (location.key === previousLocationKey.current) {
+      return;
+    }
+    previousLocationKey.current = location.key;
+    if (navigationType !== "POP") {
+      return;
+    }
+
+    const request = parseSearchUrl(location.search);
+    pendingUrlSearch.current = null;
+    if (
+      request.indexId &&
+      request.indexId === index?.metadata.index_config.index_id
+    ) {
+      runSearch(request, false);
+      return;
+    }
+
+    // The previous search can finish while the restored index is loading.
+    searchSequence.current += 1;
+    setSearchResponse(null);
+    setSearchError(null);
+    setSearchRequest(request);
+    setQueryRunning(Boolean(request.indexId));
+    if (request.indexId) {
+      pendingUrlSearch.current = request;
+    } else {
+      setIndex(null);
+    }
+  }, [location.key]);
+
+  useEffect(() => {
+    const indexId = index?.metadata.index_config.index_id ?? null;
+    if (prevIndexIdRef.current !== indexId) {
       setSearchResponse(null);
     }
-    // Run search only if this is the first time we set the index.
-    if (prevIndexIdRef.current === null) {
+    if (indexId && pendingUrlSearch.current?.indexId === indexId) {
+      const request = pendingUrlSearch.current;
+      pendingUrlSearch.current = null;
+      runSearch(request, false);
+    } else if (
+      indexId &&
+      prevIndexIdRef.current === null &&
+      indexId === requestedIndexId
+    ) {
       runSearch(searchRequest);
     }
-    prevIndexIdRef.current =
-      index === null ? null : index.metadata.index_config.index_id;
+    prevIndexIdRef.current = indexId;
   }, [index]);
   useEffect(() => {
-    if (!searchRequest.indexId) {
+    if (!requestedIndexId) {
       return;
     }
 
     if (
       index !== null &&
-      index.metadata.index_config.index_id === searchRequest.indexId
+      index.metadata.index_config.index_id === requestedIndexId
     ) {
       return;
     }
     // If index id is changing, it's better to reset timestamps as the time unit may be different
     // between indexes.
     if (
+      !pendingUrlSearch.current &&
       prevIndexIdRef.current !== null &&
       prevIndexIdRef.current !== index?.metadata.index_config.index_id
     ) {
       searchRequest.startTimestamp = null;
       searchRequest.endTimestamp = null;
     }
-    quickwitClient.getIndex(searchRequest.indexId).then((fetchedIndex) => {
-      setIndex(fetchedIndex);
-    });
-  }, [searchRequest, quickwitClient, index]);
+    let active = true;
+    quickwitClient.getIndex(requestedIndexId).then(
+      (fetchedIndex) => {
+        if (active) {
+          setIndex(fetchedIndex);
+        }
+      },
+      (error) => {
+        if (active) {
+          setQueryRunning(false);
+          setSearchError(error);
+        }
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [requestedIndexId, quickwitClient, index]);
 
-  const searchParams = toUrlSearchRequestParams(searchRequest);
-  // `toUrlSearchRequestParams` is used for the UI urls. We need to remove the `indexId` request parameter to generate
-  // the correct API url, this is the only difference.
-  searchParams.delete("index_id");
+  const searchParams = toUrlSearchRequestParams(searchRequest, "api");
   return (
     <ViewUnderAppBarBox sx={{ flexDirection: "row" }}>
       <IndexSideBar
