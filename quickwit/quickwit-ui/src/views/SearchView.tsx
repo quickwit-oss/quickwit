@@ -94,26 +94,34 @@ function SearchView() {
         : null;
   };
 
-  const runSearch = (request: SearchRequest, updateUrl = true) => {
+  const runSearch = (
+    request: SearchRequest,
+    updateUrl: boolean | "replace" = true,
+  ) => {
     if (!request.indexId) {
       return;
     }
 
     const updatedSearchRequest = { ...request };
     updatePendingUrlSearch(updatedSearchRequest);
+    const activeIndex =
+      index?.metadata.index_config.index_id === updatedSearchRequest.indexId
+        ? index
+        : null;
     const sequence = ++searchSequence.current;
     console.log("Run search...", updatedSearchRequest);
-    updateSearchRequestWithIndex(index, updatedSearchRequest);
+    updateSearchRequestWithIndex(activeIndex, updatedSearchRequest);
     setSearchRequest(updatedSearchRequest);
     setQueryRunning(true);
     setSearchError(null);
     if (updateUrl) {
       navigate(
         "/search?" + toUrlSearchRequestParams(updatedSearchRequest).toString(),
+        { replace: updateUrl === "replace" },
       );
     }
     const timestamp_field =
-      index?.metadata.index_config.doc_mapping.timestamp_field || null;
+      activeIndex?.metadata.index_config.doc_mapping.timestamp_field || null;
     quickwitClient.search(updatedSearchRequest, timestamp_field).then(
       (response) => {
         if (sequence !== searchSequence.current) {
@@ -134,6 +142,8 @@ function SearchView() {
     );
   };
   const onIndexMetadataUpdate = (indexMetadata: IndexMetadata | null) => {
+    pendingUrlSearch.current = null;
+    setQueryRunning(false);
     setSearchRequest((previousRequest) => {
       updateSearchRequestWithIndex(index, previousRequest);
       return {
@@ -188,7 +198,11 @@ function SearchView() {
     if (indexId && pendingUrlSearch.current?.indexId === indexId) {
       const request = pendingUrlSearch.current;
       pendingUrlSearch.current = null;
-      runSearch(request, false);
+      const urlParams = toUrlSearchRequestParams(
+        parseSearchUrl(location.search),
+      ).toString();
+      const requestParams = toUrlSearchRequestParams(request).toString();
+      runSearch(request, requestParams !== urlParams ? "replace" : false);
     } else if (
       indexId &&
       prevIndexIdRef.current === null &&

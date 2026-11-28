@@ -22,7 +22,10 @@ export function QueryEditorActionBar(props: SearchComponentProps) {
   const timestamp_field_name =
     props.index?.metadata.index_config.doc_mapping.timestamp_field;
   const shouldDisplayTimeRangeSelect = timestamp_field_name ?? false;
-  const searchDisabled = props.queryRunning || !props.searchRequest.indexId;
+  const searchDisabled =
+    props.queryRunning ||
+    !props.searchRequest.indexId ||
+    props.index?.metadata.index_config.index_id !== props.searchRequest.indexId;
 
   const handleChange = (_event: React.SyntheticEvent, newTab: number) => {
     const updatedSearchRequest = {

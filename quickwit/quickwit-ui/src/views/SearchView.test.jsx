@@ -240,7 +240,7 @@ test("opens a legacy last search at 20 hits and saves new selections", async () 
   expect(screen.getByRole("combobox", { name: "Max hits" })).toHaveValue("100");
 });
 
-test("keeps an explicit hit limit when index metadata loads slowly", async () => {
+test("disables the hit limit selector until index metadata loads", async () => {
   let resolveIndex;
   const index = {
     metadata: {
@@ -274,34 +274,21 @@ test("keeps an explicit hit limit when index metadata loads slowly", async () =>
   }));
 
   const { router } = renderSearch();
-  fireEvent.change(screen.getByRole("combobox", { name: "Max hits" }), {
-    target: { value: "50" },
-  });
-  await waitFor(() =>
-    expect(Client.prototype.search).toHaveBeenCalledWith(
-      expect.objectContaining({ maxHits: 50 }),
-      null,
-    ),
-  );
+  const maxHits = screen.getByRole("combobox", { name: "Max hits" });
+  expect(maxHits).toBeDisabled();
 
   await act(async () => {
     resolveIndex(index);
   });
 
+  expect(await screen.findByText(/Result for limit 20/)).toBeInTheDocument();
+  expect(maxHits).toBeEnabled();
+
+  fireEvent.change(maxHits, { target: { value: "50" } });
   expect(await screen.findByText(/Result for limit 50/)).toBeInTheDocument();
-  await waitFor(() => expect(Client.prototype.search).toHaveBeenCalledTimes(2));
-  expect(Client.prototype.search).toHaveBeenLastCalledWith(
-    expect.objectContaining({ maxHits: 50 }),
-    null,
-  );
-  expect(screen.getByRole("combobox", { name: "Max hits" })).toHaveValue("50");
   expect(
     new URLSearchParams(router.state.location.search).get("ui_max_hits"),
   ).toBe("50");
-
-  await act(() => router.navigate(-1));
-  expect(await screen.findByText(/Result for limit 20/)).toBeInTheDocument();
-  expect(screen.getByRole("combobox", { name: "Max hits" })).toHaveValue("20");
 });
 
 test("keeps the selected hit limit when running search via editor shortcut", async () => {
@@ -364,7 +351,7 @@ test("keeps query edits made while index metadata loads", async () => {
       }),
   );
 
-  renderSearch();
+  const { router } = renderSearch();
   expect(mockEditorOnChange).not.toBeNull();
   await act(async () => {
     mockEditorOnChange("level:ERROR");
@@ -379,6 +366,9 @@ test("keeps query edits made while index metadata loads", async () => {
       expect.objectContaining({ query: "level:ERROR" }),
       null,
     ),
+  );
+  expect(new URLSearchParams(router.state.location.search).get("query")).toBe(
+    "level:ERROR",
   );
 });
 
@@ -480,4 +470,79 @@ test("restores aggregation controls when navigating browser history", async () =
       null,
     ),
   );
+});
+
+test("cancels a pending history restore when another index is selected", async () => {
+  const makeIndex = (id) => ({
+    metadata: {
+      index_config: {
+        index_id: id,
+        index_uri: `${id}-uri`,
+        indexing_settings: {},
+        doc_mapping: { field_mappings: [] },
+      },
+    },
+    splits: [],
+  });
+  const indexA = makeIndex("index-a");
+  const indexB = makeIndex("index-b");
+  const indexC = makeIndex("index-c");
+
+  let resolveB;
+  let resolveC;
+  Client.prototype.listIndexes.mockImplementation(() =>
+    Promise.resolve([indexA.metadata, indexB.metadata, indexC.metadata]),
+  );
+  Client.prototype.getIndex.mockImplementation((id) => {
+    if (id === "index-a") {
+      return Promise.resolve(indexA);
+    }
+    if (id === "index-b") {
+      return new Promise((resolve) => {
+        resolveB = resolve;
+      });
+    }
+    if (id === "index-c") {
+      return new Promise((resolve) => {
+        resolveC = resolve;
+      });
+    }
+    return Promise.reject(new Error(`Unexpected index ${id}`));
+  });
+
+  const router = createMemoryRouter([{ path: "/search", element: <SearchView /> }], {
+    initialEntries: [
+      "/search?index_id=index-b",
+      "/search?index_id=index-a",
+    ],
+    initialIndex: 1,
+  });
+  render(
+    <LocalStorageProvider>
+      <RouterProvider router={router} />
+    </LocalStorageProvider>,
+  );
+
+  await screen.findByText(/This is an info log/);
+  expect(screen.getByRole("combobox", { name: "Max hits" })).toBeEnabled();
+
+  // Navigate Back to index-b (metadata stays pending).
+  await act(() => router.navigate(-1));
+  expect(screen.getByRole("combobox", { name: "Max hits" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Run" })).toBeDisabled();
+
+  // Select index-c while index-b is still loading.
+  fireEvent.click(screen.getByRole("button", { name: "Open" }));
+  fireEvent.click(await screen.findByRole("option", { name: "index-c" }));
+  expect(screen.getByRole("combobox", { name: "Max hits" })).toBeDisabled();
+
+  await act(async () => {
+    resolveC(indexC);
+  });
+
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Run" })).toBeEnabled(),
+  );
+  expect(screen.getByRole("combobox", { name: "Max hits" })).toBeEnabled();
+  expect(resolveB).toBeDefined();
 });
