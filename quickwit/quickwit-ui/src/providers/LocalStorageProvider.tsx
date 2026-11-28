@@ -19,7 +19,12 @@ import {
   useEffect,
   useState,
 } from "react";
-import { EMPTY_SEARCH_REQUEST, SearchRequest } from "../utils/models";
+import {
+  DEFAULT_MAX_HITS,
+  EMPTY_SEARCH_REQUEST,
+  MAX_HITS_OPTIONS,
+  SearchRequest,
+} from "../utils/models";
 
 type Props = Record<string, unknown>;
 
@@ -37,7 +42,18 @@ function parseSearchRequest(value: string | null): SearchRequest {
   if (value === null) {
     return EMPTY_SEARCH_REQUEST;
   }
-  return JSON.parse(value);
+  // Legacy saved requests contain maxHits values that were never sent to the API.
+  const {
+    uiMaxHits,
+    ...request
+  }: Omit<SearchRequest, "maxHits"> & {
+    uiMaxHits?: number;
+  } = JSON.parse(value);
+  return {
+    ...request,
+    maxHits:
+      MAX_HITS_OPTIONS.find((limit) => limit === uiMaxHits) ?? DEFAULT_MAX_HITS,
+  };
 }
 
 export const LocalStorageContext = createContext<ContextProps>(defaultValues);
@@ -58,9 +74,10 @@ export const LocalStorageProvider = ({
   }, []);
 
   useEffect(() => {
+    const { maxHits, ...request } = lastSearchRequest;
     localStorage.setItem(
       "lastSearchRequest",
-      JSON.stringify(lastSearchRequest),
+      JSON.stringify({ ...request, uiMaxHits: maxHits }),
     );
   }, [lastSearchRequest]);
 

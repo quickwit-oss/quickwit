@@ -194,12 +194,15 @@ export function extractAggregationResults(
   return null;
 }
 
+export const DEFAULT_MAX_HITS = 20;
+export const MAX_HITS_OPTIONS = [DEFAULT_MAX_HITS, 50, 100];
+
 export const EMPTY_SEARCH_REQUEST: SearchRequest = {
   indexId: "",
   query: "",
   startTimestamp: null,
   endTimestamp: null,
-  maxHits: 100,
+  maxHits: DEFAULT_MAX_HITS,
   sortByField: null,
   aggregation: false,
   aggregationConfig: {

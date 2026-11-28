@@ -153,7 +153,7 @@ export class Client {
       body["aggs"] = qw_aggregation;
       body["max_hits"] = 0;
     } else {
-      body["max_hits"] = 20;
+      body["max_hits"] = request.maxHits;
     }
     if (request.startTimestamp) {
       body["start_timestamp"] = request.startTimestamp;

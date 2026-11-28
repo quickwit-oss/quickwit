@@ -12,7 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Aggregation, SearchRequest, SortByField, SortOrder } from "./models";
+import {
+  Aggregation,
+  DEFAULT_MAX_HITS,
+  MAX_HITS_OPTIONS,
+  SearchRequest,
+  SortByField,
+  SortOrder,
+} from "./models";
 
 export function hasSearchParams(historySearch: string): boolean {
   const searchParams = new URLSearchParams(historySearch);
@@ -60,10 +67,15 @@ export function parseSearchUrl(historySearch: string): SearchRequest {
   }
   const aggregationParam = searchParams.get("aggregation");
   const aggregation = parseAggregation(aggregationParam);
+  // Older UI URLs wrote max_hits even though the client always requested 20.
+  const maxHitsParam = searchParams.get("ui_max_hits");
+  const maxHits =
+    MAX_HITS_OPTIONS.find((option) => String(option) === maxHitsParam) ??
+    DEFAULT_MAX_HITS;
   return {
     indexId: indexId,
     query: searchParams.get("query") || "",
-    maxHits: 10,
+    maxHits: maxHits,
     startTimestamp: startTimestamp,
     endTimestamp: endTimestamp,
     sortByField: sortByField,
@@ -91,15 +103,21 @@ function parseAggregation(param: string | null): Aggregation {
 
 export function toUrlSearchRequestParams(
   request: SearchRequest,
+  target: "ui" | "api" = "ui",
 ): URLSearchParams {
   const params = new URLSearchParams();
   params.append("query", request.query || "*");
   // We have to set the index ID in url params as it's not present in the UI path params.
   // This enables the react app to be able to get index ID from url params
   // if the user enter directly the UI url.
-  params.append("index_id", request.indexId || "");
-  if (request.maxHits) {
-    params.append("max_hits", request.maxHits.toString());
+  if (target === "ui") {
+    params.append("index_id", request.indexId || "");
+    params.append("ui_max_hits", request.maxHits.toString());
+  } else {
+    params.append(
+      "max_hits",
+      String(request.aggregation ? 0 : request.maxHits),
+    );
   }
   if (request.startTimestamp) {
     params.append("start_timestamp", request.startTimestamp.toString());

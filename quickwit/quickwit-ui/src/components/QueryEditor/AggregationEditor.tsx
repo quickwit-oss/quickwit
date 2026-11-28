@@ -17,8 +17,8 @@ import FormControl from "@mui/material/FormControl";
 import MenuItem from "@mui/material/MenuItem";
 import Select, { SelectChangeEvent } from "@mui/material/Select";
 import TextField from "@mui/material/TextField";
-import { useEffect, useRef, useState } from "react";
-import { HistogramAgg, TermAgg } from "../../utils/models";
+import { useEffect, useState } from "react";
+import { Aggregation, HistogramAgg, TermAgg } from "../../utils/models";
 import { SearchComponentProps } from "../../utils/SearchComponentProps";
 
 export function AggregationEditor(props: SearchComponentProps) {
@@ -44,12 +44,12 @@ export function AggregationEditor(props: SearchComponentProps) {
 
 export function MetricKind(props: SearchComponentProps) {
   // TODO add percentiles
-  const metricRef = useRef(props.searchRequest.aggregationConfig.metric);
+  const metric = props.searchRequest.aggregationConfig.metric ?? null;
 
   const handleTypeChange = (event: SelectChangeEvent) => {
     const value = event.target.value;
     const updatedMetric =
-      value !== "count" ? { ...metricRef.current!, type: value } : null;
+      value !== "count" ? { field: metric?.field ?? "", type: value } : null;
     const updatedAggregation = {
       ...props.searchRequest.aggregationConfig,
       metric: updatedMetric,
@@ -59,15 +59,14 @@ export function MetricKind(props: SearchComponentProps) {
       aggregationConfig: updatedAggregation,
     };
     props.onSearchRequestUpdate(updatedSearchRequest);
-    metricRef.current = updatedMetric;
   };
 
   const handleNameChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value;
-    if (metricRef.current == null) {
+    if (metric == null) {
       return;
     }
-    const updatedMetric = { ...metricRef.current!, field: value };
+    const updatedMetric = { ...metric, field: value };
     const updatedAggregation = {
       ...props.searchRequest.aggregationConfig,
       metric: updatedMetric,
@@ -77,14 +76,13 @@ export function MetricKind(props: SearchComponentProps) {
       aggregationConfig: updatedAggregation,
     };
     props.onSearchRequestUpdate(updatedSearchRequest);
-    metricRef.current = updatedMetric;
   };
 
   return (
     <Box sx={{ m: 1, minWidth: 120, display: "flex", flexDirection: "row" }}>
       <FormControl variant="standard">
         <Select
-          value={metricRef.current ? metricRef.current.type : "count"}
+          value={metric ? metric.type : "count"}
           onChange={handleTypeChange}
           sx={{ minHeight: "44px" }}
         >
@@ -99,10 +97,11 @@ export function MetricKind(props: SearchComponentProps) {
         <TextField
           variant="standard"
           label="Field"
+          value={metric?.field ?? ""}
           onChange={handleNameChange}
           sx={{
             marginLeft: "10px",
-            ...(!metricRef.current && { display: "none" }),
+            ...(!metric && { display: "none" }),
           }}
         />
       </FormControl>
@@ -110,50 +109,87 @@ export function MetricKind(props: SearchComponentProps) {
   );
 }
 
+type AggregationEntry = { term: TermAgg } | { histogram: HistogramAgg };
+
+const DEFAULT_AGG: AggregationEntry = {
+  histogram: {
+    interval: "1d",
+  },
+};
+
+function syncAggregationsWithConfig(
+  current: AggregationEntry[],
+  config: Aggregation,
+): AggregationEntry[] {
+  const next: AggregationEntry[] = [];
+  for (const entry of current) {
+    if ("histogram" in entry && config.histogram) {
+      next.push({ histogram: config.histogram });
+    } else if ("term" in entry && config.term) {
+      next.push({ term: config.term });
+    }
+  }
+  if (config.histogram && !next.some((entry) => "histogram" in entry)) {
+    next.push({ histogram: config.histogram });
+  }
+  if (config.term && !next.some((entry) => "term" in entry)) {
+    next.push({ term: config.term });
+  }
+  return next.length > 0 ? next : [DEFAULT_AGG];
+}
+
 export function AggregationKind(props: SearchComponentProps) {
-  const defaultAgg = {
-    histogram: {
-      interval: "1d",
-    },
-  };
-  const [aggregations, setAggregations] = useState<
-    ({ term: TermAgg } | { histogram: HistogramAgg })[]
-  >([defaultAgg]);
+  const [aggregations, setAggregations] = useState<AggregationEntry[]>(() =>
+    syncAggregationsWithConfig([], props.searchRequest.aggregationConfig),
+  );
 
   useEffect(() => {
     // do the initial filling of parameters
     const aggregationConfig = props.searchRequest.aggregationConfig;
     if (
-      aggregationConfig.histogram === null &&
-      aggregationConfig.term === null
+      aggregationConfig.histogram == null &&
+      aggregationConfig.term == null
     ) {
-      const initialAggregation = Object.assign({}, ...aggregations);
       const initialSearchRequest = {
         ...props.searchRequest,
-        aggregationConfig: initialAggregation,
+        aggregationConfig: {
+          metric: aggregationConfig.metric ?? null,
+          term: null,
+          histogram: { interval: "1d" },
+        },
       };
       props.onSearchRequestUpdate(initialSearchRequest);
     }
   }, []); // Empty dependency array means this runs once after mount
 
   useEffect(() => {
-    // Update search request whenever aggregations change
-    const metric = props.searchRequest.aggregationConfig.metric;
-    const updatedAggregation = Object.assign(
-      {},
-      { metric: metric },
-      ...aggregations,
+    setAggregations((current) =>
+      syncAggregationsWithConfig(
+        current,
+        props.searchRequest.aggregationConfig,
+      ),
     );
-    const updatedSearchRequest = {
+  }, [props.searchRequest.aggregationConfig]);
+
+  const updateAggregations = (
+    updater: (agg: AggregationEntry[]) => AggregationEntry[],
+  ) => {
+    const newAggregations = updater(aggregations);
+    setAggregations(newAggregations);
+    const updatedAggregation: Aggregation = {
+      metric: props.searchRequest.aggregationConfig.metric ?? null,
+      histogram: newAggregations.find(isHistogram)?.histogram ?? null,
+      term: newAggregations.find(isTerm)?.term ?? null,
+    };
+    props.onSearchRequestUpdate({
       ...props.searchRequest,
       aggregationConfig: updatedAggregation,
-    };
-    props.onSearchRequestUpdate(updatedSearchRequest);
-  }, [aggregations]);
+    });
+  };
 
   const handleAggregationChange = (pos: number, event: SelectChangeEvent) => {
     const value = event.target.value;
-    setAggregations((agg) => {
+    updateAggregations((agg) => {
       const newAggregations = [...agg];
       switch (value) {
         case "histogram": {
@@ -183,7 +219,7 @@ export function AggregationKind(props: SearchComponentProps) {
 
   const handleHistogramChange = (pos: number, event: SelectChangeEvent) => {
     const value = event.target.value;
-    setAggregations((agg) => {
+    updateAggregations((agg) => {
       const newAggregations = [...agg];
       newAggregations[pos] = { histogram: { interval: value } };
       return newAggregations;
@@ -195,11 +231,11 @@ export function AggregationKind(props: SearchComponentProps) {
     event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     const value = event.target.value;
-    setAggregations((agg) => {
+    updateAggregations((agg) => {
       const newAggregations = [...agg];
       const term = newAggregations[pos];
       if (isTerm(term)) {
-        term.term.field = value;
+        newAggregations[pos] = { term: { ...term.term, field: value } };
       }
       return newAggregations;
     });
@@ -210,11 +246,11 @@ export function AggregationKind(props: SearchComponentProps) {
     event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     const value = event.target.value;
-    setAggregations((agg) => {
+    updateAggregations((agg) => {
       const newAggregations = [...agg];
       const term = newAggregations[pos];
       if (isTerm(term)) {
-        term.term.size = Number(value);
+        newAggregations[pos] = { term: { ...term.term, size: Number(value) } };
       }
       return newAggregations;
     });
@@ -319,6 +355,7 @@ export function AggregationKind(props: SearchComponentProps) {
             <TextField
               variant="standard"
               label="Field"
+              value={agg.term.field}
               onChange={(e) => handleTermFieldChange(pos, e)}
               sx={{ marginLeft: "10px" }}
             />

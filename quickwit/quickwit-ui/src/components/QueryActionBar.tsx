@@ -13,7 +13,8 @@
 // limitations under the License.
 
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
-import { Box, Button, Tab, Tabs } from "@mui/material";
+import { Box, Button, Tab, Tabs, TextField } from "@mui/material";
+import { MAX_HITS_OPTIONS } from "../utils/models";
 import { SearchComponentProps } from "../utils/SearchComponentProps";
 import { TimeRangeSelect } from "./TimeRangeSelect";
 
@@ -21,6 +22,10 @@ export function QueryEditorActionBar(props: SearchComponentProps) {
   const timestamp_field_name =
     props.index?.metadata.index_config.doc_mapping.timestamp_field;
   const shouldDisplayTimeRangeSelect = timestamp_field_name ?? false;
+  const searchDisabled =
+    props.queryRunning ||
+    !props.searchRequest.indexId ||
+    props.index?.metadata.index_config.index_id !== props.searchRequest.indexId;
 
   const handleChange = (_event: React.SyntheticEvent, newTab: number) => {
     const updatedSearchRequest = {
@@ -32,7 +37,7 @@ export function QueryEditorActionBar(props: SearchComponentProps) {
   };
 
   return (
-    <Box sx={{ display: "flex" }}>
+    <Box sx={{ display: "flex", flexWrap: "wrap" }}>
       <Box sx={{ flexGrow: 0, padding: "10px" }}>
         <Button
           onClick={() => props.runSearch(props.searchRequest)}
@@ -40,7 +45,7 @@ export function QueryEditorActionBar(props: SearchComponentProps) {
           startIcon={<PlayArrowIcon />}
           disableElevation
           sx={{ flexGrow: 1 }}
-          disabled={props.queryRunning || !props.searchRequest.indexId}
+          disabled={searchDisabled}
         >
           Run
         </Button>
@@ -57,6 +62,30 @@ export function QueryEditorActionBar(props: SearchComponentProps) {
         </Box>
       </Box>
       <Box sx={{ flexGrow: 1 }}></Box>
+      {!props.searchRequest.aggregation && (
+        <TextField
+          id="max-hits"
+          label="Max hits"
+          select
+          size="small"
+          value={props.searchRequest.maxHits}
+          onChange={(event) => {
+            props.runSearch({
+              ...props.searchRequest,
+              maxHits: Number(event.target.value),
+            });
+          }}
+          disabled={searchDisabled}
+          slotProps={{ select: { native: true } }}
+          sx={{ alignSelf: "center", minWidth: 96, mx: 1 }}
+        >
+          {MAX_HITS_OPTIONS.map((maxHits) => (
+            <option key={maxHits} value={maxHits}>
+              {maxHits}
+            </option>
+          ))}
+        </TextField>
+      )}
       {shouldDisplayTimeRangeSelect && (
         <TimeRangeSelect
           timeRange={{
@@ -66,7 +95,7 @@ export function QueryEditorActionBar(props: SearchComponentProps) {
           onUpdate={(timeRange) => {
             props.runSearch({ ...props.searchRequest, ...timeRange });
           }}
-          disabled={props.queryRunning || !props.searchRequest.indexId}
+          disabled={searchDisabled}
         />
       )}
     </Box>
