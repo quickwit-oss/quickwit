@@ -6,6 +6,12 @@
 The project then relies on misc nodejs tools that can be installed locally by
 running `yarn`.
 
+## Search results
+
+Use **Max hits** in the Search toolbar to show up to 20, 50, or 100 hits. The
+default is 20. Changing the limit reruns the search and saves the choice in the
+search URL. Aggregation queries return no hits.
+
 ## Available Scripts
 
 In the project directory, you can run:

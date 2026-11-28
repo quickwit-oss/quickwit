@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { describe, expect, it, jest } from "@jest/globals";
-import { SearchRequest } from "../utils/models";
+import { EMPTY_SEARCH_REQUEST, SearchRequest } from "../utils/models";
 import { Client } from "./client";
 
 describe("Client unit test", () => {
@@ -29,7 +29,7 @@ describe("Client unit test", () => {
       query: "severity_error:ERROR",
       startTimestamp: 100,
       endTimestamp: 200,
-      maxHits: 20,
+      maxHits: 50,
       sortByField: {
         field_name: "timestamp",
         order: "Desc",
@@ -44,12 +44,30 @@ describe("Client unit test", () => {
 
     const client = new Client();
     expect(client.buildSearchBody(searchRequest, null)).toBe(
-      '{"query":"severity_error:ERROR","max_hits":20,"start_timestamp":100,"end_timestamp":200,"sort_by_field":"+timestamp"}',
+      '{"query":"severity_error:ERROR","max_hits":50,"start_timestamp":100,"end_timestamp":200,"sort_by_field":"+timestamp"}',
     );
 
     await client.search(searchRequest, null);
     const expectedUrl = `${client.apiRoot()}my-new-fresh-index-id/search`;
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(mockFetch).toHaveBeenCalledWith(expectedUrl, expect.any(Object));
+  });
+
+  it("requests no hits for an aggregation even with a hit limit selected", () => {
+    const client = new Client();
+    const request: SearchRequest = {
+      ...EMPTY_SEARCH_REQUEST,
+      maxHits: 50,
+      aggregation: true,
+      aggregationConfig: {
+        ...EMPTY_SEARCH_REQUEST.aggregationConfig,
+        metric: { type: "avg", field: "duration" },
+      },
+    };
+    expect(JSON.parse(client.buildSearchBody(request, null))).toEqual({
+      query: "*",
+      max_hits: 0,
+      aggs: { metric: { avg: { field: "duration" } } },
+    });
   });
 });

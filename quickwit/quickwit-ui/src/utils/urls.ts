@@ -12,7 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Aggregation, SearchRequest, SortByField, SortOrder } from "./models";
+import {
+  Aggregation,
+  DEFAULT_MAX_HITS,
+  MAX_HITS_OPTIONS,
+  SearchRequest,
+  SortByField,
+  SortOrder,
+} from "./models";
 
 export function hasSearchParams(historySearch: string): boolean {
   const searchParams = new URLSearchParams(historySearch);
@@ -60,10 +67,14 @@ export function parseSearchUrl(historySearch: string): SearchRequest {
   }
   const aggregationParam = searchParams.get("aggregation");
   const aggregation = parseAggregation(aggregationParam);
+  const maxHitsParam = searchParams.get("max_hits");
+  const maxHits =
+    MAX_HITS_OPTIONS.find((option) => String(option) === maxHitsParam) ??
+    DEFAULT_MAX_HITS;
   return {
     indexId: indexId,
     query: searchParams.get("query") || "",
-    maxHits: 10,
+    maxHits: maxHits,
     startTimestamp: startTimestamp,
     endTimestamp: endTimestamp,
     sortByField: sortByField,
