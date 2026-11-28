@@ -21,6 +21,39 @@ import { Client } from "../services/client";
 import { EMPTY_SEARCH_REQUEST } from "../utils/models";
 import SearchView from "./SearchView";
 
+let mockEditorSearchAction = null;
+
+jest.mock("@monaco-editor/react", () => {
+  const React = require("react");
+  return {
+    Editor: ({ onMount }) => {
+      React.useEffect(() => {
+        const editor = {
+          addAction: (action) => {
+            if (action.id === "SEARCH") {
+              mockEditorSearchAction = action.run;
+            }
+          },
+          layout: jest.fn(),
+        };
+        const monaco = {
+          KeyCode: { F9: 1, Enter: 2 },
+          KeyMod: { CtrlCmd: 4 },
+          languages: {
+            getLanguages: () => [],
+            register: jest.fn(),
+            setMonarchTokensProvider: jest.fn(),
+            registerCompletionItemProvider: jest.fn(),
+            setLanguageConfiguration: jest.fn(),
+          },
+        };
+        onMount?.(editor, monaco);
+      }, []);
+      return null;
+    },
+  };
+});
+
 jest.mock("../services/client");
 const searchUrl = "/search?index_id=my-new-fresh-index-id";
 
@@ -42,6 +75,7 @@ function renderSearch(initialEntry = searchUrl) {
 
 beforeEach(() => {
   localStorage.clear();
+  mockEditorSearchAction = null;
   const index = {
     metadata: {
       index_config: {
@@ -201,4 +235,101 @@ test("opens a legacy last search at 20 hits and saves new selections", async () 
   fireEvent.click(screen.getByRole("link", { name: "Query editor" }));
   await screen.findByText(/This is an info log/);
   expect(screen.getByRole("combobox", { name: "Max hits" })).toHaveValue("100");
+});
+
+test("keeps an explicit hit limit when index metadata loads slowly", async () => {
+  let resolveIndex;
+  const index = {
+    metadata: {
+      index_config: {
+        index_id: "my-new-fresh-index-id",
+        index_uri: "my-new-fresh-index-uri",
+        indexing_settings: {},
+        doc_mapping: {
+          field_mappings: [
+            {
+              name: "timestamp",
+              type: "i64",
+            },
+          ],
+        },
+      },
+    },
+    splits: [],
+  };
+  Client.prototype.getIndex.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolveIndex = resolve;
+      }),
+  );
+  Client.prototype.search.mockImplementation(async ({ maxHits }) => ({
+    num_hits: 1,
+    hits: [{ body: `Result for limit ${maxHits}` }],
+    elapsed_time_micros: 10,
+    errors: [],
+  }));
+
+  const { router } = renderSearch();
+  fireEvent.change(screen.getByRole("combobox", { name: "Max hits" }), {
+    target: { value: "50" },
+  });
+  await waitFor(() =>
+    expect(Client.prototype.search).toHaveBeenCalledWith(
+      expect.objectContaining({ maxHits: 50 }),
+      null,
+    ),
+  );
+
+  await act(async () => {
+    resolveIndex(index);
+  });
+
+  expect(await screen.findByText(/Result for limit 50/)).toBeInTheDocument();
+  await waitFor(() => expect(Client.prototype.search).toHaveBeenCalledTimes(2));
+  expect(Client.prototype.search).toHaveBeenLastCalledWith(
+    expect.objectContaining({ maxHits: 50 }),
+    null,
+  );
+  expect(screen.getByRole("combobox", { name: "Max hits" })).toHaveValue("50");
+  expect(
+    new URLSearchParams(router.state.location.search).get("ui_max_hits"),
+  ).toBe("50");
+
+  await act(() => router.navigate(-1));
+  expect(await screen.findByText(/Result for limit 20/)).toBeInTheDocument();
+  expect(screen.getByRole("combobox", { name: "Max hits" })).toHaveValue("20");
+});
+
+test("keeps the selected hit limit when running search via editor shortcut", async () => {
+  Client.prototype.search.mockImplementation(async ({ maxHits }) => ({
+    num_hits: 1,
+    hits: [{ body: `Result for limit ${maxHits}` }],
+    elapsed_time_micros: 10,
+    errors: [],
+  }));
+
+  const { router } = renderSearch();
+  await screen.findByText(/Result for limit 20/);
+
+  fireEvent.change(screen.getByRole("combobox", { name: "Max hits" }), {
+    target: { value: "50" },
+  });
+  await screen.findByText(/Result for limit 50/);
+
+  expect(mockEditorSearchAction).not.toBeNull();
+  await act(async () => {
+    mockEditorSearchAction();
+  });
+
+  await waitFor(() => expect(Client.prototype.search).toHaveBeenCalledTimes(3));
+  expect(Client.prototype.search).toHaveBeenLastCalledWith(
+    expect.objectContaining({ maxHits: 50 }),
+    null,
+  );
+  expect(screen.getByRole("combobox", { name: "Max hits" })).toHaveValue("50");
+  expect(
+    new URLSearchParams(router.state.location.search).get("ui_max_hits"),
+  ).toBe("50");
+  expect(screen.getByText(/Result for limit 50/)).toBeInTheDocument();
 });

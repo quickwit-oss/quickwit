@@ -89,6 +89,14 @@ function SearchView() {
     }
 
     const updatedSearchRequest = { ...request };
+    if (pendingUrlSearch.current) {
+      pendingUrlSearch.current =
+        index?.metadata.index_config.index_id !==
+          updatedSearchRequest.indexId &&
+        pendingUrlSearch.current.indexId === updatedSearchRequest.indexId
+          ? updatedSearchRequest
+          : null;
+    }
     const sequence = ++searchSequence.current;
     console.log("Run search...", updatedSearchRequest);
     updateSearchRequestWithIndex(index, updatedSearchRequest);

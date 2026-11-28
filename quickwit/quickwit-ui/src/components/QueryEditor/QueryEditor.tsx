@@ -105,10 +105,9 @@ export function QueryEditor(props: SearchComponentProps) {
   }, [monacoRef, props.index]);
 
   useEffect(() => {
-    if (monacoRef.current !== null) {
-      runSearchRef.current = props.runSearch;
-    }
-  }, [monacoRef, props.runSearch]);
+    runSearchRef.current = props.runSearch;
+    searchRequestRef.current = props.searchRequest;
+  }, [props.runSearch, props.searchRequest]);
 
   function handleEditorChange(value: any) {
     const updatedSearchRequest = Object.assign({}, props.searchRequest, {
