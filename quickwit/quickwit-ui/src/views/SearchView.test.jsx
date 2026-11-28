@@ -22,11 +22,13 @@ import { EMPTY_SEARCH_REQUEST } from "../utils/models";
 import SearchView from "./SearchView";
 
 let mockEditorSearchAction = null;
+let mockEditorOnChange = null;
 
 jest.mock("@monaco-editor/react", () => {
   const React = require("react");
   return {
-    Editor: ({ onMount }) => {
+    Editor: ({ onMount, onChange }) => {
+      mockEditorOnChange = onChange;
       React.useEffect(() => {
         const editor = {
           addAction: (action) => {
@@ -76,6 +78,7 @@ function renderSearch(initialEntry = searchUrl) {
 beforeEach(() => {
   localStorage.clear();
   mockEditorSearchAction = null;
+  mockEditorOnChange = null;
   const index = {
     metadata: {
       index_config: {
@@ -332,4 +335,149 @@ test("keeps the selected hit limit when running search via editor shortcut", asy
     new URLSearchParams(router.state.location.search).get("ui_max_hits"),
   ).toBe("50");
   expect(screen.getByText(/Result for limit 50/)).toBeInTheDocument();
+});
+
+test("keeps query edits made while index metadata loads", async () => {
+  let resolveIndex;
+  const index = {
+    metadata: {
+      index_config: {
+        index_id: "my-new-fresh-index-id",
+        index_uri: "my-new-fresh-index-uri",
+        indexing_settings: {},
+        doc_mapping: {
+          field_mappings: [
+            {
+              name: "timestamp",
+              type: "i64",
+            },
+          ],
+        },
+      },
+    },
+    splits: [],
+  };
+  Client.prototype.getIndex.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolveIndex = resolve;
+      }),
+  );
+
+  renderSearch();
+  expect(mockEditorOnChange).not.toBeNull();
+  await act(async () => {
+    mockEditorOnChange("level:ERROR");
+  });
+
+  await act(async () => {
+    resolveIndex(index);
+  });
+
+  await waitFor(() =>
+    expect(Client.prototype.search).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: "level:ERROR" }),
+      null,
+    ),
+  );
+});
+
+test("restores aggregation controls when navigating browser history", async () => {
+  const { router } = renderSearch();
+  await screen.findByText(/This is an info log/);
+
+  fireEvent.click(screen.getByRole("tab", { name: "Aggregation" }));
+  await screen.findByText("no result to display");
+
+  // Select Average metric and 1 hour histogram, then run.
+  fireEvent.mouseDown(
+    screen.getByText("Count", { selector: '[role="combobox"]' }),
+  );
+  fireEvent.click(screen.getByRole("option", { name: "Average" }));
+  fireEvent.change(screen.getByLabelText("Field"), {
+    target: { value: "latency" },
+  });
+  fireEvent.mouseDown(
+    screen.getByText("1 day", { selector: '[role="combobox"]' }),
+  );
+  fireEvent.click(screen.getByRole("option", { name: "1 hour" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
+  await waitFor(() =>
+    expect(Client.prototype.search).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        aggregation: true,
+        aggregationConfig: expect.objectContaining({
+          metric: { type: "avg", field: "latency" },
+          histogram: { interval: "1h" },
+        }),
+      }),
+      null,
+    ),
+  );
+
+  // Switch to Sum metric and 5 minutes histogram, then run.
+  fireEvent.mouseDown(
+    screen.getByText("Average", { selector: '[role="combobox"]' }),
+  );
+  fireEvent.click(screen.getByRole("option", { name: "Sum" }));
+  fireEvent.change(screen.getByLabelText("Field"), {
+    target: { value: "duration" },
+  });
+  fireEvent.mouseDown(
+    screen.getByText("1 hour", { selector: '[role="combobox"]' }),
+  );
+  fireEvent.click(screen.getByRole("option", { name: "5 minutes" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
+  await waitFor(() =>
+    expect(Client.prototype.search).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        aggregation: true,
+        aggregationConfig: expect.objectContaining({
+          metric: { type: "sum", field: "duration" },
+          histogram: { interval: "5m" },
+        }),
+      }),
+      null,
+    ),
+  );
+
+  // Navigate Back: controls should show Average / latency / 1 hour.
+  await act(() => router.navigate(-1));
+  await waitFor(() =>
+    expect(Client.prototype.search).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        aggregation: true,
+        aggregationConfig: expect.objectContaining({
+          metric: { type: "avg", field: "latency" },
+          histogram: { interval: "1h" },
+        }),
+      }),
+      null,
+    ),
+  );
+  expect(
+    screen.getByText("Average", { selector: '[role="combobox"]' }),
+  ).toBeInTheDocument();
+  expect(screen.getByLabelText("Field")).toHaveValue("latency");
+  expect(
+    screen.getByText("1 hour", { selector: '[role="combobox"]' }),
+  ).toBeInTheDocument();
+
+  // Editing the field after Back must keep Average, not revert to Sum.
+  fireEvent.change(screen.getByLabelText("Field"), {
+    target: { value: "response_time" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
+  await waitFor(() =>
+    expect(Client.prototype.search).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        aggregation: true,
+        aggregationConfig: expect.objectContaining({
+          metric: { type: "avg", field: "response_time" },
+          histogram: { interval: "1h" },
+        }),
+      }),
+      null,
+    ),
+  );
 });

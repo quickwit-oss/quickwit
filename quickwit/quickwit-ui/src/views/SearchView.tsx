@@ -83,20 +83,24 @@ function SearchView() {
   const updateLastSearchRequest = useLocalStorage().updateLastSearchRequest;
   const quickwitClient = useMemo(() => new Client(), []);
 
+  const updatePendingUrlSearch = (request: SearchRequest) => {
+    if (!pendingUrlSearch.current) {
+      return;
+    }
+    pendingUrlSearch.current =
+      index?.metadata.index_config.index_id !== request.indexId &&
+      pendingUrlSearch.current.indexId === request.indexId
+        ? { ...request }
+        : null;
+  };
+
   const runSearch = (request: SearchRequest, updateUrl = true) => {
     if (!request.indexId) {
       return;
     }
 
     const updatedSearchRequest = { ...request };
-    if (pendingUrlSearch.current) {
-      pendingUrlSearch.current =
-        index?.metadata.index_config.index_id !==
-          updatedSearchRequest.indexId &&
-        pendingUrlSearch.current.indexId === updatedSearchRequest.indexId
-          ? updatedSearchRequest
-          : null;
-    }
+    updatePendingUrlSearch(updatedSearchRequest);
     const sequence = ++searchSequence.current;
     console.log("Run search...", updatedSearchRequest);
     updateSearchRequestWithIndex(index, updatedSearchRequest);
@@ -140,6 +144,7 @@ function SearchView() {
     });
   };
   const onSearchRequestUpdate = (searchRequest: SearchRequest) => {
+    updatePendingUrlSearch(searchRequest);
     setSearchRequest(searchRequest);
   };
 
